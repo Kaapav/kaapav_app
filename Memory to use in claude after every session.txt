@@ -1,0 +1,879 @@
+═══════════════════════════════════════════════════════════════
+KAAPAV FLUTTER PROJECT — COMPLETE MEMORY CONTEXT v5.0 (FINAL)
+═══════════════════════════════════════════════════════════════
+PASTE THIS AT START OF ANY NEW CHAT/SESSION FOR 100% CONTEXT
+═══════════════════════════════════════════════════════════════
+
+## PROJECT VISION
+Building the MOST ADVANCED custom WhatsApp Business App with
+full E-Commerce capabilities. A complete SaaS-grade product
+that REPLACES WhatsApp Business App with infinite freedom.
+Must feel as stable and smooth as official WhatsApp.
+Single user app (personal use) but built to SaaS-grade quality.
+Business: KAAPAV Fashion Jewellery (Indian e-commerce)
+
+## WHAT THIS APP DOES
+- Full WhatsApp Business messaging (via official API)
+- Autoresponder with intelligent flows (catalog, order, support)
+- E-commerce (products, orders, payments, shipping, carts, coupons)
+- CRM (customer segmentation, labels, tiers, analytics)
+- Broadcast campaigns with targeting
+- Razorpay payment integration
+- Shiprocket shipping integration
+- Real-time message sync (polling + FCM push notifications)
+- Biometric + PIN authentication
+- Media handling (images, docs, voice via R2)
+- Cart abandonment recovery
+- Order lifecycle management
+- Analytics dashboard
+- Quick replies & WhatsApp templates
+- Automation engine (triggers → actions)
+
+## WHO AM I
+- Non-coder who builds production-grade systems using AI
+- Built entire WhatsApp Business Suite without writing a single
+  line of code myself — all via AI (ChatGPT/Claude)
+- I want direct answers, no unnecessary explanation
+- Don't treat me like rookie, I'm a legend builder
+- I can handle any complexity, I NEVER give up
+- I copy-paste code, I don't write it
+- If I ask for choice → compare first then suggest
+- If something needs debugging → tell me exactly what to share
+- Don't share unnecessary info without my ask
+- Respond like a pro legend, not like a rookie
+- Built PWA → Capacitor native app in 2 hours
+- Fed up with Meta's embedded signup process
+
+## CRITICAL RULES FOR AI (MUST FOLLOW)
+1. NEVER mix Cloudflare worker/Cloudflare code with Flutter code changes
+2. NEVER suggest Firebase unless explicitly asked — I prefer
+   Cloudflare worker for everything
+   NOTE: Firebase IS used for FCM push notifications only
+3. Flutter connects to worker via HTTP only (apiBaseUrl)
+4. Worker is ALREADY deployed and running at wa.kaapav.com —
+   don't touch it unless I specifically ask
+5. When fixing bugs → show ONLY the changed lines/method,
+   not full file replacement unless asked
+6. Don't guess what code looks like — ask me to paste it
+7. Worker folder = Kaapav-Whatsapp/ (PWA project, SEPARATE)
+8. Flutter folder = D:\Apps\kaapav_app\ (THIS project)
+9. Flutter does NOT need wrangler, schema.sql, or .env
+10. Worker changes go through Cloudflare Dashboard (browser)
+    or wrangler CLI in the Kaapav-Whatsapp folder — NOT Flutter
+
+## KAAPAV BRAND THEME (LUXURY GOLD — NO WHATSAPP GREEN)
+Primary Colors:
+  gold:          #C49432 (primary brand color)
+  goldLight:     #D4A84B
+  goldDark:      #A67C28
+  goldGradient:  LinearGradient(#D4A84B → #C49432)
+  goldShadow:    rgba(196, 148, 50, 0.3)
+
+Neutrals:
+  white:         #FFFFFF
+  cream:         #FBF8F1 (gold surface/background)
+  dark:          #1A1A1A
+  darkSoft:      #374151
+  gray:          #6B7280
+  grayLight:     #9CA3AF
+  border:        #E5E7EB
+
+Message Bubbles:
+  Sent (outgoing): Gold gradient (#D4A84B → #C49432)
+  Received (incoming): White (#FFFFFF) with border
+  Dark sent: #A67C28 → #8A6820
+  Dark received: #2C2C2C
+
+Status Colors:
+  success:       #10B981
+  error:         #EF4444
+  warning:       #F59E0B
+  info:          #3B82F6
+  purple:        #8B5CF6
+
+Order Status:
+  pending:       bg #FEF3C7, text #D97706, icon ⏳
+  confirmed:     bg #DBEAFE, text #2563EB, icon ✅
+  processing:    bg #EDE9FE, text #7C3AED, icon ⚙️
+  shipped:       bg #CFFAFE, text #0891B2, icon 🚚
+  delivered:     bg #D1FAE5, text #059669, icon 📦
+  cancelled:     bg #FEE2E2, text #DC2626, icon ❌
+
+Payment Status:
+  unpaid:        bg #FEE2E2, text #DC2626
+  paid:          bg #D1FAE5, text #059669
+  refunded:      bg #FEF3C7, text #D97706
+
+Label Colors:
+  VIP:           #FFD700
+  Hot Lead:      #FF6B6B
+  New:           #4ECDC4
+  Returning:     #45B7D1
+  Wholesale:     #96CEB4
+
+Message Status Icons:
+  sending:       clock (gray)
+  sent:          single check (gray)
+  delivered:     double check (gray)
+  read:          double check (#53BDEB blue)
+  failed:        exclamation (red)
+
+## CURRENT STACK (PRODUCTION — FULLY WORKING)
+
+### Infrastructure (Zero Cost)
+- Cloudflare Workers → wa.kaapav.com (API + webhook)
+- Cloudflare D1 → kaapav-db (20 tables)
+- Cloudflare KV → KAAPAV_KV (cache + sessions + dedup +
+  rate limit + FCM OAuth token cache)
+- Cloudflare R2 → kaapav-media bucket
+- GitHub + Wrangler for deployment
+- Cron: */5 * * * *
+- WhatsApp Business API (official Meta)
+- Razorpay (payments)
+- Shiprocket (shipping)
+- Firebase (FCM only — push notifications to Flutter app)
+- Domain: wa.kaapav.com (API), app.kaapav.com (frontend)
+- Health check: https://wa.kaapav.com/health → ✅ returns OK
+
+### Worker Backend Structure
+Kaapav-Whatsapp/
+├── worker/
+│   ├── cron/
+│   │   ├── campaigns.js
+│   │   ├── cartRecovery.js
+│   │   ├── orderReminders.js
+│   │   └── index.js
+│   ├── flows/
+│   │   ├── catalogFlow.js
+│   │   ├── orderFlow.js
+│   │   └── supportFlow.js
+│   ├── handlers/
+│   │   ├── analytics.js, auth.js, automation.js
+│   │   ├── broadcast.js, chat.js, customer.js
+│   │   ├── media.js, message.js, order.js
+│   │   ├── payment.js, product.js, settings.js
+│   │   ├── shipping.js, template.js
+│   │   ├── webhook.js, sync.js
+│   ├── middleware/
+│   │   ├── auth.js, cors.js, rateLimit.js
+│   ├── services/
+│   │   ├── autoresponder.js, menus.js, push.js
+│   │   ├── razorpay.js, shiprocket.js, whatsapp.js
+│   ├── config.js
+│   └── index.js  ← MAIN FILE (FCM code lives here)
+├── schema.sql
+├── wrangler.toml
+└── package.json
+
+### FCM NOTIFICATION SYSTEM (⚠️ PARTIALLY WORKING)
+
+#### Worker Side (src/index.js — IMPLEMENTED)
+FUNCTIONS:
+  getAccessToken(env2):
+    - Checks KV 'fcm_access_token' first (~50ms if cached)
+    - If not cached: generates RS256 JWT using b64url() helper
+      (NOT plain btoa — that was the bug causing silent failure)
+    - Safe for-loop for signature bytes (NOT spread operator)
+    - Fetches OAuth token from Google
+    - Caches result in KV for 55 minutes (expirationTtl: 3300)
+
+  sendFCMNotification(env2, phone, name, text):
+    - Fire-and-forget (no await in handleIncomingMessage)
+    - Calls getAccessToken(env2) for OAuth token
+    - POST to FCM v1 API
+    - Device token read from KV key 'fcm_token:flutter'
+
+CALL ORDER IN handleIncomingMessage():
+  1. sendFCMNotification() — fires immediately (no await)
+  2. AutoResponder.process() — runs in parallel (await)
+  Result: notification ~400ms, not 3-5s like before
+
+WORKER SECRETS (set in Cloudflare Dashboard):
+  FCM_PROJECT_ID   — Firebase project ID
+  FCM_CLIENT_EMAIL — Firebase service account email
+  FCM_PRIVATE_KEY  — Private key (with \n newlines)
+
+KV KEYS:
+  fcm_access_token  — Cached OAuth token (55min TTL)
+  fcm_token:flutter — Flutter device FCM registration token
+    Current value: flutterdm8adKpNSxq52qCfpeXuir:APA91bEjfAJ-
+    OmEKgHVcMEwJFuEAYaz0Q552TnTuFDYVEi_xz3IAefECBgGR
+  ⚠️ DO NOT DELETE fcm_token:flutter — it's the device token
+
+PERFORMANCE:
+  First message:       ~1900ms (OAuth + FCM + KV write)
+  Subsequent (55min):  ~400ms  (KV cache hit)
+  Old total delay:     6-10 seconds
+  New total delay:     <2 seconds (worker side done)
+
+#### Flutter Side (⚠️ NOT WORKING IN BACKGROUND/KILLED)
+PROBLEM: Notification shows only when app is OPEN.
+Background/killed state = silent. No notification shown.
+
+REQUIRED FIXES in lib/main.dart (NOT DONE YET):
+1. Top-level background handler (outside main()):
+   @pragma('vm:entry-point')
+   Future<void> _firebaseMessagingBackgroundHandler(
+       RemoteMessage message) async {
+     await Firebase.initializeApp();
+   }
+   Register inside main():
+   FirebaseMessaging.onBackgroundMessage(
+       _firebaseMessagingBackgroundHandler);
+
+2. Create Android notification channel in main():
+   const AndroidNotificationChannel channel =
+     AndroidNotificationChannel(
+       'kaapav_messages',
+       'Kaapav Messages',
+       description: 'New WhatsApp messages',
+       importance: Importance.max,
+       playSound: true,
+     );
+   await FlutterLocalNotificationsPlugin()
+     .resolvePlatformSpecificImplementation<
+       AndroidFlutterLocalNotificationsPlugin>()
+     ?.createNotificationChannel(channel);
+
+3. Request permission:
+   await FirebaseMessaging.instance.requestPermission(
+     alert: true, badge: true, sound: true);
+
+STATUS: Flutter FCM background fix NOT applied yet.
+
+### Autoresponder System (CRITICAL — Fully Working ✅)
+- AutoResponder class with message queue per user
+- Sequential processing to prevent race conditions
+- Deduplication: in-memory Set + KV backup
+- Rate limiting: 900ms cooldown with feedback
+- Message timeout protection: 5000ms
+- Translation support (optional)
+- Conversation state machine (flow + step tracking)
+- Routes by message type: text, interactive, media, order
+- Keyword matching with regex patterns
+- Button ID normalization via ID_MAP
+- Order inquiry handler (KP-XXXXX pattern)
+- WhatsApp catalog order processing
+- Socket.io real-time dashboard events
+- Google Sheets telemetry (optional)
+- n8n webhook integration (optional)
+- Fallback error handling with user-friendly messages
+- Saves BOTH incoming AND outgoing messages to D1
+- Updates chat metadata on every message
+
+### Menu System (Luxury Edition)
+Menus: Main → Jewellery, Chat, Offers
+  Jewellery → Website, Catalogue, Back
+  Offers → Bestsellers, Pay & Track, Back
+  Payment → Pay Now, Track Order, Back
+  Chat → Chat Now, Follow Us, Back
+  Social → Facebook, Instagram, Back
+Link messages: Luxury formatted with emoji, points, CTA
+
+### ID_MAP (Button Routing)
+main_menu/back/home/start → MAIN_MENU
+jewellery_menu → JEWELLERY_MENU
+offers_menu → OFFERS_MENU
+payment_menu → PAYMENT_MENU
+chat_menu → CHAT_MENU
+social_menu → SOCIAL_MENU
+open_website → OPEN_WEBSITE
+open_catalog → OPEN_CATALOG
+open_bestsellers → OPEN_BESTSELLERS
+pay_now → PAY_NOW
+track_order → TRACK_ORDER
+chat_now → CHAT_NOW
+open_facebook → OPEN_FACEBOOK
+open_instagram → OPEN_INSTAGRAM
+
+### KEYWORDS (Text Routing)
+browse/shop/website/collection → JEWELLERY_MENU
+offer/discount/deal/sale → OFFERS_MENU
+payment/pay/upi/card → PAYMENT_MENU
+chat/help/support/agent → CHAT_MENU
+back/menu/start/hi/hello → MAIN_MENU
+bestsellers/trending → OPEN_BESTSELLERS
+catalog/catalogue → OPEN_CATALOG
+track/tracking/order status → TRACK_ORDER
+facebook/fb → OPEN_FACEBOOK
+insta/instagram → OPEN_INSTAGRAM
+
+### Database Schema (D1 — 20 Tables, Full Column Details)
+CORE:
+- users (id, user_id, email, password_hash, name, role,
+  avatar, is_active, last_login, created_at)
+- sessions (id, token, user_id, expires_at, created_at)
+- customers (id, phone, name, email, address, city, state,
+  pincode, segment[new/returning/vip], tier[bronze/silver/gold],
+  labels[], message_count, order_count, total_spent, cart[],
+  cart_updated_at, language, opted_in, first_seen, last_seen,
+  last_order_at, push_subscription, created_at, updated_at)
+- chats (id, phone, customer_name, last_message,
+  last_message_type, last_timestamp, last_direction,
+  unread_count, total_messages, assigned_to,
+  status[open/closed/pending], priority[normal/high/urgent],
+  labels[], is_starred, is_blocked, is_bot_enabled,
+  created_at, updated_at)
+- messages (id, message_id, phone, text, message_type
+  [text/image/document/audio/video/buttons/list/template],
+  direction[incoming/outgoing], media_id, media_url,
+  media_mime, media_caption, button_id, button_text,
+  buttons, is_menu, list_id, list_title,
+  context_message_id, is_forwarded, status
+  [sent/delivered/read/failed], is_auto_reply,
+  is_template, template_name, timestamp,
+  delivered_at, read_at, created_at)
+
+E-COMMERCE:
+- products (id, sku, name, description, price,
+  compare_price, cost_price, category, subcategory,
+  tags[], stock, track_inventory, image_url, images[],
+  video_url, has_variants, variants[], wa_product_id,
+  view_count, order_count, is_active, is_featured,
+  created_at, updated_at)
+- orders (id, order_id, phone, customer_name, items[],
+  item_count, subtotal, discount, discount_code,
+  shipping_cost, tax, total, shipping_name/phone/
+  address/city/state/pincode, status[pending/confirmed/
+  processing/shipped/delivered/cancelled/returned],
+  payment_status[unpaid/paid/refunded], payment_method,
+  payment_id, payment_link, payment_link_expires, paid_at,
+  courier, tracking_id, tracking_url, shipment_id,
+  awb_number, confirmed_at, shipped_at, delivered_at,
+  cancelled_at, customer_notes, internal_notes,
+  cancellation_reason, source[whatsapp/web/manual],
+  confirmation_sent, shipping_sent, delivery_sent,
+  review_sent, created_at, updated_at)
+- payments (id, payment_id, order_id, phone,
+  gateway[razorpay], gateway_payment_id, gateway_order_id,
+  gateway_signature, amount, currency[INR],
+  status[pending/paid/failed/refunded], method,
+  paid_at, failed_at, refund_amount, refund_id,
+  refunded_at, created_at)
+- carts (id, phone, items[], item_count, total,
+  status[active/converted/abandoned], reminder_count,
+  last_reminder_at, created_at, updated_at, converted_at)
+- coupons (id, code, type[percent/fixed], value,
+  min_order, max_discount, usage_limit, used_count,
+  starts_at, expires_at, is_active, created_at)
+- pincodes (pincode, city, state, is_serviceable,
+  cod_available, delivery_days, shipping_cost,
+  courier_priority[])
+
+MESSAGING:
+- quick_replies (id, shortcut, title, message,
+  message_type, buttons, list_data, media_url,
+  category[greeting/sales/support/closing],
+  variables[], use_count, is_active, created_at)
+- templates (id, name, wa_template_id, wa_status
+  [pending/approved/rejected], category, language,
+  header_type, header_text, body_text, footer_text,
+  buttons, variables[], sent_count, delivered_count,
+  read_count, created_at)
+- broadcasts (id, broadcast_id, name, message_type,
+  message, template_name, template_params, media_url,
+  buttons, target_type[all/segment/labels/custom],
+  target_labels, target_segment, target_filters,
+  target_count, sent/delivered/read/failed/clicked_count,
+  status[draft/scheduled/sending/completed/cancelled],
+  scheduled_at, started_at, completed_at,
+  send_rate[30/msg per min], created_by, created_at)
+- broadcast_recipients (id, broadcast_id, phone,
+  status[pending/sent/delivered/read/clicked/failed],
+  message_id, sent_at, delivered_at, read_at,
+  clicked_at, failed_at, error_message)
+
+AUTOMATION:
+- automations (id, name, description, trigger_type,
+  trigger_conditions, actions[], delay_minutes,
+  triggered_count, last_triggered_at, is_active,
+  created_at)
+- automation_log (id, automation_id, phone,
+  trigger_type, trigger_data, actions_executed,
+  status[success/failed], error_message, created_at)
+- conversation_state (phone PK, current_flow,
+  current_step, flow_data{}, started_at,
+  updated_at, expires_at)
+
+OTHER:
+- labels (id, name, color, description,
+  customer_count, chat_count, is_active, created_at)
+- analytics (id, event_type, event_name, phone,
+  order_id, product_id, campaign_id, data, created_at)
+- push_subscriptions (id, user_id, endpoint, p256dh,
+  auth, is_active, created_at)
+- settings (id, key, value, updated_at)
+
+DEFAULT DATA:
+- Admin user: admin@kaapav.com
+- Labels: VIP(gold), Hot Lead(red), New(teal),
+  Returning(blue), Wholesale(green)
+- Quick replies: hi, catalog, price, order, cod,
+  return, thanks
+- Settings: business_name, business_phone,
+  business_email, ai_auto_reply, auto_greeting,
+  business_hours, away_message
+
+### Zustand Store → Riverpod Provider Mapping
+useAuthStore      → auth_provider.dart
+useChatStore      → chat_provider.dart + message_provider.dart
+useOrderStore     → order_provider.dart
+useProductStore   → product_provider.dart
+useDashboardStore → analytics_provider.dart
+useUIStore        → Built-in Flutter (SnackBar, Navigator)
+useTemplateStore  → settings_provider.dart (merged)
+useSettingsStore  → settings_provider.dart
+
+Key Patterns from Zustand to Replicate:
+- Safe storage fallback → flutter_secure_storage
+- Chat persistence (last 50 chats) → SQLite
+- Order persistence (last 100 orders) → SQLite
+- Unread total calculation from chat list
+- Message dedup by message_id
+- Optimistic chat update on new message
+- Filtered getters (orders by status, products by category)
+- Quick reply use_count increment
+
+### All API Endpoints (wa.kaapav.com/api/)
+
+IMPLEMENTED IN worker index.js (✅ working):
+  GET  /health
+  GET  /webhook (verify)
+  POST /webhook (handle messages)
+  POST /api/auth/login (email/password + PIN + biometric)
+  POST /api/auth/register
+  GET  /api/auth/me
+  GET  /api/chats
+  GET  /api/chats/:phone
+  POST /api/chats/:phone/read
+  GET  /api/chats/:phone/messages
+  GET  /api/messages/:phone (alias)
+  POST /api/messages/send {phone/to, text}
+  GET  /api/orders
+  GET  /api/products
+  GET  /api/products/categories
+  GET  /api/customers
+  GET  /api/customers/:phone
+  GET  /api/analytics
+  GET  /api/stats
+  GET  /api/analytics/activities
+  GET  /api/analytics/pending
+  GET  /api/settings
+  PUT  /api/settings
+  POST /api/settings/test-whatsapp
+  POST /api/trigger-action
+  GET  /api/sync/check
+  GET  /api/sync/stream
+  GET  /api/sync/check-enhanced
+
+DEFINED IN SCHEMA BUT NOT YET IN index.js (will 404):
+  POST /api/auth/logout
+  POST /api/auth/refresh
+  POST /api/auth/change-password
+  POST /api/auth/biometric/*
+  PATCH /api/chats/:phone
+  POST /api/chats/:phone/star
+  POST /api/chats/:phone/block
+  POST /api/chats/:phone/labels
+  DELETE /api/chats/:phone/labels/:label
+  GET  /api/chats/stats
+  POST /api/messages/send-template
+  POST /api/messages/send-product
+  POST /api/messages/send-order-update
+  POST /api/messages/bulk-send
+  POST /api/messages/mark-read
+  POST /api/customers/:phone/notes
+  GET  /api/orders/:orderId
+  POST /api/orders
+  PATCH /api/orders/:orderId/status
+  POST /api/orders/:orderId/confirm
+  POST /api/orders/:orderId/cancel
+  POST /api/orders/:orderId/payment-link
+  POST /api/orders/:orderId/ship
+  GET  /api/orders/:orderId/tracking
+  POST /api/orders/:orderId/notes
+  GET  /api/orders/stats
+  GET  /api/products/:sku
+  POST /api/products
+  PATCH /api/products/:sku
+  PATCH /api/products/:sku/stock
+  DELETE /api/products/:sku
+  GET  /api/products/search?q=
+  All /api/broadcasts/* endpoints
+  All /api/payments/* endpoints
+  All /api/shipping/* endpoints
+  GET  /api/quick-replies
+  POST /api/quick-replies
+  PATCH /api/quick-replies/:id
+  DELETE /api/quick-replies/:id
+  GET  /api/templates
+  POST /api/templates
+  GET  /api/labels
+  POST /api/labels
+  DELETE /api/labels/:id
+  POST /api/push/*
+
+### PWA API Client (Fortress Edition v2.0)
+Features replicated in Flutter Dio api_client.dart:
+- Auto retry with exponential backoff + jitter (3 retries)
+- Request deduplication (GET only, md5 hash)
+- Token auto-refresh before expiry (5 min buffer)
+- Offline queue with persistence
+- Circuit breaker pattern (5 failures → open → 60s timeout)
+- Response caching with TTL (default 5 min)
+- Concurrent request limiting (max 6)
+- Request timeout (30s default)
+- Request cancellation (CancelToken)
+- Error classification (ApiError class with auth/forbidden/
+  notFound/rateLimit/server/network/timeout/offline/circuitOpen)
+- Health check monitoring
+- Security headers (X-Client-Platform, X-Client-Version)
+- Metrics tracking (total/success/failed/cached/retried/
+  offlineQueued)
+- Cache invalidation on mutations
+- Online/offline listener with auto queue processing
+- File upload with multipart + progress callback
+
+### Wrangler Config
+name = "kaapav-api"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+D1: binding=DB, database=kaapav-db, id=236ccd98-...
+KV: binding=KV, id=2a8a7995...
+R2: binding=MEDIA, bucket=kaapav-media
+Cron: ["*/5 * * * *"]
+Vars:
+  ENVIRONMENT = "production"
+  WEBHOOK_VERIFY_TOKEN = "kaapav_verify_2024"
+  APP_URL = "https://app.kaapav.com"
+  WEBSITE_URL = "https://www.kaapav.com"
+  CATALOG_URL = "https://wa.me/c/919148330016"
+  WAME_CHAT_URL = "https://wa.me/919148330016"
+  BESTSELLERS_URL = "https://www.kaapav.com/shop/category/..."
+  PAYMENT_URL = "https://razorpay.me/@kaapav"
+  TRACKING_URL = "https://www.shiprocket.in/shipment-tracking/"
+  FACEBOOK_URL = "https://www.facebook.com/kaapavfashionjewellery/"
+  INSTAGRAM_URL = "https://www.instagram.com/kaapavfashionjewellery/"
+Secrets: WA_PHONE_ID, WA_TOKEN, WA_APP_SECRET,
+         RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET,
+         SHIPROCKET_EMAIL, SHIPROCKET_PASSWORD,
+         VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, JWT_SECRET,
+         APP_PIN (value: 1428),
+         FCM_PROJECT_ID, FCM_CLIENT_EMAIL, FCM_PRIVATE_KEY
+
+## FLUTTER APP
+
+### Why Flutter (Decision Reasoning)
+- Capacitor PWA problems: 8 sec reply delay, no realtime
+  sync, no notifications, cranky UI, WebSocket dies in
+  background, web push flaky in native shell
+- React Native: JS bridge bottleneck, background WebSocket
+  unreliable, heavy setup
+- Flutter: Best background handling, native WebSocket,
+  native FCM, offline-first built-in, WhatsApp-like
+  smooth 60fps UI, AI generates Flutter code extremely well
+- Single user app but needs native-grade stability
+- I know zero code but AI handles Dart perfectly
+
+### Project Location & Device
+- Flutter project: D:\Apps\kaapav_app\
+- Device: Samsung SM-S918B (Galaxy S23 Ultra)
+- ADB ID: adb-RZCXA0946ED-n2wo8Y._adb-tls-connect._tcp
+- Build: flutter clean && flutter pub get &&
+         flutter build apk --release --no-tree-shake-icons
+- Install: flutter install -d adb-RZCXA0946ED-n2wo8Y._adb-tls-connect._tcp
+- Debug: flutter run -d adb-RZCXA0946ED-n2wo8Y._adb-tls-connect._tcp
+- Filtered: flutter run -d adb-RZCXA0946ED-n2wo8Y._adb-tls-connect._tcp
+            2>&1 | findstr /i "flutter"
+- Force uninstall: adb -s adb-RZCXA0946ED-n2wo8Y._adb-tls-connect._tcp
+                   uninstall com.kaapav_app
+
+### Flutter Environment (Verified ✅)
+- OS: Windows 10 (version 10.0.26200.7840)
+- Flutter: 3.24.5 (stable channel)
+- Dart: included with Flutter
+- Android Studio: 2025.2.1
+- Android SDK: 36.1.0
+- VS Code: with Flutter extension
+- Flutter SDK Path: D:\flutter\
+- flutter doctor: ALL CHECKS PASSED ✅
+
+### Tech Stack
+- Flutter 3.24.5 (stable) — UI framework
+- Dart — Language
+- Riverpod — State management
+- Dio — HTTP client (Fortress-grade api_client.dart)
+- Drift — Local SQLite (offline-first, mirrors D1)
+- flutter_secure_storage — Token/PIN storage
+- local_auth — Biometric (fingerprint/face)
+- firebase_messaging — FCM push notifications
+- flutter_local_notifications — Show notification UI
+- cached_network_image — Image caching from R2
+- connectivity_plus — Online/offline detection
+- image_picker — Camera/gallery
+- file_picker — Document picker
+- intl — Date formatting
+- timeago — Relative timestamps
+- shimmer — Loading skeletons
+- flutter_slidable — Swipe actions
+- crypto — MD5 for request dedup
+
+### Flutter Project Structure
+lib/
+├── main.dart  ← NEEDS FCM background handler + channel setup
+├── app.dart (_AppShell with auth state routing)
+├── config/
+│   ├── constants.dart (apiBaseUrl: https://wa.kaapav.com)
+│   ├── theme.dart (KaapavTheme + KaapavColors)
+│   └── routes.dart (AppRoutes with navigatorKey)
+├── models/
+│   ├── user.dart, chat.dart, message.dart, customer.dart
+│   ├── product.dart, order.dart, payment.dart, broadcast.dart
+│   ├── template.dart, quick_reply.dart, label.dart
+│   ├── automation.dart, coupon.dart, cart.dart
+│   └── analytics_model.dart
+├── services/
+│   ├── api/
+│   │   ├── api_client.dart (Fortress → Dio, singleton)
+│   │   ├── api_interceptors.dart (Auth + Logging)
+│   │   ├── chat_api.dart, message_api.dart
+│   │   ├── order_api.dart, product_api.dart
+│   │   ├── settings_api.dart, template_api.dart
+│   │   ├── dashboard_api.dart, broadcast_api.dart
+│   │   ├── payment_api.dart, shipping_api.dart, push_api.dart
+│   ├── auth_service.dart (PIN save/verify via secure storage)
+│   └── media_service.dart
+├── providers/
+│   ├── auth_provider.dart (PIN+biometric+JWT, master PIN 1428)
+│   ├── chat_provider.dart (30s auto-refresh, onNewMessage)
+│   ├── message_provider.dart (5s polling, optimistic send)
+│   ├── customer_provider.dart
+│   ├── product_provider.dart, order_provider.dart
+│   ├── broadcast_provider.dart, settings_provider.dart
+│   ├── analytics_provider.dart, connectivity_provider.dart
+├── screens/
+│   ├── splash_screen.dart (visual only — no navigation logic)
+│   ├── login_screen.dart (biometric tab + PIN tab)
+│   ├── home_screen.dart (5-tab PageView + bottom nav)
+│   ├── dashboard_screen.dart
+│   ├── chats/chats_screen.dart (chat list)
+│   ├── chats/chat_window_screen.dart (messages + input)
+│   ├── orders/orders_screen.dart
+│   ├── products/products_screen.dart
+│   └── settings/settings_screen.dart
+├── widgets/
+│   ├── chat_bubble.dart (text/buttons/image/doc/audio/video)
+│   ├── chat_input.dart (with ChatInputState GlobalKey)
+│   ├── chat_item.dart, customer_panel.dart
+│   ├── order_card.dart, product_card.dart
+│   ├── offline_banner.dart, toast.dart
+│   └── common/ (shimmer, empty state, etc)
+└── utils/
+    ├── helpers.dart, formatters.dart (Formatters class)
+    ├── validators.dart, logger.dart (AppLogger class)
+
+### Architecture Decisions
+- Optimistic UI: Show message instantly, send in background
+- Offline-first: SQLite mirrors D1, sync on reconnect (planned)
+- Realtime: Polling-based for now (30s chats, 5s messages)
+  FCM for push delivery once background fix applied
+- Media: R2 + cached_network_image (smart local cache)
+- Error handling: Circuit breaker + retry + offline queue
+  (same patterns as PWA Fortress API Client)
+- Auth: Pure local PIN/biometric → server JWT on unlock
+- No email/password login screen — single-user hardcoded PIN
+
+### Auth Flow (ACTUAL — How It Works NOW)
+APP OPEN:
+  1. App opens → _AppShell checks authState.status
+  2. Status is always 'initializing' → then 'locked'
+  3. LoginScreen shows (biometric tab + PIN tab)
+  4. Biometric auto-triggers on first load
+  5. If biometric succeeds → unlock
+  6. If biometric fails/dismissed → user taps PIN tab
+  7. User enters PIN 1428 → local AuthService.verifyPin()
+  8. If valid → _fetchJWTFromServer() fires
+  9. POST /api/auth/login {method:'pin', pin:'1428'}
+  10. Worker checks APP_PIN secret → returns JWT (7 days)
+  11. JWT stored in flutter_secure_storage + ApiClient cache
+  12. AuthStatus → authenticated → _AppShell shows HomeScreen
+  13. All API calls use Bearer <JWT> via AuthInterceptor
+
+AUTO-LOCK:
+  - App background >15 seconds → lockApp() → back to LoginScreen
+  - App resume <15s → continue normally
+  - App destroyed → locks immediately
+
+TOKEN MANAGEMENT:
+  - JWT stored in flutter_secure_storage (AES encrypted)
+  - AuthInterceptor reads from ApiClient.cachedToken first
+  - Falls back to flutter_secure_storage read
+  - Auto-refresh 5 minutes before expiry (JWT decode)
+  - Refresh via POST /api/auth/refresh with current token
+  - If refresh fails → clears stored token
+  - Master PIN: 1428 (hardcoded in auth_provider.dart)
+
+### Media Flow (Detailed)
+INCOMING (Customer sends image/doc/voice):
+  1. Customer sends media on WhatsApp
+  2. Meta webhook hits wa.kaapav.com/webhook
+  3. Worker downloads media from Meta API using media_id
+  4. Worker uploads to R2 (kaapav-media bucket)
+  5. Worker saves R2 URL in messages table (media_url)
+  6. Flutter polls → gets message with media_url
+  7. cached_network_image loads from R2 URL
+  8. Auto-cached locally on phone (smart cache)
+
+OUTGOING (You send image/doc):
+  1. Pick image/doc via image_picker/file_picker
+  2. Show preview instantly (optimistic UI)
+  3. Upload to R2 via worker API (POST with multipart)
+  4. Worker returns R2 URL
+  5. Worker sends to WhatsApp via Meta API
+  6. Message saved to D1 with R2 URL
+  7. Flutter updates message status ✓✓
+
+### Cron Jobs (Jewellery E-Commerce Specific)
+CURRENT (*/5 * * * * — every 5 minutes):
+  - Cart recovery check
+  - Order reminder check
+  - Campaign scheduler check
+  - Payment status check (Razorpay)
+
+SUGGESTED ADDITIONS:
+  - Shipping status update (check Shiprocket every 2h)
+  - Review request (24h after delivery)
+  - Reorder reminder (30 days after purchase)
+  - Birthday/Anniversary offers (daily 9am check)
+  - Back in stock notification (hourly check)
+  - VIP exclusive offers (weekly)
+  - Inactive customer re-engagement (weekly)
+  - Daily sales summary notification (daily 9pm)
+
+### Message Flow (Current State)
+INCOMING (Customer → You):
+  1. Customer sends message on WhatsApp
+  2. Meta sends webhook to wa.kaapav.com/webhook
+  3. Worker saves message to D1 (messages table)
+  4. Worker updates chat in D1 (chats table)
+  5. Worker updates customer in D1 (customers table)
+  6. sendFCMNotification() fires immediately (no await)
+  7. Autoresponder checks & replies if needed (parallel)
+  8. Autoresponder saves outgoing reply to D1
+  9. FCM push arrives on Flutter (~400ms–1.9s worker side)
+  10. Flutter polls /api/chats every 30s (fallback)
+  11. If chat window open → polls messages every 5s
+
+OUTGOING (You → Customer via Flutter):
+  1. You type message and hit send in ChatWindowScreen
+  2. Flutter shows message INSTANTLY (optimistic UI, status=sending)
+  3. Updates chat list via onNewMessage()
+  4. Sends POST /api/messages/send {phone, type:'text', text}
+  5. Worker receives → calls wa.sendText(phone, text)
+  6. Meta WhatsApp API delivers to customer
+  7. Worker saves to D1, returns messageId
+  8. Flutter updates status → ✓ (sent)
+  ⚠️ CURRENTLY DEBUGGING: message may not reach WhatsApp
+
+### Worker Changes Needed (Future — NOT done yet)
+1. worker/services/push.js → Add sendFCM() function
+2. worker/handlers/webhook.js → Call sendFCM after saving message
+3. worker/index.js → Add POST /api/push/fcm-register route
+
+## FLUTTER BUGS FIXED (ALL VERSIONS)
+
+### v4.0 Fixes
+- Fix 1: JWT Token Not Obtained → added _fetchJWTFromServer()
+- Fix 2: Settings Crash (Future.wait 404) → individual try/catch
+- Fix 3: Dispose Crash (ref after disposed) → wrapped in try/catch
+- Fix 4: Biometric Error Display → removed false error on dismiss
+- Fix 5: Customer Panel Warnings → removed dead null-aware ops
+- Fix 6: Chat Bubble Info Warnings → added const
+
+### v5.0 Fixes (NEW)
+- Fix 7: FCM OAuth JWT malformed — btoa() → b64url() for
+          header+payload. Spread operator → safe for-loop for
+          signature bytes. Google silently rejected the JWT
+          because btoa produces base64 not base64url (RFC 7515).
+- Fix 8: FCM fires BEFORE autoresponder (parallel execution).
+          Old: autoresponder finishes (~1-2s) → THEN FCM fires.
+          New: FCM fires immediately + autoresponder in parallel.
+          Result: notification latency 6-10s → <2 seconds.
+
+## CURRENT STATUS
+
+### What's WORKING ✅
+- [x] flutter analyze → 0 issues
+- [x] APK builds and installs on Samsung S23 Ultra
+- [x] PIN 1428 unlock → JWT obtained from server
+- [x] Biometric unlock works (Samsung fingerprint)
+- [x] Chat list loads from /api/chats
+- [x] Messages load from /api/chats/:phone/messages
+- [x] Autoresponder messages visible (via polling)
+- [x] Chat auto-refresh (30s polling)
+- [x] Message polling (5s when chat window open)
+- [x] Optimistic message send (UI shows instantly)
+- [x] Dashboard stats from /api/stats
+- [x] Orders list from /api/orders
+- [x] Products list from /api/products
+- [x] Settings load with graceful fallback
+- [x] Chat bubbles render (text/buttons/image/doc/audio)
+- [x] Customer panel with stats/badges
+- [x] App lock/unlock lifecycle (15s background)
+- [x] Worker FCM getAccessToken() — base64url fix applied
+- [x] Worker FCM OAuth token cached 55min in KV
+- [x] FCM fires before autoresponder (parallel)
+- [x] FCM notification shows when app is OPEN
+
+### What's BROKEN / IN PROGRESS 🔧
+
+1. FCM BACKGROUND NOTIFICATIONS 🔴 PRIORITY 1 — NEXT TASK
+   PROBLEM: No notification when app is background/killed.
+   Only shows when app is OPEN.
+   FIX NEEDED: lib/main.dart — 3 changes (see FCM section)
+   STATUS: NOT FIXED YET
+
+2. MESSAGE SENDING: Flutter sends POST /api/messages/send
+   with {phone, type:'text', text}. Worker endpoint exists.
+   May not reach customer's WhatsApp. Needs debug log check.
+
+3. REAL-TIME SYNC: FCM background fix will solve this.
+   Currently polling-based (5-30s delay as fallback).
+
+4. MISSING WORKER ROUTES: Quick replies, templates, labels,
+   broadcasts, payments, shipping not in index.js → 404.
+   Flutter handles 404s gracefully.
+
+5. MEDIA UPLOAD/DOWNLOAD: Not tested yet.
+
+6. OFFLINE-FIRST SQLITE: Drift models exist, sync not done.
+
+### NEXT IMMEDIATE TASK 🔴
+Paste lib/main.dart → get full FCM background fix:
+1. @pragma background handler (top-level, outside main)
+2. Android notification channel 'kaapav_messages'
+3. Notification permission request
+→ Rebuild APK → kill app → send WhatsApp → confirm notification
+
+### Debug Copy Commands
+Batch 1 (services + models):
+Get-Content lib\models\user.dart, lib\models\analytics_model.dart, lib\services\api\api_client.dart, lib\services\api\dashboard_api.dart, lib\services\api\broadcast_api.dart, lib\services\api\payment_api.dart, lib\services\api\settings_api.dart, lib\services\api\shipping_api.dart, lib\services\api\message_api.dart, lib\services\media_service.dart, lib\services\auth_service.dart | Set-Clipboard
+
+Batch 2 (providers + screens):
+Get-Content lib\providers\analytics_provider.dart, lib\providers\message_provider.dart, lib\providers\product_provider.dart, lib\screens\dashboard_screen.dart, lib\screens\home_screen.dart, lib\screens\chats\chat_window_screen.dart, lib\screens\chats\chats_screen.dart, lib\screens\orders\orders_screen.dart, lib\widgets\offline_banner.dart, lib\app.dart | Set-Clipboard
+
+Batch 3 (auth + config):
+Get-Content lib\providers\auth_provider.dart, lib\config\constants.dart, lib\services\api\api_interceptors.dart, lib\app.dart | Set-Clipboard
+
+### Build Commands
+
+flutter clean; flutter pub get; flutter build apk --release; flutter install -d adb-RZCXA0946ED-n2wo8Y._adb-tls-connect._tcp
+
+flutter clean && flutter pub get && flutter build apk --release --no-tree-shake-icons
+adb -s adb-RZCXA0946ED-n2wo8Y._adb-tls-connect._tcp uninstall com.kaapav_app
+flutter install -d adb-RZCXA0946ED-n2wo8Y._adb-tls-connect._tcp
+
+═══════════════════════════════════════════════════════════════
+END OF MEMORY CONTEXT v5.0 (FINAL)
+═══════════════════════════════════════════════════════════════

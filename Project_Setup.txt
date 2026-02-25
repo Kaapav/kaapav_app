@@ -1,0 +1,275 @@
+kaapav_app/
+│
+├── lib/
+│   ├── main.dart
+│   ├── app.dart
+│   │
+│   ├── config/
+│   │   ├── constants.dart
+│   │   ├── theme.dart
+│   │   └── routes.dart
+│   │
+│   ├── models/
+│   │   ├── user.dart
+│   │   ├── chat.dart
+│   │   ├── message.dart
+│   │   ├── customer.dart
+│   │   ├── product.dart
+│   │   ├── order.dart
+│   │   ├── payment.dart
+│   │   ├── broadcast.dart
+│   │   ├── template.dart
+│   │   ├── quick_reply.dart
+│   │   ├── label.dart
+│   │   ├── automation.dart
+│   │   ├── coupon.dart
+│   │   ├── cart.dart
+│   │   └── analytics.dart
+│   │
+│   ├── services/
+│   │   ├── api/
+│   │   │   ├── api_client.dart          # Your Fortress → Dio equivalent
+│   │   │   ├── api_interceptors.dart
+│   │   │   ├── auth_api.dart
+│   │   │   ├── chat_api.dart
+│   │   │   ├── message_api.dart
+│   │   │   ├── order_api.dart
+│   │   │   ├── product_api.dart
+│   │   │   ├── broadcast_api.dart
+│   │   │   ├── payment_api.dart
+│   │   │   ├── shipping_api.dart
+│   │   │   ├── settings_api.dart
+│   │   │   ├── template_api.dart
+│   │   │   ├── dashboard_api.dart
+│   │   │   └── push_api.dart
+│   │   │
+│   │   ├── websocket_service.dart       # NEW — Live message sync
+│   │   ├── notification_service.dart    # NEW — FCM native
+│   │   ├── local_db_service.dart        # NEW — SQLite offline
+│   │   ├── sync_service.dart            # NEW — Background sync
+│   │   ├── auth_service.dart
+│   │   ├── media_service.dart
+│   │   └── biometric_service.dart
+│   │
+│   ├── providers/
+│   │   ├── auth_provider.dart
+│   │   ├── chat_provider.dart
+│   │   ├── message_provider.dart
+│   │   ├── customer_provider.dart
+│   │   ├── product_provider.dart
+│   │   ├── order_provider.dart
+│   │   ├── broadcast_provider.dart
+│   │   ├── settings_provider.dart
+│   │   ├── analytics_provider.dart
+│   │   └── connectivity_provider.dart
+│   │
+│   ├── screens/
+│   │   ├── splash_screen.dart
+│   │   ├── login_screen.dart
+│   │   ├── dashboard_screen.dart
+│   │   ├── chats/
+│   │   │   ├── chats_screen.dart
+│   │   │   └── chat_window_screen.dart
+│   │   ├── customers/
+│   │   │   └── customers_screen.dart
+│   │   ├── products/
+│   │   │   ├── products_screen.dart
+│   │   │   └── product_detail_screen.dart
+│   │   ├── orders/
+│   │   │   ├── orders_screen.dart
+│   │   │   └── order_detail_screen.dart
+│   │   ├── broadcasts/
+│   │   │   └── broadcasts_screen.dart
+│   │   ├── analytics/
+│   │   │   └── analytics_screen.dart
+│   │   └── settings/
+│   │       └── settings_screen.dart
+│   │
+│   ├── widgets/
+│   │   ├── chat_bubble.dart
+│   │   ├── chat_item.dart
+│   │   ├── bottom_nav.dart
+│   │   ├── customer_panel.dart
+│   │   ├── media_picker.dart
+│   │   ├── order_card.dart
+│   │   ├── product_card.dart
+│   │   ├── quick_replies.dart
+│   │   ├── loading_screen.dart
+│   │   ├── offline_banner.dart
+│   │   ├── toast.dart
+│   │   └── common/
+│   │       ├── app_bar.dart
+│   │       ├── search_bar.dart
+│   │       ├── empty_state.dart
+│   │       ├── error_widget.dart
+│   │       └── shimmer_loading.dart
+│   │
+│   └── utils/
+│       ├── helpers.dart
+│       ├── formatters.dart
+│       ├── validators.dart
+│       └── logger.dart
+│
+├── assets/
+│   ├── images/
+│   │   ├── logo.png
+│   │   └── splash.png
+│   ├── icons/
+│   │   ├── icon.png                     # 1024x1024
+│   │   └── icon_foreground.png
+│   └── sounds/
+│       └── notification.mp3
+│
+├── android/
+│   ├── app/
+│   │   └── src/
+│   │       └── main/
+│   │           ├── AndroidManifest.xml
+│   │           └── google-services.json  # Firebase config
+│   └── ...
+│
+├── ios/
+│   └── ...
+│
+├── test/
+│   └── ...
+│
+├── pubspec.yaml                          # Dependencies
+├── .env                                  # API URL + secrets
+└── README.md
+
+
+
+
+
+
+Phase 1: Foundation (18 files)
+text
+
+FILE                              PURPOSE
+─────────────────────────────────────────────────────
+1.  pubspec.yaml                  All dependencies
+2.  .env                          API URL + config
+3.  lib/config/constants.dart     App constants
+4.  lib/config/theme.dart         WhatsApp-like theme
+5.  lib/models/user.dart          Dashboard user model
+6.  lib/models/chat.dart          Chat model
+7.  lib/models/message.dart       Message model
+8.  lib/models/customer.dart      Customer model
+9.  lib/models/product.dart       Product model
+10. lib/models/order.dart         Order model
+11. lib/models/payment.dart       Payment model
+12. lib/models/broadcast.dart     Broadcast model
+13. lib/models/template.dart      Template model
+14. lib/models/quick_reply.dart   Quick reply model
+15. lib/models/label.dart         Label model
+16. lib/models/automation.dart    Automation model
+17. lib/models/coupon.dart        Coupon model
+18. lib/models/cart.dart          Cart model
+19. lib/models/analytics_model.dart Analytics model
+Phase 2: Services (22 files)
+text
+
+FILE                                    PURPOSE
+─────────────────────────────────────────────────────
+20. lib/services/api/api_client.dart        Fortress → Dio (core client)
+21. lib/services/api/api_interceptors.dart  Auth + retry + logging
+22. lib/services/api/auth_api.dart          Login/logout/refresh
+23. lib/services/api/chat_api.dart          Get chats/update/star/block
+24. lib/services/api/message_api.dart       Send/receive messages
+25. lib/services/api/order_api.dart         CRUD orders
+26. lib/services/api/product_api.dart       CRUD products
+27. lib/services/api/broadcast_api.dart     Create/send broadcasts
+28. lib/services/api/payment_api.dart       Razorpay links/status
+29. lib/services/api/shipping_api.dart      Shiprocket integration
+30. lib/services/api/settings_api.dart      App settings
+31. lib/services/api/template_api.dart      Quick replies/templates/labels
+32. lib/services/api/dashboard_api.dart     Stats/analytics
+33. lib/services/api/push_api.dart          FCM registration
+34. lib/services/auth_service.dart          Token storage + biometric
+35. lib/services/websocket_service.dart     Live message sync
+36. lib/services/notification_service.dart  FCM + local notifications
+37. lib/services/local_db_service.dart      SQLite offline DB
+38. lib/services/sync_service.dart          Background sync
+39. lib/services/media_service.dart         Image/doc upload to R2
+40. lib/services/biometric_service.dart     Fingerprint/face unlock
+41. lib/utils/logger.dart                   Debug logging
+Phase 3: State Management (10 files)
+text
+
+FILE                                    PURPOSE
+─────────────────────────────────────────────────────
+42. lib/providers/auth_provider.dart        Auth state
+43. lib/providers/chat_provider.dart        Chat list state
+44. lib/providers/message_provider.dart     Messages per chat
+45. lib/providers/customer_provider.dart    Customer list state
+46. lib/providers/product_provider.dart     Product list state
+47. lib/providers/order_provider.dart       Order list state
+48. lib/providers/broadcast_provider.dart   Broadcast state
+49. lib/providers/settings_provider.dart    Settings state
+50. lib/providers/analytics_provider.dart   Dashboard stats
+51. lib/providers/connectivity_provider.dart Online/offline state
+Phase 4: UI — Widgets (16 files)
+text
+
+FILE                                       PURPOSE
+─────────────────────────────────────────────────────
+52. lib/widgets/chat_bubble.dart            Message bubble (sent/received)
+53. lib/widgets/chat_item.dart              Chat list row
+54. lib/widgets/bottom_nav.dart             Bottom navigation bar
+55. lib/widgets/customer_panel.dart         Customer info side panel
+56. lib/widgets/media_picker.dart           Camera/gallery/doc picker
+57. lib/widgets/order_card.dart             Order summary card
+58. lib/widgets/product_card.dart           Product grid card
+59. lib/widgets/quick_replies.dart          Quick reply selector
+60. lib/widgets/loading_screen.dart         Full screen loader
+61. lib/widgets/offline_banner.dart         "You are offline" bar
+62. lib/widgets/toast.dart                  Toast notifications
+63. lib/widgets/common/custom_app_bar.dart  Reusable app bar
+64. lib/widgets/common/custom_search_bar.dart Search input
+65. lib/widgets/common/empty_state.dart     Empty list placeholder
+66. lib/widgets/common/error_widget.dart    Error display
+67. lib/widgets/common/shimmer_loading.dart Loading skeleton
+Phase 5: Screens + Wiring (16 files)
+text
+
+FILE                                              PURPOSE
+─────────────────────────────────────────────────────
+68. lib/screens/splash_screen.dart                App launch screen
+69. lib/screens/login_screen.dart                 Login + biometric
+70. lib/screens/dashboard_screen.dart             Home dashboard
+71. lib/screens/chats/chats_screen.dart           Chat list
+72. lib/screens/chats/chat_window_screen.dart     Chat conversation
+73. lib/screens/customers/customers_screen.dart   Customer list
+74. lib/screens/products/products_screen.dart     Product list
+75. lib/screens/products/product_detail_screen.dart Product view/edit
+76. lib/screens/orders/orders_screen.dart         Order list
+77. lib/screens/orders/order_detail_screen.dart   Order view/manage
+78. lib/screens/broadcasts/broadcasts_screen.dart Broadcast list/create
+79. lib/screens/analytics/analytics_screen.dart   Analytics dashboard
+80. lib/screens/settings/settings_screen.dart     App settings
+81. lib/config/routes.dart                        All routes
+82. lib/app.dart                                  App root with providers
+83. lib/main.dart                                 Entry point (final)
+Summary
+text
+
+┌─────────────────────┬───────┐
+│ Phase               │ Files │
+├─────────────────────┼───────┤
+│ Phase 1: Foundation │  19   │
+│ Phase 2: Services   │  22   │
+│ Phase 3: Providers  │  10   │
+│ Phase 4: Widgets    │  16   │
+│ Phase 5: Screens    │  16   │
+├─────────────────────┼───────┤
+│ TOTAL               │  83   │
+└─────────────────────┴───────┘
+Worker Backend Changes (Tiny)
+text
+
+FILE                              CHANGE
+─────────────────────────────────────────────────────
+worker/handlers/sync.js           Add WebSocket upgrade handler
+worker/services/push.js           Add FCM push alongside web push
+worker/index.js                   Add WebSocket route
