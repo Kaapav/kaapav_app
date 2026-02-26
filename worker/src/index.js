@@ -94,7 +94,7 @@ async function sendFCMNotification(env, phone, name, text) {
     if (!deviceToken) return;
     const accessToken = await getAccessToken(env);
     if (!accessToken) return;
-    await fetch(`https://fcm.googleapis.com/v1/projects/${env.FCM_PROJECT_ID}/messages:send`, {
+    const fcmRes = await fetch(`https://fcm.googleapis.com/v1/projects/${env.FCM_PROJECT_ID}/messages:send`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -106,6 +106,8 @@ async function sendFCMNotification(env, phone, name, text) {
         }
       }),
     });
+    const fcmData = await fcmRes.json();
+    console.log('FCM result:', JSON.stringify(fcmData));
   } catch (e) { console.error('FCM error:', e); }
 }
 
@@ -119,23 +121,25 @@ async function sendWhatsAppText(env, phone, text) {
   return res.json();
 }
 
-async function sendWhatsAppButtons(env, phone, text, buttons) {
+async function sendWhatsAppButtons(env, phone, text, buttons, footer = null) {
+  const interactive = {
+    type: 'button',
+    body: { text },
+    action: { buttons: buttons.map(b => ({ type: 'reply', reply: { id: b.id, title: b.title } })) }
+  };
+  if (footer) interactive.footer = { text: footer };
+
   const res = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${env.WA_TOKEN}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      messaging_product: 'whatsapp', to: phone, type: 'interactive',
-      interactive: {
-        type: 'button',
-        body: { text },
-        action: { buttons: buttons.map(b => ({ type: 'reply', reply: { id: b.id, title: b.title } })) }
-      }
+      messaging_product: 'whatsapp', to: phone, type: 'interactive', interactive
     }),
   });
   return res.json();
 }
 
-// ═══════════════════ HANDLERS ═══════════════════
+// ═══════════════════ WEBHOOK HANDLERS ═══════════════════
 async function handleWebhookVerify(request, env) {
   const url = new URL(request.url);
   const mode = url.searchParams.get('hub.mode');
@@ -181,13 +185,11 @@ async function handleWebhookPost(request, env) {
     const messageId = msg.id;
     const timestamp = new Date(parseInt(msg.timestamp) * 1000).toISOString();
 
-    // Save to D1
     await env.DB.prepare(`
       INSERT OR IGNORE INTO messages (message_id, phone, text, message_type, direction, button_id, button_text, status, timestamp, created_at)
       VALUES (?, ?, ?, ?, 'incoming', ?, ?, 'delivered', ?, datetime('now'))
     `).bind(messageId, phone, text, messageType, buttonId, buttonText, timestamp).run();
 
-    // Update chat
     await env.DB.prepare(`
       INSERT INTO chats (phone, customer_name, last_message, last_message_type, last_timestamp, last_direction, unread_count, total_messages, updated_at)
       VALUES (?, ?, ?, ?, ?, 'incoming', 1, 1, datetime('now'))
@@ -202,7 +204,6 @@ async function handleWebhookPost(request, env) {
         updated_at = datetime('now')
     `).bind(phone, name, text || messageType, messageType, timestamp).run();
 
-    // Update customer
     await env.DB.prepare(`
       INSERT INTO customers (phone, name, message_count, first_seen, last_seen, updated_at)
       VALUES (?, ?, 1, datetime('now'), datetime('now'), datetime('now'))
@@ -213,10 +214,8 @@ async function handleWebhookPost(request, env) {
         updated_at = datetime('now')
     `).bind(phone, name).run();
 
-    // FCM fire-and-forget
     sendFCMNotification(env, phone, name, text);
 
-    // Autoresponder
     try {
       const autoResponder = new AutoResponder(env);
       await autoResponder.process({ phone, name, text, messageType, buttonId, messageId });
@@ -383,7 +382,7 @@ async function handleRegisterFCM(request, env) {
   return jsonResponse({ success: true });
 }
 
-// ═══════════════════ AUTORESPONDER ═══════════════════
+// ═══════════════════ AUTORESPONDER (LUXURY EDITION) ═══════════════════
 class AutoResponder {
   constructor(env) { this.env = env; }
 
@@ -419,7 +418,7 @@ class AutoResponder {
     };
     if (ID_MAP[input]) return ID_MAP[input];
 
-    if (/^hi|hello|hey|helo/.test(input)) return 'MAIN_MENU';
+    if (/^(hi|hello|hey|helo)/.test(input)) return 'MAIN_MENU';
     if (/browse|shop|website|collection/.test(input)) return 'JEWELLERY_MENU';
     if (/offer|discount|deal|sale/.test(input)) return 'OFFERS_MENU';
     if (/payment|pay|upi|card/.test(input)) return 'PAYMENT_MENU';
@@ -436,85 +435,328 @@ class AutoResponder {
   async executeAction(phone, action) {
     const env = this.env;
     const send = (text) => sendWhatsAppText(env, phone, text);
-    const buttons = (text, btns) => sendWhatsAppButtons(env, phone, text, btns);
+    const buttons = (text, btns, footer = null) => sendWhatsAppButtons(env, phone, text, btns, footer);
     const saveOutgoing = async (text, type = 'text') => {
       const msgId = `auto_${Date.now()}_${phone}`;
-      await env.DB.prepare(`INSERT OR IGNORE INTO messages (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at) VALUES (?, ?, ?, ?, 'outgoing', 'sent', 1, datetime('now'), datetime('now'))`).bind(msgId, phone, text, type).run();
+      await env.DB.prepare(`
+        INSERT OR IGNORE INTO messages (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at)
+        VALUES (?, ?, ?, ?, 'outgoing', 'sent', 1, datetime('now'), datetime('now'))
+      `).bind(msgId, phone, text, type).run();
     };
 
     switch (action) {
+
       case 'MAIN_MENU':
         await buttons(
-          `💎 *Welcome to KAAPAV Fashion Jewellery!*\n\nDiscover our exclusive collection of handcrafted jewellery. What would you like to explore?`,
-          [{ id: 'jewellery_menu', title: '💍 Jewellery' }, { id: 'offers_menu', title: '🎁 Offers' }, { id: 'chat_menu', title: '💬 Chat' }]
+`═══════════════════════════
+   ✨ *KAAPAV Fashion Jewellery* ✨
+ ═══════════════════════════
+
+👑 Crafted for Royalty
+
+💎 Timeless elegance
+✨ Stunning designs
+🎁 Perfect gifting
+
+Select below 👇`,
+          [
+            { id: 'jewellery_menu', title: '💎 Jewellery' },
+            { id: 'offers_menu', title: '🎁 Offers' },
+            { id: 'chat_menu', title: '💬 Chat with Us' },
+          ],
+          '💖 Where Luxury Meets You'
         );
         await saveOutgoing('Main Menu sent', 'buttons');
         break;
+
       case 'JEWELLERY_MENU':
         await buttons(
-          `💍 *KAAPAV Jewellery Collection*\n\nExplore our stunning range of fashion jewellery!`,
-          [{ id: 'open_website', title: '🌐 Website' }, { id: 'open_catalog', title: '📖 Catalogue' }, { id: 'main_menu', title: '🔙 Back' }]
+`═══════════════════════════
+   💎 *Our Collections* 💎
+═══════════════════════════
+
+👑 Curated for You
+
+✨ Handcrafted pieces
+🎀 Gift-ready packaging
+💝 Made with love
+
+Explore now 👇`,
+          [
+            { id: 'open_website', title: '🌐 Website' },
+            { id: 'open_catalog', title: '📱 Catalogue' },
+            { id: 'main_menu', title: '🏠 Back' },
+          ],
+          '🌐 kaapav.com'
         );
         await saveOutgoing('Jewellery Menu sent', 'buttons');
         break;
+
       case 'OFFERS_MENU':
         await buttons(
-          `🎁 *KAAPAV Special Offers*\n\nCheck out our latest deals and bestsellers!`,
-          [{ id: 'open_bestsellers', title: '⭐ Bestsellers' }, { id: 'payment_menu', title: '💳 Pay & Track' }, { id: 'main_menu', title: '🔙 Back' }]
+`═══════════════════════════
+   🎁 *Exclusive Offers* 🎁
+═══════════════════════════
+
+👑 Limited Time Only
+
+🔥 Flat 50% OFF
+🚚 Free shipping ₹498+
+⚡ Hurry, grab yours!
+
+Shop now 👇`,
+          [
+            { id: 'open_bestsellers', title: '🛍️ Bestsellers' },
+            { id: 'payment_menu', title: '💳 Pay & Track' },
+            { id: 'main_menu', title: '🏠 Back' },
+          ],
+          "✨ Don't miss out!"
         );
         await saveOutgoing('Offers Menu sent', 'buttons');
         break;
+
       case 'PAYMENT_MENU':
         await buttons(
-          `💳 *Payment & Tracking*\n\nEasy payment and order tracking options`,
-          [{ id: 'pay_now', title: '💰 Pay Now' }, { id: 'track_order', title: '📦 Track Order' }, { id: 'main_menu', title: '🔙 Back' }]
+`═══════════════════════════
+   💳 *Payment & Tracking* 💳
+═══════════════════════════
+
+👑 Secure & Easy
+
+🏦 UPI / Cards / Netbanking
+✅ Instant confirmation
+📦 Track your order
+
+⚠️ COD not available
+
+Choose below 👇`,
+          [
+            { id: 'pay_now', title: '💳 Pay Now' },
+            { id: 'track_order', title: '📦 Track Order' },
+            { id: 'main_menu', title: '🏠 Back' },
+          ],
+          '🔒 100% Secure'
         );
         await saveOutgoing('Payment Menu sent', 'buttons');
         break;
+
       case 'CHAT_MENU':
         await buttons(
-          `💬 *Connect with Us*\n\nWe'd love to hear from you!`,
-          [{ id: 'chat_now', title: '👩‍💼 Chat Now' }, { id: 'social_menu', title: '📱 Follow Us' }, { id: 'main_menu', title: '🔙 Back' }]
+`═══════════════════════════
+   💬 *We're Here to Help* 💬
+═══════════════════════════
+
+👑 Personal Assistance
+
+👗 Styling advice
+📋 Order support
+⚡ Quick response
+
+How can we help? 👇`,
+          [
+            { id: 'chat_now', title: '💬 Chat Now' },
+            { id: 'social_menu', title: '📱 Follow Us' },
+            { id: 'main_menu', title: '🏠 Back' },
+          ],
+          '💝 At your service'
         );
         await saveOutgoing('Chat Menu sent', 'buttons');
         break;
+
       case 'SOCIAL_MENU':
         await buttons(
-          `📱 *Follow KAAPAV on Social Media*`,
-          [{ id: 'open_facebook', title: '📘 Facebook' }, { id: 'open_instagram', title: '📸 Instagram' }, { id: 'main_menu', title: '🔙 Back' }]
+`═══════════════════════════
+   📱 *Join Our World* 📱
+═══════════════════════════
+
+👑 Stay Connected
+
+🆕 New launches
+🎁 Exclusive offers
+💕 Behind the scenes
+
+Follow us 👇`,
+          [
+            { id: 'open_facebook', title: '👍 Facebook' },
+            { id: 'open_instagram', title: '📷 Instagram' },
+            { id: 'main_menu', title: '🏠 Back' },
+          ],
+          '✨ Be part of KAAPAV'
         );
         await saveOutgoing('Social Menu sent', 'buttons');
         break;
+
       case 'OPEN_WEBSITE':
-        await send(`🌐 *KAAPAV Website*\n\nVisit us at:\n${env.WEBSITE_URL}\n\nShop our full collection of fashion jewellery! 💎`);
+        await send(
+`═══════════════════════════
+🌐 *Visit Our Website*
+═══════════════════════════
+
+👑 Complete Collection
+
+💎 Latest arrivals
+🛍️ Exclusive designs
+✨ Easy shopping
+
+Explore now:
+${env.WEBSITE_URL}
+
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`
+        );
         await saveOutgoing('Website link sent');
         break;
+
       case 'OPEN_CATALOG':
-        await send(`📖 *KAAPAV WhatsApp Catalogue*\n\nView our catalogue:\n${env.CATALOG_URL}\n\nBrowse and order directly from WhatsApp! 🛍️`);
+        await send(
+`═══════════════════════════
+📱 *WhatsApp Catalogue*
+═══════════════════════════
+
+👑 Quick Browse & Order
+
+👆 Tap to view
+💝 Easy selection
+🛒 Instant order
+
+Browse now:
+${env.CATALOG_URL}
+
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`
+        );
         await saveOutgoing('Catalog link sent');
         break;
+
       case 'OPEN_BESTSELLERS':
-        await send(`⭐ *KAAPAV Bestsellers*\n\nShop our trending collection:\n${env.BESTSELLERS_URL}\n\nLimited stock — order now! 🔥`);
+        await send(
+`═══════════════════════════
+🛍️ *Bestselling Pieces*
+═══════════════════════════
+
+👑 Customer Favorites
+
+❤️ Most loved designs
+🔥 Trending now
+⚡ Limited stock!
+
+Shop now:
+${env.BESTSELLERS_URL}
+
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`
+        );
         await saveOutgoing('Bestsellers link sent');
         break;
+
       case 'PAY_NOW':
-        await send(`💰 *Pay for Your Order*\n\nClick to pay:\n${env.PAYMENT_URL}\n\nSafe, secure and instant payment! ✅`);
+        await send(
+`═══════════════════════════
+💳 *Secure Payment*
+═══════════════════════════
+
+👑 100% Safe Checkout
+
+🏦 UPI / Cards / Netbanking
+✅ Instant confirmation
+🔒 Secure & trusted
+
+Pay now:
+${env.PAYMENT_URL}
+
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`
+        );
         await saveOutgoing('Payment link sent');
         break;
+
       case 'TRACK_ORDER':
-        await send(`📦 *Track Your Order*\n\nVisit:\n${env.TRACKING_URL}\n\nOr share your Order ID (KP-XXXXX) and we'll check for you! 🚚`);
+        await send(
+`═══════════════════════════
+📦 *Track Your Order*
+═══════════════════════════
+
+👑 Real-Time Updates
+
+📍 Live tracking
+🚚 Delivery status
+⏰ ETA updates
+
+Track here:
+${env.TRACKING_URL}
+
+Or share your Order ID (KP-XXXXX) and we'll check for you!
+
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`
+        );
         await saveOutgoing('Track order sent');
         break;
+
       case 'CHAT_NOW':
-        await send(`👩‍💼 *Live Chat*\n\nYou're already chatting with us! 😊\n\nA team member will respond shortly.\nBusiness hours: 9 AM – 9 PM IST`);
+        await send(
+`═══════════════════════════
+💬 *Chat With Us*
+═══════════════════════════
+
+👑 Personal Assistance
+
+👗 Styling advice
+📋 Order help
+⚡ Quick response
+
+Chat now:
+${env.WAME_CHAT_URL}
+
+Business hours: 10:30 AM – 7:00 PM IST
+Sunday Off
+We'll respond shortly! 😊
+
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`
+        );
         await saveOutgoing('Chat now sent');
         break;
+
       case 'OPEN_FACEBOOK':
-        await send(`📘 *KAAPAV on Facebook*\n\n${env.FACEBOOK_URL}\n\nLike our page for latest updates! 👍`);
+        await send(
+`═══════════════════════════
+👍 *Follow on Facebook*
+═══════════════════════════
+
+👑 Join Our Community
+
+🆕 New launches
+🎁 Exclusive offers
+📸 Behind the scenes
+
+Follow us:
+${env.FACEBOOK_URL}
+
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`
+        );
         await saveOutgoing('Facebook link sent');
         break;
+
       case 'OPEN_INSTAGRAM':
-        await send(`📸 *KAAPAV on Instagram*\n\n${env.INSTAGRAM_URL}\n\nFollow us for jewellery inspiration! ✨`);
+        await send(
+`═══════════════════════════
+📷 *Follow on Instagram*
+═══════════════════════════
+
+👑 Daily Inspiration
+
+💅 Styling tips
+✨ New arrivals
+💕 Customer stories
+
+Follow us:
+${env.INSTAGRAM_URL}
+
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`
+        );
         await saveOutgoing('Instagram link sent');
         break;
     }
@@ -530,16 +772,13 @@ export default {
     const path = url.pathname;
     const method = request.method;
 
-    // Health
     if (path === '/health') return new Response('OK', { status: 200 });
 
-    // Webhook
     if (path === '/webhook' || path === '/api/webhook') {
       if (method === 'GET') return handleWebhookVerify(request, env);
       if (method === 'POST') return handleWebhookPost(request, env);
     }
 
-    // Auth (no JWT needed)
     if (path === '/api/auth/login' && method === 'POST') return handleLogin(request, env);
     if (path === '/api/auth/me' && method === 'GET') {
       const user = await authMiddleware(request, env);
@@ -552,11 +791,9 @@ export default {
       return jsonResponse({ success: true, token });
     }
 
-    // All routes below require auth
     const user = await authMiddleware(request, env);
     if (!user) return errorResponse('Unauthorized', 401);
 
-    // Chats
     if (path === '/api/chats' && method === 'GET') return handleGetChats(request, env);
     if (path.match(/^\/api\/chats\/(.+)\/messages$/) && method === 'GET') {
       const phone = path.match(/^\/api\/chats\/(.+)\/messages$/)[1];
@@ -573,20 +810,13 @@ export default {
       return jsonResponse({ success: true, chat });
     }
 
-    // Messages
     if (path === '/api/messages/send' && method === 'POST') return handleSendMessage(request, env);
-
-    // Orders
     if (path === '/api/orders' && method === 'GET') return handleGetOrders(request, env);
-
-    // Products
     if (path === '/api/products' && method === 'GET') return handleGetProducts(request, env);
     if (path === '/api/products/categories' && method === 'GET') {
       const { results } = await env.DB.prepare(`SELECT DISTINCT category FROM products WHERE is_active=1 AND category IS NOT NULL`).all();
       return jsonResponse({ success: true, categories: results.map(r => r.category) });
     }
-
-    // Customers
     if (path === '/api/customers' && method === 'GET') return handleGetCustomers(request, env);
     if (path.match(/^\/api\/customers\/(.+)$/) && method === 'GET') {
       const phone = path.match(/^\/api\/customers\/(.+)$/)[1];
@@ -594,7 +824,6 @@ export default {
       return jsonResponse({ success: true, customer });
     }
 
-    // Stats & Analytics
     if (path === '/api/stats' && method === 'GET') return handleGetStats(env);
     if (path === '/api/analytics' && method === 'GET') return handleGetAnalytics(env);
     if (path === '/api/analytics/activities' && method === 'GET') return handleGetActivities(env);
@@ -603,7 +832,6 @@ export default {
       return jsonResponse({ success: true, pending: results });
     }
 
-    // Settings
     if (path === '/api/settings' && method === 'GET') return handleGetSettings(env);
     if (path === '/api/settings' && method === 'PUT') {
       const body = await request.json();
@@ -613,31 +841,21 @@ export default {
       return jsonResponse({ success: true });
     }
 
-    // Quick Replies
     if (path === '/api/quick-replies' && method === 'GET') {
       const { results } = await env.DB.prepare(`SELECT * FROM quick_replies WHERE is_active=1 ORDER BY use_count DESC`).all();
       return jsonResponse({ success: true, quickReplies: results });
     }
-
-    // Labels
     if (path === '/api/labels' && method === 'GET') {
       const { results } = await env.DB.prepare(`SELECT * FROM labels WHERE is_active=1`).all();
       return jsonResponse({ success: true, labels: results });
     }
-
-    // Templates
     if (path === '/api/templates' && method === 'GET') {
       const { results } = await env.DB.prepare(`SELECT * FROM templates ORDER BY created_at DESC`).all();
       return jsonResponse({ success: true, templates: results });
     }
 
-    // Sync
     if (path === '/api/sync/check' && method === 'GET') return handleSyncCheck(env);
-
-    // FCM Token Registration
     if (path === '/api/push/fcm-register' && method === 'POST') return handleRegisterFCM(request, env);
-
-    // Test WhatsApp
     if (path === '/api/settings/test-whatsapp' && method === 'POST') {
       const result = await sendWhatsAppText(env, env.WA_PHONE_ID, 'Test message from KAAPAV Worker ✅');
       return jsonResponse({ success: true, result });
@@ -648,6 +866,5 @@ export default {
 
   async scheduled(event, env, ctx) {
     console.log('Cron running:', new Date().toISOString());
-    // Cart recovery, order reminders etc can be added here
   }
 };

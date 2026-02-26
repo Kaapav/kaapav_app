@@ -14,6 +14,7 @@ import '../utils/logger.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../config/constants.dart';
 import '../services/api/api_client.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ENUMS
@@ -285,28 +286,43 @@ class AuthNotifier extends StateNotifier<AuthState> {
   // ─────────────────────────────────────────────────────────────────────────────
 
   Future<void> _fetchJWTFromServer() async {
-    try {
-      final response = await ApiClient.instance.post(
-        '/api/auth/login',
-        data: {'method': 'pin', 'pin': _masterPin},
-        skipAuth: true,
+  try {
+    final response = await ApiClient.instance.post(
+      '/api/auth/login',
+      data: {'method': 'pin', 'pin': _masterPin},
+      skipAuth: true,
+    );
+    if (response.statusCode == 200 && response.data?['token'] != null) {
+      final token = response.data['token'] as String;
+      const storage = FlutterSecureStorage(
+        aOptions: AndroidOptions(encryptedSharedPreferences: true),
       );
+      await storage.write(key: AppConstants.tokenKey, value: token);
+      ApiClient.instance.setCachedToken(token);
+      AppLogger.success('🔑 JWT obtained');
 
-      if (response.statusCode == 200 && response.data?['token'] != null) {
-        final token = response.data['token'] as String;
-        const storage = FlutterSecureStorage(
-          aOptions: AndroidOptions(encryptedSharedPreferences: true),
-        );
-        await storage.write(key: AppConstants.tokenKey, value: token);
-        ApiClient.instance.setCachedToken(token);
-        AppLogger.success('🔑 JWT obtained');
-      } else {
-        AppLogger.warn('🔑 JWT fetch failed: ${response.data}');
+      // Register FCM token after login
+      try {
+        final fcmToken = await FirebaseMessaging.instance.getToken();
+        if (fcmToken != null) {
+          await ApiClient.instance.post(
+            '/api/push/fcm-register',
+            data: {'token': fcmToken},
+            skipAuth: true,
+          );
+          AppLogger.success('🔔 FCM token registered');
+        }
+      } catch (e) {
+        AppLogger.warn('🔔 FCM register failed: $e');
       }
-    } catch (e) {
-      AppLogger.warn('🔑 JWT fetch failed (offline?): $e');
+
+    } else {
+      AppLogger.warn('🔑 JWT fetch failed: ${response.data}');
     }
+  } catch (e) {
+    AppLogger.warn('🔑 JWT fetch failed (offline?): $e');
   }
+}
 
   // ─────────────────────────────────────────────────────────────────────────────
   // UNLOCK WITH PIN

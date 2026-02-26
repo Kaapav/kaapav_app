@@ -195,9 +195,9 @@ class NotificationService {
   Future<void> _sendTokenToBackend(String token) async {
     try {
       await ApiClient.instance.post(
-        '/api/push/register',
+        '/api/push/fcm-register',
         data: {
-          'fcmToken': token,
+          'token': token,
           'platform': 'android',
           'deviceId': 'samsung-s23-ultra',
         },
