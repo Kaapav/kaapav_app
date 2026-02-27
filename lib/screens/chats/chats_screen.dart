@@ -26,13 +26,6 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
   }
 
   @override
-  void dispose() {
-    ref.read(chatProvider.notifier).stopAutoRefresh();
-    _searchCtrl.dispose();
-    super.dispose();
-  }
-  
-  @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final chatState = ref.watch(chatProvider);

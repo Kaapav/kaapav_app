@@ -97,17 +97,39 @@ async function sendFCMNotification(env, phone, name, text) {
     const fcmRes = await fetch(`https://fcm.googleapis.com/v1/projects/${env.FCM_PROJECT_ID}/messages:send`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+            body: JSON.stringify({
         message: {
           token: deviceToken,
-          notification: { title: name || phone, body: text || 'New message' },
-          android: { priority: 'high', notification: { channel_id: 'kaapav_messages', sound: 'default' } },
-          data: { phone, type: 'new_message' },
-        }
+          notification: {
+            title: name || phone,
+            body: text || 'New message',
+          },
+          android: {
+            priority: 'high',
+            notification: {
+              channel_id: 'kaapav_messages',
+              priority: 'max',
+              default_vibrate_timings: true,
+              default_sound: true,
+              visibility: 'public',
+            },
+          },
+          data: {
+            phone: phone,
+            type: 'new_message',
+            title: name || phone,
+            body: text || 'New message',
+          },
+        },
       }),
-    });
+});
     const fcmData = await fcmRes.json();
     console.log('FCM result:', JSON.stringify(fcmData));
+    if (fcmData?.error?.details?.[0]?.errorCode === 'UNREGISTERED') {
+      await env.KV.delete('fcm_token:flutter');
+      await env.KV.delete('fcm_access_token');
+      console.log('FCM: Cleared stale token');
+    }
   } catch (e) { console.error('FCM error:', e); }
 }
 
@@ -139,6 +161,59 @@ async function sendWhatsAppButtons(env, phone, text, buttons, footer = null) {
   return res.json();
 }
 
+async function sendWhatsAppImage(env, phone, mediaUrl, caption) {
+  const res = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${env.WA_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'image',
+      image: {
+        link: mediaUrl,
+        ...(caption ? { caption } : {}),
+      },
+    }),
+  });
+  return res.json();
+}
+
+async function sendWhatsAppDocument(env, phone, mediaUrl, filename, caption) {
+  const res = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${env.WA_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'document',
+      document: {
+        link: mediaUrl,
+        ...(filename ? { filename } : {}),
+        ...(caption ? { caption } : {}),
+      },
+    }),
+  });
+  return res.json();
+}
+
+async function sendWhatsAppVideo(env, phone, mediaUrl, caption) {
+  const res = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${env.WA_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'video',
+      video: {
+        link: mediaUrl,
+        ...(caption ? { caption } : {}),
+      },
+    }),
+  });
+  return res.json();
+}
+
+
 // ═══════════════════ WEBHOOK HANDLERS ═══════════════════
 async function handleWebhookVerify(request, env) {
   const url = new URL(request.url);
@@ -151,7 +226,7 @@ async function handleWebhookVerify(request, env) {
   return new Response('Forbidden', { status: 403 });
 }
 
-async function handleWebhookPost(request, env) {
+async function handleWebhookPost(request, env, ctx) {
   try {
     const body = await request.json();
     const entry = body?.entry?.[0];
@@ -214,7 +289,7 @@ async function handleWebhookPost(request, env) {
         updated_at = datetime('now')
     `).bind(phone, name).run();
 
-    sendFCMNotification(env, phone, name, text);
+    ctx.waitUntil(sendFCMNotification(env, phone, name, text));
 
     try {
       const autoResponder = new AutoResponder(env);
@@ -273,29 +348,70 @@ async function handleSendMessage(request, env) {
   const phone = body.phone || body.to;
   const text = body.text || body.message;
   const type = body.type || 'text';
+  const mediaUrl = body.mediaUrl;
+  const mediaCaption = body.mediaCaption;
+  const filename = body.filename;
 
-  if (!phone || !text) return errorResponse('phone and text required');
+  if (!phone) return errorResponse('phone required');
 
   let waResult;
-  if (type === 'buttons' && body.buttons) {
-    waResult = await sendWhatsAppButtons(env, phone, text, body.buttons);
-  } else {
-    waResult = await sendWhatsAppText(env, phone, text);
+  let savedText = text || '';
+
+  try {
+    switch (type) {
+      case 'image':
+        if (!mediaUrl) return errorResponse('mediaUrl required for image');
+        waResult = await sendWhatsAppImage(env, phone, mediaUrl, mediaCaption);
+        savedText = mediaCaption || '📷 Photo';
+        break;
+
+      case 'document':
+        if (!mediaUrl) return errorResponse('mediaUrl required for document');
+        waResult = await sendWhatsAppDocument(env, phone, mediaUrl, filename, mediaCaption);
+        savedText = filename || mediaCaption || '📄 Document';
+        break;
+
+      case 'video':
+        if (!mediaUrl) return errorResponse('mediaUrl required for video');
+        waResult = await sendWhatsAppVideo(env, phone, mediaUrl, mediaCaption);
+        savedText = mediaCaption || '🎬 Video';
+        break;
+
+      case 'buttons':
+        if (!text) return errorResponse('text required');
+        waResult = await sendWhatsAppButtons(env, phone, text, body.buttons);
+        break;
+
+      default:
+        if (!text) return errorResponse('text required');
+        waResult = await sendWhatsAppText(env, phone, text);
+        break;
+    }
+
+    // Check WhatsApp API error
+    if (waResult?.error) {
+      console.error('WhatsApp API error:', JSON.stringify(waResult.error));
+      return errorResponse(`WhatsApp error: ${waResult.error.message || 'Unknown'}`, 502);
+    }
+
+    const messageId = waResult?.messages?.[0]?.id || `local_${Date.now()}`;
+    const timestamp = new Date().toISOString();
+
+    await env.DB.prepare(`
+      INSERT OR IGNORE INTO messages (message_id, phone, text, message_type, direction, media_url, media_caption, status, timestamp, created_at)
+      VALUES (?, ?, ?, ?, 'outgoing', ?, ?, 'sent', ?, datetime('now'))
+    `).bind(messageId, phone, savedText, type, mediaUrl || null, mediaCaption || null, timestamp).run();
+
+    await env.DB.prepare(`
+      UPDATE chats SET last_message = ?, last_message_type = ?, last_timestamp = ?, last_direction = 'outgoing', updated_at = datetime('now') WHERE phone = ?
+    `).bind(savedText, type, timestamp, phone).run();
+
+    return jsonResponse({ success: true, messageId, timestamp });
+
+  } catch (e) {
+    console.error('Send message error:', e);
+    return errorResponse('Failed to send: ' + e.message, 500);
   }
-
-  const messageId = waResult?.messages?.[0]?.id || `local_${Date.now()}`;
-  const timestamp = new Date().toISOString();
-
-  await env.DB.prepare(`
-    INSERT OR IGNORE INTO messages (message_id, phone, text, message_type, direction, status, timestamp, created_at)
-    VALUES (?, ?, ?, ?, 'outgoing', 'sent', ?, datetime('now'))
-  `).bind(messageId, phone, text, type, timestamp).run();
-
-  await env.DB.prepare(`
-    UPDATE chats SET last_message = ?, last_message_type = ?, last_timestamp = ?, last_direction = 'outgoing', updated_at = datetime('now') WHERE phone = ?
-  `).bind(text, type, timestamp, phone).run();
-
-  return jsonResponse({ success: true, messageId, timestamp });
 }
 
 async function handleGetOrders(request, env) {
@@ -774,10 +890,10 @@ export default {
 
     if (path === '/health') return new Response('OK', { status: 200 });
 
-    if (path === '/webhook' || path === '/api/webhook') {
-      if (method === 'GET') return handleWebhookVerify(request, env);
-      if (method === 'POST') return handleWebhookPost(request, env);
-    }
+  if (path === '/webhook' || path === '/api/webhook') {
+    if (method === 'GET') return handleWebhookVerify(request, env);
+    if (method === 'POST') return handleWebhookPost(request, env, ctx);
+  }
 
     if (path === '/api/auth/login' && method === 'POST') return handleLogin(request, env);
     if (path === '/api/auth/me' && method === 'GET') {
@@ -861,7 +977,26 @@ export default {
       return jsonResponse({ success: true, result });
     }
 
+    if (path === '/api/media/upload' && method === 'POST') {
+  try {
+    const formData = await request.formData();
+    const file = formData.get('file');
+    if (!file) return errorResponse('file required', 400);
+    const fileName = `${Date.now()}_${file.name || 'upload'}`;
+    const arrayBuffer = await file.arrayBuffer();
+    await env.MEDIA.put(fileName, arrayBuffer, {
+      httpMetadata: { contentType: file.type || 'application/octet-stream' },
+    });
+    const url = `https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/${fileName}`;
+    return jsonResponse({ success: true, url, mediaUrl: url, fileName });
+  } catch (e) {
+    console.error('Upload error:', e);
+    return errorResponse('Upload failed: ' + e.message, 500);
+  }
+}
+ 
     return errorResponse('Not found', 404);
+
   },
 
   async scheduled(event, env, ctx) {

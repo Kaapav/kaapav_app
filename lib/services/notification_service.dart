@@ -129,7 +129,7 @@ class NotificationService {
           'kaapav_messages',
           'Messages',
           description: 'New WhatsApp messages',
-          importance: Importance.high,
+          importance: Importance.max,
           playSound: true,
           enableVibration: true,
         ),
@@ -142,7 +142,7 @@ class NotificationService {
   // HANDLE FOREGROUND MESSAGE
   // ───────────────────────────────────────────────────────────────
 
-  Future<void> _handleForegroundMessage(RemoteMessage message) async {
+      Future<void> _handleForegroundMessage(RemoteMessage message) async {
     final title = message.notification?.title ?? 
                   message.data['title'] ?? 
                   'New message';
@@ -154,9 +154,8 @@ class NotificationService {
 
     AppLogger.info('🔔 Foreground message: $title');
 
-    // Show local notification
     await _local.show(
-      message.hashCode,
+      phone?.hashCode ?? message.hashCode,
       title,
       body,
       const NotificationDetails(
@@ -164,11 +163,12 @@ class NotificationService {
           'kaapav_messages',
           'Messages',
           channelDescription: 'New WhatsApp messages',
-          importance: Importance.high,
-          priority: Priority.high,
+          importance: Importance.max,
+          priority: Priority.max,
           playSound: true,
           enableVibration: true,
           icon: '@mipmap/ic_launcher',
+          visibility: NotificationVisibility.public,
         ),
       ),
       payload: jsonEncode({'phone': phone, ...message.data}),

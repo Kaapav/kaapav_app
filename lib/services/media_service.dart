@@ -61,12 +61,12 @@ class MediaService {
     try {
       if (source == ImageSource.camera) {
         if (!await _requestCameraPermission()) {
-          Logger.warn('Camera permission denied');
+          AppLogger.warn('Camera permission denied');
           return null;
         }
       } else {
         if (!await _requestStoragePermission()) {
-          Logger.warn('Storage permission denied');
+          AppLogger.warn('Storage permission denied');
           return null;
         }
       }
@@ -94,15 +94,15 @@ class MediaService {
       final size = await file.length();
 
       if (size > AppConstants.maxImageSize) {
-        Logger.warn('Image too large: ${size ~/ 1024}KB');
+        AppLogger.warn('Image too large: ${size ~/ 1024}KB');
         await file.delete();
         return null;
       }
 
-      Logger.info('✅ Image saved: ${path.basename(savedPath)} (${size ~/ 1024}KB)');
+      AppLogger.info('✅ Image saved: ${path.basename(savedPath)} (${size ~/ 1024}KB)');
       return file;
     } catch (e) {
-      Logger.error('❌ Image pick failed', e);
+      AppLogger.error('❌ Image pick failed', e);
       return null;
     }
   }
@@ -117,7 +117,7 @@ class MediaService {
   static Future<File?> pickDocument() async {
     try {
       if (!await _requestStoragePermission()) {
-        Logger.warn('Storage permission denied');
+        AppLogger.warn('Storage permission denied');
         return null;
       }
 
@@ -144,15 +144,15 @@ class MediaService {
       final size = await file.length();
 
       if (size > AppConstants.maxDocSize) {
-        Logger.warn('Document too large: ${size ~/ 1024}KB');
+        AppLogger.warn('Document too large: ${size ~/ 1024}KB');
         await file.delete();
         return null;
       }
 
-      Logger.info('✅ Document saved: ${result.files.single.name} (${size ~/ 1024}KB)');
+      AppLogger.info('✅ Document saved: ${result.files.single.name} (${size ~/ 1024}KB)');
       return file;
     } catch (e) {
-      Logger.error('❌ Document pick failed', e);
+      AppLogger.error('❌ Document pick failed', e);
       return null;
     }
   }
@@ -164,7 +164,7 @@ class MediaService {
   static Future<File?> pickVideo() async {
     try {
       if (!await _requestStoragePermission()) {
-        Logger.warn('Storage permission denied');
+        AppLogger.warn('Storage permission denied');
         return null;
       }
 
@@ -188,15 +188,15 @@ class MediaService {
       final size = await file.length();
 
       if (size > AppConstants.maxVideoSize) {
-        Logger.warn('Video too large: ${size ~/ 1024}KB');
+        AppLogger.warn('Video too large: ${size ~/ 1024}KB');
         await file.delete();
         return null;
       }
 
-      Logger.info('✅ Video saved: ${path.basename(savedPath)} (${size ~/ 1024}KB)');
+      AppLogger.info('✅ Video saved: ${path.basename(savedPath)} (${size ~/ 1024}KB)');
       return file;
     } catch (e) {
-      Logger.error('❌ Video pick failed', e);
+      AppLogger.error('❌ Video pick failed', e);
       return null;
     }
   }
@@ -211,10 +211,17 @@ class MediaService {
   String? phone,
 }) async {
   try {
-    final dio = Dio();
     final token = await _getToken();
+    if (token == null) {
+      AppLogger.error('❌ Upload failed: No auth token');
+      return null;
+    }
+
     final fileName = path.basename(file.path);
     final mimeType = _getMimeType(fileName);
+    final fileSize = await file.length();
+
+    AppLogger.info('📤 Uploading: $fileName (${fileSize ~/ 1024}KB) type=$type');
 
     final formData = FormData.fromMap({
       'file': await MultipartFile.fromFile(
@@ -222,47 +229,86 @@ class MediaService {
         filename: fileName,
         contentType: MediaType.parse(mimeType),
       ),
+      if (phone != null) 'phone': phone,
+      'type': type,
     });
 
+    final dio = Dio(BaseOptions(
+      baseUrl: AppConstants.apiBaseUrl,
+      connectTimeout: const Duration(seconds: 30),
+      sendTimeout: const Duration(seconds: 60),
+      receiveTimeout: const Duration(seconds: 30),
+    ));
+
     final response = await dio.post(
-      '${AppConstants.apiBaseUrl}/api/media/upload',
+      '/api/media/upload',
       data: formData,
-      options: Options(headers: {'Authorization': 'Bearer $token'}),
+      options: Options(
+        headers: {
+          'Authorization': 'Bearer $token',
+        },
+      ),
+      onSendProgress: (sent, total) {
+        final percent = ((sent / total) * 100).toStringAsFixed(0);
+        AppLogger.info('📤 Upload progress: $percent%');
+      },
     );
 
-    if (response.statusCode == 200) {
-      // Try R2 URL fields first
+    if (response.statusCode == 200 && response.data['success'] == true) {
       final url = response.data['url']
           ?? response.data['mediaUrl']
-          ?? response.data['r2Url']
-          ?? response.data['publicUrl'];
-      if (url != null) {
-        Logger.success('✅ Uploaded URL: $url');
-        return url as String;
-      }
-      // Fallback: mediaId (worker may return this)
-      final mediaId = response.data['mediaId'];
-      if (mediaId != null) {
-        Logger.success('✅ Uploaded mediaId: $mediaId');
-        return mediaId as String;
-      }
-      Logger.warn('⚠️ No URL or mediaId in response: ${response.data}');
-      return null;
+          ?? response.data['fileName'];
+      AppLogger.success('✅ Upload complete: $url');
+      return url as String?;
+    }
+
+    AppLogger.error('❌ Upload failed: ${response.data}');
+    return null;
+  } on DioException catch (e) {
+    if (e.type == DioExceptionType.connectionTimeout) {
+      AppLogger.error('❌ Upload timeout - file too large or slow network');
+    } else if (e.type == DioExceptionType.sendTimeout) {
+      AppLogger.error('❌ Upload send timeout');
+    } else if (e.response?.statusCode == 401) {
+      AppLogger.error('❌ Upload unauthorized - token expired');
+    } else if (e.response?.statusCode == 413) {
+      AppLogger.error('❌ File too large for server');
+    } else {
+      AppLogger.error('❌ Upload error: ${e.message}');
     }
     return null;
   } catch (e) {
-    Logger.error('❌ Upload failed', e);
+    AppLogger.error('❌ Upload failed', e);
     return null;
   }
 }
+
 static String _getMimeType(String filename) {
   final ext = path.extension(filename).toLowerCase();
   switch (ext) {
-    case '.jpg': case '.jpeg': return 'image/jpeg';
-    case '.png': return 'image/png';
-    case '.pdf': return 'application/pdf';
-    case '.mp4': return 'video/mp4';
-    default: return 'application/octet-stream';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.png':
+      return 'image/png';
+    case '.gif':
+      return 'image/gif';
+    case '.webp':
+      return 'image/webp';
+    case '.pdf':
+      return 'application/pdf';
+    case '.doc':
+      return 'application/msword';
+    case '.docx':
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    case '.mp4':
+      return 'video/mp4';
+    case '.mp3':
+      return 'audio/mpeg';
+    case '.ogg':
+      return 'audio/ogg';
+    default:
+      return 'application/octet-stream';
   }
 }
 
