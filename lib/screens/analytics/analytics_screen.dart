@@ -1,6 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../../providers/analytics_provider.dart';
 
 class AnalyticsScreen extends ConsumerWidget {

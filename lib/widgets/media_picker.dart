@@ -1,14 +1,14 @@
-﻿// lib/widgets/media_picker.dart
-// ═══════════════════════════════════════════════════════════════
-// MEDIA PICKER — Bottom sheet for selecting images/documents
-// ═══════════════════════════════════════════════════════════════
+// lib/widgets/media_picker.dart
+// ---------------------------------------------------------------
+// MEDIA PICKER � Bottom sheet for selecting images/documents
+// ---------------------------------------------------------------
 
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
-import '../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../config/constants.dart';
 import '../utils/logger.dart';
 
@@ -322,7 +322,7 @@ class MediaPicker extends StatelessWidget {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
+              color: color.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: color, size: 26),

@@ -1,4 +1,4 @@
-﻿// lib/providers/order_provider.dart
+// lib/providers/order_provider.dart
 // ═══════════════════════════════════════════════════════════
 // ORDER STATE MANAGEMENT
 // ═══════════════════════════════════════════════════════════

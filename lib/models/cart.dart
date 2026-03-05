@@ -1,4 +1,4 @@
-﻿class Cart {
+class Cart {
   final int? id;
   final String phone;
   final List<dynamic> items;

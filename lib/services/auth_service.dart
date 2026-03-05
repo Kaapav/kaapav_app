@@ -1,4 +1,4 @@
-﻿// lib/services/auth_service.dart
+// lib/services/auth_service.dart
 
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';

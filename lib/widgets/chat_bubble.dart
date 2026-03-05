@@ -1,17 +1,21 @@
-﻿// lib/widgets/chat_bubble.dart
-// ═══════════════════════════════════════════════════════════════
-// CHAT BUBBLE — Advanced Production Widget
+// lib/widgets/chat_bubble.dart
+// ---------------------------------------------------------------
+// CHAT BUBBLE   Advanced Production Widget
 // Aligned with: Message model, KaapavTheme
 // Supports: text, image, document, audio, buttons, product, order
-// ═══════════════════════════════════════════════════════════════
+// ---------------------------------------------------------------
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../config/theme.dart';
-import '../models/message.dart';
-import '../utils/formatters.dart';
+import 'package:kaapav_app/config/theme.dart';
+import 'package:kaapav_app/models/message.dart';
+import 'package:kaapav_app/utils/formatters.dart';
+import 'package:kaapav_app/widgets/full_screen_image.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 class ChatBubble extends StatefulWidget {
   final Message message;
@@ -36,6 +40,19 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
   //bool _imageError = false;
   int? _hoveredButton;
 
+    String? _reaction;
+  // Audio player state
+  AudioPlayer? _audioPlayer;
+  bool _isPlaying = false;
+  Duration _audioDuration = Duration.zero;
+  Duration _audioPosition = Duration.zero;
+
+    @override
+  void dispose() {
+    _audioPlayer?.dispose();
+    super.dispose();
+  }
+
   Message get message => widget.message;
   bool get isOutgoing => message.isOutgoing;
   bool get isIncoming => message.isIncoming;
@@ -49,7 +66,11 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Flexible(
-            child: GestureDetector(
+          child: GestureDetector(
+              onDoubleTap: () {
+                HapticFeedback.lightImpact();
+                _showReactionPicker(context);
+              },
               onLongPress: () {
                 HapticFeedback.mediumImpact();
                 widget.onLongPress?.call(message);
@@ -58,11 +79,31 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
                 constraints: BoxConstraints(
                   maxWidth: MediaQuery.of(context).size.width * 0.75,
                 ),
-                child: _buildBubbleContent(),
+                              child: Column(
+                  crossAxisAlignment: isOutgoing ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildBubbleContent(),
+                    if (_reaction != null)
+                      Transform.translate(
+                        offset: const Offset(0, -8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: KaapavTheme.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: KaapavTheme.border),
+                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4)],
+                          ),
+                          child: Text(_reaction!, style: const TextStyle(fontSize: 16)),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
-        ],
+         ],
       ),
     );
   }
@@ -101,9 +142,9 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
     }
   }
 
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
   // PARSE BUTTONS
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
 
   List<Map<String, dynamic>>? _parseButtons() {
     try {
@@ -145,9 +186,9 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
     }
   }
 
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
   // GET DISPLAY TEXT
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
 
   String _getDisplayText() {
     if (message.text == null || message.text!.isEmpty) {
@@ -182,18 +223,79 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
     return text.replaceAll(RegExp(r'\[([^\]]+)\]'), '').trim();
   }
 
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
   // FORMAT TIMESTAMP
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
 
   String _formatTime() {
     final dt = Formatters.parseDate(message.timestamp);
     return Formatters.time(dt);
   }
 
-  // ═══════════════════════════════════════════════════════════
+    // -----------------------------------------------------------
+  // RICH TEXT WITH CLICKABLE LINKS
+  // -----------------------------------------------------------
+
+  Widget _buildRichText(String text, {required Color textColor, Color? linkColor}) {
+    final urlRegex = RegExp(
+      r'(https?://[^\s<>"\)]+|www\.[^\s<>"\)]+)',
+      caseSensitive: false,
+    );
+
+    final matches = urlRegex.allMatches(text).toList();
+
+    if (matches.isEmpty) {
+      return Text(text, style: TextStyle(fontSize: 15, height: 1.4, color: textColor));
+    }
+
+    final spans = <TextSpan>[];
+    int lastEnd = 0;
+
+    for (final match in matches) {
+      // Text before link
+      if (match.start > lastEnd) {
+        spans.add(TextSpan(
+          text: text.substring(lastEnd, match.start),
+          style: TextStyle(fontSize: 15, height: 1.4, color: textColor),
+        ));
+      }
+
+      // Link
+      final url = match.group(0)!;
+      spans.add(TextSpan(
+        text: url,
+        style: TextStyle(
+          fontSize: 15,
+          height: 1.4,
+          color: linkColor ?? (isOutgoing ? Colors.white : const Color(0xFF1A73E8)),
+          decoration: TextDecoration.underline,
+          decorationColor: linkColor ?? (isOutgoing ? Colors.white70 : const Color(0xFF1A73E8)),
+        ),
+        recognizer: TapGestureRecognizer()
+          ..onTap = () {
+            final fullUrl = url.startsWith('http') ? url : 'https://$url';
+            launchUrl(Uri.parse(fullUrl), mode: LaunchMode.externalApplication);
+          },
+      ));
+
+      lastEnd = match.end;
+    }
+
+    // Text after last link
+    if (lastEnd < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(lastEnd),
+        style: TextStyle(fontSize: 15, height: 1.4, color: textColor),
+      ));
+    }
+
+    return RichText(text: TextSpan(children: spans));
+  }
+
+
+  // -----------------------------------------------------------
   // TEXT BUBBLE
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
 
   Widget _buildTextBubble() {
     final displayText = _getDisplayText();
@@ -214,8 +316,8 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
         boxShadow: [
           BoxShadow(
             color: isOutgoing
-                ? KaapavTheme.gold.withOpacity(0.3)
-                : Colors.black.withOpacity(0.05),
+                ? KaapavTheme.gold.withValues(alpha: 0.3)
+                : Colors.black.withValues(alpha: 0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -250,13 +352,11 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
           ],
 
           // Message text
-          Text(
+                    // Message text with clickable links
+          _buildRichText(
             displayText,
-            style: TextStyle(
-              fontSize: 15,
-              height: 1.4,
-              color: isOutgoing ? Colors.white : KaapavTheme.dark,
-            ),
+            textColor: isOutgoing ? Colors.white : KaapavTheme.dark,
+            linkColor: isOutgoing ? Colors.white : null,
           ),
           const SizedBox(height: 4),
           _buildFooter(),
@@ -265,9 +365,9 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
     );
   }
 
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
   // BUTTON MESSAGE (Autoresponder Menu)
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
 
   Widget _buildButtonMessage(List<Map<String, dynamic>> buttons) {
     final displayText = _getDisplayText();
@@ -279,7 +379,7 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
         border: Border.all(color: KaapavTheme.border),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -302,13 +402,9 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
           if (displayText.isNotEmpty)
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(
+                            child: _buildRichText(
                 displayText,
-                style: const TextStyle(
-                  fontSize: 15,
-                  height: 1.5,
-                  color: KaapavTheme.dark,
-                ),
+                textColor: KaapavTheme.dark,
               ),
             ),
 
@@ -346,7 +442,7 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: const Text(
-                      '🤖 Auto',
+                      '?? Auto',
                       style: TextStyle(fontSize: 10, color: KaapavTheme.grayLight),
                     ),
                   )
@@ -399,7 +495,7 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
                 Icon(
                   Icons.reply,
                   size: 14,
-                  color: KaapavTheme.gold.withOpacity(0.7),
+                  color: KaapavTheme.gold.withValues(alpha: 0.7),
                 ),
                 const SizedBox(width: 8),
                 Text(
@@ -418,107 +514,206 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
     );
   }
 
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
   // IMAGE BUBBLE
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
 
   Widget _buildImageBubble() {
+    // -- Handle null mediaUrl   show placeholder card --
     if (message.mediaUrl == null || message.mediaUrl!.isEmpty) {
-      return _buildTextBubble();
-    }
-
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: isOutgoing ? null : Border.all(color: KaapavTheme.border),
-        boxShadow: [
-          BoxShadow(
-            color: isOutgoing
-                ? KaapavTheme.gold.withOpacity(0.3)
-                : Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: isOutgoing ? KaapavTheme.goldGradient : null,
+          color: isOutgoing ? null : KaapavTheme.white,
+          borderRadius: BorderRadius.circular(16),
+          border: isOutgoing ? null : Border.all(color: KaapavTheme.border),
+          boxShadow: [
+            BoxShadow(
+              color: isOutgoing
+                  ? KaapavTheme.gold.withValues(alpha: 0.3)
+                  : Colors.black.withValues(alpha: 0.05),
+              blurRadius: 8,
+            ),
+          ],
+        ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Image
-            Stack(
+            Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                CachedNetworkImage(
-                  imageUrl: message.mediaUrl!,
-                  width: double.infinity,
-                  height: 200,
-                  fit: BoxFit.cover,
-                  placeholder: (_, __) => Container(
-                    height: 200,
-                    color: KaapavTheme.cream,
-                    child: const Center(
-                      child: CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation(KaapavTheme.gold),
-                        strokeWidth: 2,
-                      ),
-                    ),
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: isOutgoing ? Colors.white.withValues(alpha: 0.2) : KaapavTheme.gold.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  errorWidget: (_, __, ___) => Container(
-                    height: 200,
-                    color: KaapavTheme.cream,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                            children: const [
-        Icon(Icons.broken_image, color: KaapavTheme.grayLight, size: 48),
-        SizedBox(height: 8),
-        Text(
-          'Failed to load',
-          style: TextStyle(color: KaapavTheme.gray, fontSize: 12),
-        ),
-      ],
-                    ),
+                  child: Icon(Icons.image, color: isOutgoing ? Colors.white : KaapavTheme.gold, size: 28),
+                ),
+                const SizedBox(width: 12),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '?? Photo',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: isOutgoing ? Colors.white : KaapavTheme.dark,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Image not available',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isOutgoing ? Colors.white70 : KaapavTheme.gray,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
+            if (message.mediaCaption != null && message.mediaCaption!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                message.mediaCaption!,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isOutgoing ? Colors.white : KaapavTheme.dark,
+                ),
+              ),
+            ],
+            const SizedBox(height: 6),
+            _buildFooter(),
+          ],
+        ),
+      );
+    }
 
-            // Caption
-            if (message.mediaCaption != null && message.mediaCaption!.isNotEmpty)
+    // -- Has mediaUrl   show image with tap-to-fullscreen --
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => FullScreenImage(
+              imageUrl: message.mediaUrl!,
+              caption: message.mediaCaption,
+              senderName: isIncoming ? 'Customer' : 'You',
+              timestamp: _formatTime(),
+            ),
+          ),
+        );
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: isOutgoing ? null : Border.all(color: KaapavTheme.border),
+          boxShadow: [
+            BoxShadow(
+              color: isOutgoing
+                  ? KaapavTheme.gold.withValues(alpha: 0.3)
+                  : Colors.black.withValues(alpha: 0.05),
+              blurRadius: 8,
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Image with zoom icon overlay
+              Stack(
+                children: [
+                  CachedNetworkImage(
+                    imageUrl: message.mediaUrl!,
+                    width: double.infinity,
+                    height: 200,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => Container(
+                      height: 200,
+                      color: KaapavTheme.cream,
+                      child: const Center(
+                        child: CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation(KaapavTheme.gold),
+                          strokeWidth: 2,
+                        ),
+                      ),
+                    ),
+                    errorWidget: (_, __, ___) => Container(
+                      height: 200,
+                      color: KaapavTheme.cream,
+                      child: const Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.broken_image, color: KaapavTheme.grayLight, size: 48),
+                          SizedBox(height: 8),
+                          Text('Failed to load', style: TextStyle(color: KaapavTheme.gray, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Zoom icon overlay
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Icon(Icons.zoom_in, color: Colors.white, size: 18),
+                    ),
+                  ),
+                ],
+              ),
+
+              // Caption
+              if (message.mediaCaption != null && message.mediaCaption!.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    gradient: isOutgoing ? KaapavTheme.goldGradient : null,
+                    color: isOutgoing ? null : KaapavTheme.white,
+                  ),
+                  child: Text(
+                    message.mediaCaption!,
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.4,
+                      color: isOutgoing ? Colors.white : KaapavTheme.dark,
+                    ),
+                  ),
+                ),
+
+              // Footer
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   gradient: isOutgoing ? KaapavTheme.goldGradient : null,
                   color: isOutgoing ? null : KaapavTheme.white,
                 ),
-                child: Text(
-                  message.mediaCaption!,
-                  style: TextStyle(
-                    fontSize: 14,
-                    height: 1.4,
-                    color: isOutgoing ? Colors.white : KaapavTheme.dark,
-                  ),
-                ),
+                child: _buildFooter(),
               ),
-
-            // Footer
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                gradient: isOutgoing ? KaapavTheme.goldGradient : null,
-                color: isOutgoing ? null : KaapavTheme.white,
-              ),
-              child: _buildFooter(),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
   // DOCUMENT BUBBLE
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
 
   Widget _buildDocumentBubble() {
     final filename = message.mediaCaption ?? 'Document';
@@ -533,7 +728,7 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
         border: Border.all(color: KaapavTheme.border),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 8,
           ),
         ],
@@ -548,7 +743,7 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: _getFileColor(ext).withOpacity(0.1),
+                  color: _getFileColor(ext).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
@@ -662,11 +857,12 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
     }
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // AUDIO BUBBLE
-  // ═══════════════════════════════════════════════════════════
 
-  Widget _buildAudioBubble() {
+  // -----------------------------------------------------------
+  // AUDIO BUBBLE (with player)
+  // -----------------------------------------------------------
+
+    Widget _buildAudioBubble() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
@@ -674,145 +870,158 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
         color: isOutgoing ? null : KaapavTheme.white,
         borderRadius: BorderRadius.circular(24),
         border: isOutgoing ? null : Border.all(color: KaapavTheme.border),
-        boxShadow: [
-          BoxShadow(
-            color: isOutgoing
-                ? KaapavTheme.gold.withOpacity(0.3)
-                : Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-          ),
-        ],
+        boxShadow: [BoxShadow(
+          color: isOutgoing ? KaapavTheme.gold.withValues(alpha: 0.3) : Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Play button
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: isOutgoing ? Colors.white.withOpacity(0.2) : null,
-              gradient: isOutgoing ? null : KaapavTheme.goldGradient,
-              shape: BoxShape.circle,
-              boxShadow: isOutgoing ? null : [KaapavTheme.goldShadow],
-            ),
-            child: const Icon(Icons.play_arrow, color: Colors.white, size: 24),
-          ),
-          const SizedBox(width: 12),
-
-          // Waveform placeholder
-          Expanded(
+          // Play/Pause button
+          GestureDetector(
+            onTap: () => _toggleAudio(),
             child: Container(
-              height: 28,
+              width: 44, height: 44,
               decoration: BoxDecoration(
-                color: isOutgoing ? Colors.white.withOpacity(0.25) : const Color(0xFFE5E7EB),
-                borderRadius: BorderRadius.circular(14),
+                color: isOutgoing ? Colors.white.withValues(alpha: 0.2) : null,
+                gradient: isOutgoing ? null : KaapavTheme.goldGradient,
+                shape: BoxShape.circle,
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: List.generate(20, (i) {
-                  final height = 8.0 + (i % 5) * 3.0;
-                  return Container(
-                    width: 3,
-                    height: height,
-                    decoration: BoxDecoration(
-                      color: isOutgoing ? Colors.white.withOpacity(0.6) : KaapavTheme.gold.withOpacity(0.5),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  );
-                }),
-              ),
+              child: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 24),
             ),
           ),
           const SizedBox(width: 12),
-
-          // Duration
-          Text(
-            '0:00',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: isOutgoing ? Colors.white.withOpacity(0.8) : KaapavTheme.gray,
+          // Progress bar
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SliderTheme(
+                  data: SliderThemeData(
+                    trackHeight: 3,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    activeTrackColor: isOutgoing ? Colors.white : KaapavTheme.gold,
+                    inactiveTrackColor: isOutgoing ? Colors.white38 : KaapavTheme.border,
+                    thumbColor: isOutgoing ? Colors.white : KaapavTheme.gold,
+                    overlayShape: SliderComponentShape.noOverlay,
+                  ),
+                  child: Slider(
+                    value: _audioDuration.inMilliseconds > 0
+                        ? _audioPosition.inMilliseconds / _audioDuration.inMilliseconds
+                        : 0,
+                    onChanged: (v) {
+                      _audioPlayer?.seek(Duration(milliseconds: (v * _audioDuration.inMilliseconds).round()));
+                    },
+                  ),
+                ),
+              ],
             ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            _isPlaying ? _fmt(_audioPosition) : _fmt(_audioDuration),
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500,
+                color: isOutgoing ? Colors.white.withValues(alpha: 0.8) : KaapavTheme.gray),
           ),
         ],
       ),
     );
   }
 
-  // ═══════════════════════════════════════════════════════════
+  String _fmt(Duration d) =>
+      '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
+
+  Future<void> _toggleAudio() async {
+    if (message.mediaUrl == null) return;
+
+    _audioPlayer ??= AudioPlayer();
+
+    if (_isPlaying) {
+      await _audioPlayer!.pause();
+      setState(() => _isPlaying = false);
+    } else {
+      _audioPlayer!.onDurationChanged.listen((d) {
+        if (mounted) setState(() => _audioDuration = d);
+      });
+      _audioPlayer!.onPositionChanged.listen((p) {
+        if (mounted) setState(() => _audioPosition = p);
+      });
+      _audioPlayer!.onPlayerComplete.listen((_) {
+        if (mounted) setState(() { _isPlaying = false; _audioPosition = Duration.zero; });
+      });
+      await _audioPlayer!.play(UrlSource(message.mediaUrl!));
+      setState(() => _isPlaying = true);
+    }
+  }
+
+     // -----------------------------------------------------------
   // VIDEO BUBBLE
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
 
   Widget _buildVideoBubble() {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: isOutgoing ? null : Border.all(color: KaapavTheme.border),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // Thumbnail or placeholder
-            Container(
-              width: double.infinity,
-              height: 200,
-              color: KaapavTheme.dark,
-              child: const Icon(Icons.videocam, color: Colors.white54, size: 48),
-            ),
-
-            // Play button overlay
-            Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                gradient: KaapavTheme.goldGradient,
-                shape: BoxShape.circle,
-                boxShadow: [KaapavTheme.goldShadow],
+    return GestureDetector(
+      onTap: () {
+        if (message.mediaUrl != null) {
+          launchUrl(Uri.parse(message.mediaUrl!), mode: LaunchMode.externalApplication);
+        }
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: isOutgoing ? null : Border.all(color: KaapavTheme.border),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: double.infinity,
+                height: 200,
+                color: KaapavTheme.dark,
+                child: const Icon(Icons.videocam, color: Colors.white54, size: 48),
               ),
-              child: const Icon(Icons.play_arrow, color: Colors.white, size: 32),
-            ),
-
-            // Footer
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.all(8),
+              Container(
+                width: 64, height: 64,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: const [Colors.black54, Colors.transparent],
+                  gradient: KaapavTheme.goldGradient,
+                  shape: BoxShape.circle,
+                  boxShadow: [KaapavTheme.goldShadow],
+                ),
+                child: const Icon(Icons.play_arrow, color: Colors.white, size: 32),
+              ),
+              Positioned(
+                bottom: 0, left: 0, right: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [Colors.black54, Colors.transparent],
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(_formatTime(), style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                      if (isOutgoing) ...[
+                        const SizedBox(width: 4),
+                        _buildStatusIcon(color: Colors.white70),
+                      ],
+                    ],
                   ),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Text(
-                      _formatTime(),
-                      style: const TextStyle(fontSize: 11, color: Colors.white70),
-                    ),
-                    if (isOutgoing) ...[
-                      const SizedBox(width: 4),
-                      _buildStatusIcon(color: Colors.white70),
-                    ],
-                  ],
-                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
   // LOCATION BUBBLE
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
 
   Widget _buildLocationBubble() {
     return Container(
@@ -822,7 +1031,7 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
         border: Border.all(color: KaapavTheme.border),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 8,
           ),
         ],
@@ -849,7 +1058,7 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  '📍 Location Shared',
+                  '?? Location Shared',
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -877,9 +1086,9 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
     );
   }
 
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
   // STICKER BUBBLE
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
 
   Widget _buildStickerBubble() {
     if (message.mediaUrl == null) {
@@ -911,9 +1120,9 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
     );
   }
 
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
   // INTERACTIVE REPLY BUBBLE
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
 
   Widget _buildInteractiveBubble() {
     final displayText = _getDisplayText();
@@ -929,8 +1138,8 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
         boxShadow: [
           BoxShadow(
             color: isOutgoing
-                ? KaapavTheme.gold.withOpacity(0.3)
-                : Colors.black.withOpacity(0.05),
+                ? KaapavTheme.gold.withValues(alpha: 0.3)
+                : Colors.black.withValues(alpha: 0.05),
             blurRadius: 8,
           ),
         ],
@@ -943,9 +1152,9 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
-              color: isOutgoing ? Colors.white.withOpacity(0.2) : KaapavTheme.cream,
+              color: isOutgoing ? Colors.white.withValues(alpha: 0.2) : KaapavTheme.cream,
               borderRadius: BorderRadius.circular(8),
-              border: isOutgoing ? null : Border.all(color: KaapavTheme.gold.withOpacity(0.3)),
+              border: isOutgoing ? null : Border.all(color: KaapavTheme.gold.withValues(alpha: 0.3)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -976,9 +1185,50 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
     );
   }
 
-  // ═══════════════════════════════════════════════════════════
+    void _showReactionPicker(BuildContext context) {
+    final emojis = ['??', '??', '??', '??', '??', '??'];
+    showDialog(
+      context: context,
+      barrierColor: Colors.transparent,
+      builder: (ctx) => Stack(
+        children: [
+          GestureDetector(onTap: () => Navigator.pop(ctx), child: Container(color: Colors.transparent)),
+          Positioned(
+            bottom: MediaQuery.of(context).size.height * 0.4,
+            left: 40, right: 40,
+            child: Center(
+              child: Material(
+                elevation: 8,
+                borderRadius: BorderRadius.circular(28),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(color: KaapavTheme.white, borderRadius: BorderRadius.circular(28)),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: emojis.map((e) => GestureDetector(
+                      onTap: () {
+                        setState(() => _reaction = _reaction == e ? null : e);
+                        Navigator.pop(ctx);
+                        HapticFeedback.lightImpact();
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        child: Text(e, style: const TextStyle(fontSize: 28)),
+                      ),
+                    )).toList(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // -----------------------------------------------------------
   // FOOTER & STATUS
-  // ═══════════════════════════════════════════════════════════
+  // -----------------------------------------------------------
 
   Widget _buildFooter() {
     return Row(
@@ -990,11 +1240,11 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
+              color: Colors.white.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(4),
             ),
             child: const Text(
-              '🤖',
+              '??',
               style: TextStyle(fontSize: 10),
             ),
           ),
@@ -1006,7 +1256,7 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
           _formatTime(),
           style: TextStyle(
             fontSize: 11,
-            color: isOutgoing ? Colors.white.withOpacity(0.7) : KaapavTheme.grayLight,
+            color: isOutgoing ? Colors.white.withValues(alpha: 0.7) : KaapavTheme.grayLight,
           ),
         ),
 
@@ -1020,11 +1270,11 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
   }
 
   Widget _buildStatusIcon({Color? color}) {
-    final iconColor = color ?? (isOutgoing ? Colors.white.withOpacity(0.7) : KaapavTheme.grayLight);
+    final iconColor = color ?? (isOutgoing ? Colors.white.withValues(alpha: 0.7) : KaapavTheme.grayLight);
 
     switch (message.status) {
       case 'sending':
-        return Icon(Icons.schedule, size: 14, color: iconColor.withOpacity(0.5));
+        return Icon(Icons.schedule, size: 14, color: iconColor.withValues(alpha: 0.5));
       case 'sent':
         return Icon(Icons.check, size: 14, color: iconColor);
       case 'delivered':

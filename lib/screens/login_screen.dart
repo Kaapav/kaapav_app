@@ -1,17 +1,17 @@
-﻿// lib/screens/login_screen.dart
-// ═══════════════════════════════════════════════════════════════════════════════
-// KAAPAV LOCK SCREEN — Production Grade
-// ═══════════════════════════════════════════════════════════════════════════════
+// lib/screens/login_screen.dart
+// -------------------------------------------------------------------------------
+// KAAPAV LOCK SCREEN � Production Grade
+// -------------------------------------------------------------------------------
 // Premium lock screen with PIN + Biometric authentication
 // WhatsApp-inspired UI with KAAPAV gold luxury theme
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
 
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config/routes.dart';
-import '../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../providers/auth_provider.dart';
 
 const int _pinLength = 4;
@@ -43,9 +43,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     super.dispose();
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // -----------------------------------------------------------------------------
   // AUTO-TRIGGER BIOMETRIC ON FIRST BUILD
-  // ─────────────────────────────────────────────────────────────────────────────
+  // -----------------------------------------------------------------------------
 
 void _maybeAutoTriggerBiometric(AuthState auth) {
   if (_initialBiometricTriggered) return;
@@ -54,14 +54,14 @@ void _maybeAutoTriggerBiometric(AuthState auth) {
   _initialBiometricTriggered = true;
 
   if (!auth.biometricAvailable) {
-    // No biometric → go to PIN tab
+    // No biometric ? go to PIN tab
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _tabController.animateTo(1);
     });
     return;
   }
 
-  // ✅ AUTO-TRIGGER biometric
+  // ? AUTO-TRIGGER biometric
   WidgetsBinding.instance.addPostFrameCallback((_) {
     if (mounted) {
       _tabController.animateTo(0); // Fingerprint tab
@@ -78,9 +78,9 @@ void _maybeAutoTriggerBiometric(AuthState auth) {
   });
 }
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // -----------------------------------------------------------------------------
   // BIOMETRIC AUTHENTICATION
-  // ─────────────────────────────────────────────────────────────────────────────
+  // -----------------------------------------------------------------------------
 
   Future<void> _tryBiometric() async {
     final success = await ref.read(authProvider.notifier).unlockWithBiometric();
@@ -91,9 +91,9 @@ void _maybeAutoTriggerBiometric(AuthState auth) {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // -----------------------------------------------------------------------------
   // PIN INPUT HANDLING
-  // ─────────────────────────────────────────────────────────────────────────────
+  // -----------------------------------------------------------------------------
 
   Future<void> _onDigit(String digit) async {
     final auth = ref.read(authProvider);
@@ -145,9 +145,9 @@ void _maybeAutoTriggerBiometric(AuthState auth) {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // -----------------------------------------------------------------------------
   // LOCKOUT TIMER
-  // ─────────────────────────────────────────────────────────────────────────────
+  // -----------------------------------------------------------------------------
 
   void _startLockoutTimer() {
     _lockoutTimer?.cancel();
@@ -168,18 +168,18 @@ void _maybeAutoTriggerBiometric(AuthState auth) {
     });
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // -----------------------------------------------------------------------------
   // NAVIGATION
-  // ─────────────────────────────────────────────────────────────────────────────
+  // -----------------------------------------------------------------------------
 
   void _navigateToHome() {
     HapticFeedback.mediumImpact();
     AppRoutes.pushAndClearStack(context, AppRoutes.home);
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // -----------------------------------------------------------------------------
   // BUILD
-  // ─────────────────────────────────────────────────────────────────────────────
+  // -----------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -226,9 +226,9 @@ void _maybeAutoTriggerBiometric(AuthState auth) {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // -----------------------------------------------------------------------------
   // HEADER
-  // ─────────────────────────────────────────────────────────────────────────────
+  // -----------------------------------------------------------------------------
 
   Widget _buildHeader() {
     return Column(
@@ -242,7 +242,7 @@ void _maybeAutoTriggerBiometric(AuthState auth) {
             borderRadius: BorderRadius.circular(22),
             boxShadow: [
               BoxShadow(
-                color: KaapavTheme.gold.withOpacity(0.4),
+                color: KaapavTheme.gold.withValues(alpha: 0.4),
                 blurRadius: 24,
                 offset: const Offset(0, 8),
               ),
@@ -269,9 +269,9 @@ void _maybeAutoTriggerBiometric(AuthState auth) {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // -----------------------------------------------------------------------------
   // TABS
-  // ─────────────────────────────────────────────────────────────────────────────
+  // -----------------------------------------------------------------------------
 
   Widget _buildTabs(AuthState auth) {
     return Container(
@@ -308,9 +308,9 @@ void _maybeAutoTriggerBiometric(AuthState auth) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
 // BIOMETRIC TAB
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
 
 class _BiometricTab extends StatelessWidget {
   final AuthState auth;
@@ -342,13 +342,13 @@ class _BiometricTab extends StatelessWidget {
                 shape: BoxShape.circle,
                 gradient: auth.isLoading
                     ? LinearGradient(colors: [
-                        KaapavTheme.gold.withOpacity(0.5),
-                        KaapavTheme.goldDark.withOpacity(0.5),
+                        KaapavTheme.gold.withValues(alpha: 0.5),
+                        KaapavTheme.goldDark.withValues(alpha: 0.5),
                       ])
                     : KaapavTheme.goldGradient,
                 boxShadow: [
                   BoxShadow(
-                    color: KaapavTheme.gold.withOpacity(auth.isLoading ? 0.2 : 0.5),
+                    color: KaapavTheme.gold.withValues(alpha: auth.isLoading ? 0.2 : 0.5),
                     blurRadius: 40,
                     spreadRadius: 4,
                   ),
@@ -394,7 +394,7 @@ class _BiometricTab extends StatelessWidget {
             TextButton(
               onPressed: onSwitchToPin,
               child: const Text(
-                'Use PIN instead →',
+                'Use PIN instead ?',
                 style: TextStyle(color: KaapavTheme.gold, fontSize: 14),
               ),
             ),
@@ -435,9 +435,9 @@ class _BiometricTab extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
 // PIN TAB
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
 
 class _PinTab extends StatelessWidget {
   final AuthState auth;
@@ -469,7 +469,7 @@ class _PinTab extends StatelessWidget {
             duration: const Duration(milliseconds: 200),
             child: Text(
               auth.isLockedOut
-                  ? 'Locked — wait ${auth.lockoutSecondsRemaining}s'
+                  ? 'Locked � wait ${auth.lockoutSecondsRemaining}s'
                   : auth.isLoading
                       ? 'Verifying...'
                       : 'Enter 4-digit PIN',
@@ -506,7 +506,7 @@ class _PinTab extends StatelessWidget {
                   boxShadow: filled
                       ? [
                           BoxShadow(
-                            color: KaapavTheme.gold.withOpacity(0.4),
+                            color: KaapavTheme.gold.withValues(alpha: 0.4),
                             blurRadius: 8,
                           ),
                         ]
@@ -579,9 +579,9 @@ class _PinTab extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
 // NUMPAD BUTTON
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
 
 class _NumpadButton extends StatefulWidget {
   final String? label;
@@ -624,7 +624,7 @@ class _NumpadButtonState extends State<_NumpadButton> {
               : const Color(0xFF1A1A1A),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(_isPressed ? 0.1 : 0.3),
+              color: Colors.black.withValues(alpha: _isPressed ? 0.1 : 0.3),
               blurRadius: _isPressed ? 4 : 8,
               offset: Offset(0, _isPressed ? 1 : 2),
             ),
@@ -652,9 +652,9 @@ class _NumpadButtonState extends State<_NumpadButton> {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
 // ERROR BOX
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
 
 class _ErrorBox extends StatelessWidget {
   final String message;
@@ -666,8 +666,8 @@ class _ErrorBox extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFEF4444).withOpacity(0.1),
-        border: Border.all(color: const Color(0xFFEF4444).withOpacity(0.3)),
+        color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+        border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.3)),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(

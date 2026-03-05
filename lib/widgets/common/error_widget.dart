@@ -1,5 +1,5 @@
-﻿import 'package:flutter/material.dart';
-import '../../config/theme.dart';
+import 'package:flutter/material.dart';
+import 'package:kaapav_app/config/theme.dart';
 
 class KaapavErrorWidget extends StatelessWidget {
   final String message;
@@ -23,7 +23,7 @@ class KaapavErrorWidget extends StatelessWidget {
               width: 72,
               height: 72,
               decoration: BoxDecoration(
-                color: const Color(0xFFEF4444).withOpacity(0.1),
+                color: const Color(0xFFEF4444).withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: const Icon(

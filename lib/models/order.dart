@@ -1,4 +1,4 @@
-﻿class Order {
+class Order {
   final int? id;
   final String orderId;
   final String phone;

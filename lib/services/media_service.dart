@@ -1,4 +1,4 @@
-﻿// lib/services/media_service.dart
+// lib/services/media_service.dart
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,10 +10,13 @@ import 'package:http_parser/http_parser.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';	
 import '../utils/logger.dart';
 import '../config/constants.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 class MediaService {
   static final ImagePicker _imagePicker = ImagePicker();
-  static const _storage = FlutterSecureStorage();
+  static const _storage = FlutterSecureStorage(
+  aOptions: AndroidOptions(encryptedSharedPreferences: true),
+);
 
  // ═══════════════════════════════════════════════════════════════
   // TOKEN HELPER
@@ -38,20 +41,39 @@ class MediaService {
   }
 
   static Future<bool> _requestStoragePermission() async {
-    if (Platform.isAndroid) {
-      final photos = await Permission.photos.request();
-      if (photos.isGranted) return true;
-      
-      final storage = await Permission.storage.request();
-      if (storage.isGranted) return true;
-      
-      if (photos.isPermanentlyDenied || storage.isPermanentlyDenied) {
-        await openAppSettings();
-      }
+  if (!Platform.isAndroid) return true;
+
+  // Android 13+ (API 33+)
+  if (await _isAndroid13OrHigher()) {
+    final images = await Permission.photos.request();
+    if (images.isGranted) return true;
+    
+    // Check if permanently denied
+    if (images.isPermanentlyDenied) {
+      AppLogger.warn('Photos permission permanently denied');
+      await openAppSettings();
       return false;
     }
-    return true;
+    
+    AppLogger.warn('Photos permission denied: $images');
+    return false;
   }
+  
+  // Android 12 and below
+  final storage = await Permission.storage.request();
+  if (storage.isGranted) return true;
+  
+  if (storage.isPermanentlyDenied) {
+    await openAppSettings();
+  }
+  return false;
+}
+
+static Future<bool> _isAndroid13OrHigher() async {
+  if (!Platform.isAndroid) return false;
+  final info = await DeviceInfoPlugin().androidInfo;
+  return info.version.sdkInt >= 33;
+}
 
   // ═══════════════════════════════════════════════════════════
   // PICK IMAGE

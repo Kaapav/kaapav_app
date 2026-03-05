@@ -1,8 +1,8 @@
-﻿// lib/screens/orders/order_detail_screen.dart
+// lib/screens/orders/order_detail_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../../providers/order_provider.dart';
 import '../../widgets/toast.dart';
 
@@ -16,7 +16,7 @@ class OrderDetailScreen extends ConsumerStatefulWidget {
 
 class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
 
-  // ✅ Extracted to State methods — here `context` = this.context,
+  // ? Extracted to State methods � here `context` = this.context,
   //    which the linter correctly recognises as guarded by `mounted`.
   Future<void> _confirmOrder() async {
     final ok = await ref.read(orderProvider.notifier).confirmOrder(widget.orderId);
@@ -78,7 +78,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                   ],
                 ),
                 const Spacer(),
-                Text('₹${order.total.toStringAsFixed(0)}',
+                Text('?${order.total.toStringAsFixed(0)}',
                     style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w800)),
               ],
             ),
@@ -98,10 +98,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
           const SizedBox(height: 12),
 
           _Section(title: 'Amount', children: [
-            _DetailRow('Subtotal', '₹${order.subtotal.toStringAsFixed(0)}'),
-            if (order.discount > 0) _DetailRow('Discount', '-₹${order.discount.toStringAsFixed(0)}'),
-            if (order.shippingCost > 0) _DetailRow('Shipping', '₹${order.shippingCost.toStringAsFixed(0)}'),
-            _DetailRow('Total', '₹${order.total.toStringAsFixed(0)}'),
+            _DetailRow('Subtotal', '?${order.subtotal.toStringAsFixed(0)}'),
+            if (order.discount > 0) _DetailRow('Discount', '-?${order.discount.toStringAsFixed(0)}'),
+            if (order.shippingCost > 0) _DetailRow('Shipping', '?${order.shippingCost.toStringAsFixed(0)}'),
+            _DetailRow('Total', '?${order.total.toStringAsFixed(0)}'),
           ]),
           const SizedBox(height: 12),
 
@@ -119,7 +119,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 if (order.isPending)
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: _confirmOrder, // ✅ method ref, no inline async
+                      onPressed: _confirmOrder, // ? method ref, no inline async
                       style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF10B981), foregroundColor: Colors.white),
                       child: const Text('Confirm'),
@@ -128,7 +128,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 if (order.isPending) const SizedBox(width: 12),
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: _cancelOrder, // ✅
+                    onPressed: _cancelOrder, // ?
                     style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFFEF4444),
                         side: const BorderSide(color: Color(0xFFEF4444))),
@@ -143,7 +143,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: _generatePaymentLink, // ✅
+                onPressed: _generatePaymentLink, // ?
                 icon: const Icon(Icons.payment),
                 label: const Text('Generate Payment Link'),
                 style: ElevatedButton.styleFrom(backgroundColor: KaapavTheme.gold, foregroundColor: Colors.white),
@@ -169,7 +169,7 @@ class _Section extends StatelessWidget {
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF2C2C2C) : Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFE5E7EB)),
+        border: Border.all(color: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFE5E7EB)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

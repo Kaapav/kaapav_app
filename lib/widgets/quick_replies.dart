@@ -1,7 +1,7 @@
-﻿// lib/widgets/quick_replies.dart
+// lib/widgets/quick_replies.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../models/quick_reply.dart';
 
 class QuickReplies extends StatelessWidget {
@@ -57,7 +57,7 @@ class _Chip extends StatelessWidget {
           decoration: BoxDecoration(
             color: KaapavTheme.white,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: KaapavTheme.gold.withOpacity(0.5)),
+            border: Border.all(color: KaapavTheme.gold.withValues(alpha: 0.5)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -107,7 +107,7 @@ class SimpleQuickReplies extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: KaapavTheme.white,
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: KaapavTheme.gold.withOpacity(0.5)),
+                    border: Border.all(color: KaapavTheme.gold.withValues(alpha: 0.5)),
                   ),
                   child: Text(reply, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: KaapavTheme.dark)),
                 ),

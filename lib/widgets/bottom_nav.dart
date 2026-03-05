@@ -1,6 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../providers/chat_provider.dart';
 import '../providers/order_provider.dart';
 
@@ -21,7 +21,7 @@ class BottomNav extends ConsumerWidget {
         color: isDark ? const Color(0xFF1A1A1A) : Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 20,
             offset: const Offset(0, -4),
           ),
@@ -124,7 +124,7 @@ class _NavItem extends StatelessWidget {
                         boxShadow: [
                           BoxShadow(
                             color: (badgeColor ?? const Color(0xFFEF4444))
-                                .withOpacity(0.4),
+                                .withValues(alpha: 0.4),
                             blurRadius: 4,
                             offset: const Offset(0, 1),
                           ),

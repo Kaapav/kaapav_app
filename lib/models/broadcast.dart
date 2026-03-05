@@ -1,4 +1,4 @@
-﻿class Broadcast {
+class Broadcast {
   final int? id;
   final String broadcastId;
   final String name;

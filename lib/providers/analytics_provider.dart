@@ -1,4 +1,4 @@
-﻿// lib/providers/analytics_provider.dart
+// lib/providers/analytics_provider.dart
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/analytics_model.dart';

@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 class KaapavTheme {
   KaapavTheme._();
@@ -64,7 +64,7 @@ class KaapavTheme {
   );
 
   static BoxShadow get goldShadow => BoxShadow(
-        color: gold.withOpacity(0.3),
+        color: gold.withValues(alpha: 0.3),
         blurRadius: 12,
         offset: const Offset(0, 4),
       );
@@ -274,7 +274,7 @@ class KaapavTheme {
       dividerTheme: const DividerThemeData(color: border, thickness: 1),
       chipTheme: ChipThemeData(
         backgroundColor: cream,
-        selectedColor: gold.withOpacity(0.15),
+        selectedColor: gold.withValues(alpha: 0.15),
         labelStyle: const TextStyle(fontSize: 13),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         side: const BorderSide(color: border),
@@ -401,3 +401,4 @@ class KaapavColors {
   static const LinearGradient goldGradient = KaapavTheme.goldGradient;
   static BoxShadow get goldShadow => KaapavTheme.goldShadow;
 }
+

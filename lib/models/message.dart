@@ -1,4 +1,4 @@
-﻿class Message {
+class Message {
   final int? id;
   final String messageId;
   final String phone;
@@ -64,7 +64,7 @@
       messageType: json['message_type'] as String? ?? 'text',
       direction: json['direction'] as String? ?? 'outgoing',
       mediaId: json['media_id'] as String?,
-      mediaUrl: json['media_url'] as String?,
+      mediaUrl: json['media_url'] as String? ?? json['mediaUrl'] as String?,
       mediaMime: json['media_mime'] as String?,
       mediaCaption: json['media_caption'] as String?,
       buttonId: json['button_id'] as String?,

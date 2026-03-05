@@ -1,4 +1,4 @@
-﻿class Label {
+class Label {
   final int? id;
   final String name;
   final String color;

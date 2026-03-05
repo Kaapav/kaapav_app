@@ -1,4 +1,4 @@
-﻿// lib/widgets/common/app_bar.dart
+// lib/widgets/common/app_bar.dart
 
 import 'package:flutter/material.dart';
 

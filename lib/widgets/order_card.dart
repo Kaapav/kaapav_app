@@ -1,5 +1,5 @@
-﻿import 'package:flutter/material.dart';
-import '../config/theme.dart';
+import 'package:flutter/material.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../models/order.dart';
 
 class OrderCard extends StatelessWidget {
@@ -23,12 +23,12 @@ class OrderCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isDark
-                ? Colors.white.withOpacity(0.06)
+                ? Colors.white.withValues(alpha: 0.06)
                 : const Color(0xFFE5E7EB),
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withValues(alpha: 0.03),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -37,7 +37,7 @@ class OrderCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Header: Order ID + Status ──
+            // -- Header: Order ID + Status --
             Row(
               children: [
                 Text(
@@ -55,7 +55,7 @@ class OrderCard extends StatelessWidget {
 
             const SizedBox(height: 10),
 
-            // ── Customer info ──
+            // -- Customer info --
             Row(
               children: [
                 const Icon(Icons.person_outline, size: 16, color: Color(0xFF9CA3AF)),
@@ -76,7 +76,7 @@ class OrderCard extends StatelessWidget {
 
             const SizedBox(height: 6),
 
-            // ── Items count + Total ──
+            // -- Items count + Total --
             Row(
               children: [
                 const Icon(Icons.shopping_bag_outlined,
@@ -91,7 +91,7 @@ class OrderCard extends StatelessWidget {
                 ),
                 const Spacer(),
                 Text(
-                  '₹${order.total.toStringAsFixed(0)}',
+                  '?${order.total.toStringAsFixed(0)}',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -103,7 +103,7 @@ class OrderCard extends StatelessWidget {
 
             const SizedBox(height: 10),
 
-            // ── Payment + Date row ──
+            // -- Payment + Date row --
             Row(
               children: [
                 _PaymentChip(status: order.paymentStatus),
@@ -118,13 +118,13 @@ class OrderCard extends StatelessWidget {
               ],
             ),
 
-            // ── Tracking info ──
+            // -- Tracking info --
             if (order.hasTracking) ...[
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF0891B2).withOpacity(0.1),
+                  color: const Color(0xFF0891B2).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Row(
@@ -200,21 +200,21 @@ class _StatusChip extends StatelessWidget {
   (Color, Color, String) _getConfig() {
     switch (status) {
       case 'pending':
-        return (const Color(0xFFFEF3C7), const Color(0xFFD97706), '⏳');
+        return (const Color(0xFFFEF3C7), const Color(0xFFD97706), '?');
       case 'confirmed':
-        return (const Color(0xFFDBEAFE), const Color(0xFF2563EB), '✅');
+        return (const Color(0xFFDBEAFE), const Color(0xFF2563EB), '?');
       case 'processing':
-        return (const Color(0xFFEDE9FE), const Color(0xFF7C3AED), '⚙️');
+        return (const Color(0xFFEDE9FE), const Color(0xFF7C3AED), '??');
       case 'shipped':
-        return (const Color(0xFFCFFAFE), const Color(0xFF0891B2), '🚚');
+        return (const Color(0xFFCFFAFE), const Color(0xFF0891B2), '??');
       case 'delivered':
-        return (const Color(0xFFD1FAE5), const Color(0xFF059669), '📦');
+        return (const Color(0xFFD1FAE5), const Color(0xFF059669), '??');
       case 'cancelled':
-        return (const Color(0xFFFEE2E2), const Color(0xFFDC2626), '❌');
+        return (const Color(0xFFFEE2E2), const Color(0xFFDC2626), '?');
       case 'returned':
-        return (const Color(0xFFFEE2E2), const Color(0xFFDC2626), '↩️');
+        return (const Color(0xFFFEE2E2), const Color(0xFFDC2626), '??');
       default:
-        return (const Color(0xFFF3F4F6), const Color(0xFF6B7280), '📋');
+        return (const Color(0xFFF3F4F6), const Color(0xFF6B7280), '??');
     }
   }
 }
@@ -239,7 +239,7 @@ class _PaymentChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
-        isPaid ? '💰 Paid' : isRefunded ? '↩️ Refunded' : '⏳ Unpaid',
+        isPaid ? '?? Paid' : isRefunded ? '?? Refunded' : '? Unpaid',
         style: TextStyle(
           fontSize: 11,
           color: isPaid

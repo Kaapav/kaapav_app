@@ -1,5 +1,5 @@
-﻿import 'package:flutter/material.dart';
-import '../../config/theme.dart';
+import 'package:flutter/material.dart';
+import 'package:kaapav_app/config/theme.dart';
 
 class EmptyState extends StatelessWidget {
   final IconData icon;
@@ -31,7 +31,7 @@ class EmptyState extends StatelessWidget {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: KaapavTheme.gold.withOpacity(0.1),
+                color: KaapavTheme.gold.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, size: 40, color: KaapavTheme.gold),

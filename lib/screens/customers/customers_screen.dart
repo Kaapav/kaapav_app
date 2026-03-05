@@ -1,8 +1,8 @@
-﻿// lib/screens/customers/customers_screen.dart
+// lib/screens/customers/customers_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../../providers/customer_provider.dart';
 import '../../widgets/common/custom_search_bar.dart';
 import '../../widgets/common/empty_state.dart';
@@ -158,7 +158,7 @@ class _CustomerTile extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                   decoration: BoxDecoration(
-                    color: _getSegmentColor(customer.segment).withOpacity(0.1),
+                    color: _getSegmentColor(customer.segment).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(

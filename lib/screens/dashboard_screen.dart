@@ -1,9 +1,9 @@
-﻿// lib/screens/dashboard_screen.dart
+// lib/screens/dashboard_screen.dart
 
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../config/routes.dart';
 import '../providers/analytics_provider.dart';
 import '../config/routes_args.dart';
@@ -48,9 +48,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   String _formatCurrency(double amount) {
     if (amount >= 100000) {
-      return '₹${(amount / 1000).toStringAsFixed(1)}K';
+      return '?${(amount / 1000).toStringAsFixed(1)}K';
     }
-    return '₹${amount.toStringAsFixed(0)}';
+    return '?${amount.toStringAsFixed(0)}';
   }
 
   String _timeAgo(String? timestamp) {
@@ -84,35 +84,35 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
                   children: [
-                    // ═══════════════════════════════════════════
+                    // -------------------------------------------
                     // HEADER
-                    // ═══════════════════════════════════════════
+                    // -------------------------------------------
                     _buildHeader(isDark),
                     const SizedBox(height: 20),
 
-                    // ═══════════════════════════════════════════
+                    // -------------------------------------------
                     // STATS GRID (4 cards)
-                    // ═══════════════════════════════════════════
+                    // -------------------------------------------
                     _buildStatsGrid(state.stats, isDark),
                     const SizedBox(height: 20),
 
-                    // ═══════════════════════════════════════════
+                    // -------------------------------------------
                     // PENDING ACTIONS
-                    // ═══════════════════════════════════════════
+                    // -------------------------------------------
                     if (state.pending != null && state.pending!.total > 0)
                       _buildPendingActions(state.pending!, isDark),
 
-                    // ═══════════════════════════════════════════
+                    // -------------------------------------------
                     // LIVE ACTIVITY
-                    // ═══════════════════════════════════════════
+                    // -------------------------------------------
                     if (state.activities.isNotEmpty) ...[
                       const SizedBox(height: 20),
                       _buildLiveActivity(state.activities, isDark),
                     ],
 
-                    // ═══════════════════════════════════════════
+                    // -------------------------------------------
                     // QUICK ACTIONS
-                    // ═══════════════════════════════════════════
+                    // -------------------------------------------
                     const SizedBox(height: 20),
                     _buildQuickActions(isDark),
                   ],
@@ -122,9 +122,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // HEADER — Greeting + Avatar
-  // ═══════════════════════════════════════════════════════════════
+  // ---------------------------------------------------------------
+  // HEADER � Greeting + Avatar
+  // ---------------------------------------------------------------
   Widget _buildHeader(bool isDark) {
     return Row(
       children: [
@@ -133,7 +133,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '${_getGreeting()} 👋',
+                '${_getGreeting()} ??',
                 style: TextStyle(
                   fontSize: 14,
                   color: isDark ? Colors.white60 : const Color(0xFF9CA3AF),
@@ -161,7 +161,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: KaapavTheme.gold.withOpacity(0.3),
+                  color: KaapavTheme.gold.withValues(alpha: 0.3),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -183,9 +183,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // STATS GRID — 4 cards matching PWA exactly
-  // ═══════════════════════════════════════════════════════════════
+  // ---------------------------------------------------------------
+  // STATS GRID � 4 cards matching PWA exactly
+  // ---------------------------------------------------------------
   Widget _buildStatsGrid(DashboardStats? stats, bool isDark) {
     return GridView.count(
       crossAxisCount: 2,
@@ -231,9 +231,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // PENDING ACTIONS — Urgent items matching PWA
-  // ═══════════════════════════════════════════════════════════════
+  // ---------------------------------------------------------------
+  // PENDING ACTIONS � Urgent items matching PWA
+  // ---------------------------------------------------------------
   Widget _buildPendingActions(PendingActions pending, bool isDark) {
     final items = <_PendingItem>[];
 
@@ -282,7 +282,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         Row(
           children: [
             Text(
-              '⚡ Pending Actions',
+              '? Pending Actions',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
@@ -321,7 +321,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           border: Border(left: BorderSide(color: item.color, width: 3)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -333,7 +333,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: item.color.withOpacity(0.1),
+                color: item.color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(item.icon, color: item.color, size: 20),
@@ -369,15 +369,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // LIVE ACTIVITY — Recent events
-  // ═══════════════════════════════════════════════════════════════
+  // ---------------------------------------------------------------
+  // LIVE ACTIVITY � Recent events
+  // ---------------------------------------------------------------
   Widget _buildLiveActivity(List<Activity> activities, bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '📡 Live Activity',
+          '?? Live Activity',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w700,
@@ -391,7 +391,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.04),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -403,7 +403,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             itemCount: activities.length > 10 ? 10 : activities.length,
             separatorBuilder: (_, __) => Divider(
               height: 1,
-              color: isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFF3F4F6),
+              color: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF3F4F6),
             ),
             itemBuilder: (context, index) {
               final activity = activities[index];
@@ -442,7 +442,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                color: config.color.withOpacity(0.1),
+                color: config.color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(config.icon, color: config.color, size: 18),
@@ -502,15 +502,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // QUICK ACTIONS — 4 buttons matching PWA
-  // ═══════════════════════════════════════════════════════════════
+  // ---------------------------------------------------------------
+  // QUICK ACTIONS � 4 buttons matching PWA
+  // ---------------------------------------------------------------
   Widget _buildQuickActions(bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '🚀 Quick Actions',
+          '?? Quick Actions',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w700,
@@ -554,9 +554,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ---------------------------------------------------------------
 // STAT CARD WIDGET
-// ═══════════════════════════════════════════════════════════════
+// ---------------------------------------------------------------
 class _StatCard extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
@@ -585,7 +585,7 @@ class _StatCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -599,7 +599,7 @@ class _StatCard extends StatelessWidget {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.1),
+                color: iconColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(icon, color: iconColor, size: 18),
@@ -628,9 +628,9 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ---------------------------------------------------------------
 // QUICK ACTION BUTTON
-// ═══════════════════════════════════════════════════════════════
+// ---------------------------------------------------------------
 class _QuickActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -656,7 +656,7 @@ class _QuickActionButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.04),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -668,7 +668,7 @@ class _QuickActionButton extends StatelessWidget {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: KaapavTheme.gold.withOpacity(0.1),
+                  color: KaapavTheme.gold.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(icon, color: KaapavTheme.gold, size: 20),
@@ -690,9 +690,9 @@ class _QuickActionButton extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ---------------------------------------------------------------
 // HELPER CLASSES
-// ═══════════════════════════════════════════════════════════════
+// ---------------------------------------------------------------
 class _PendingItem {
   final IconData icon;
   final Color color;

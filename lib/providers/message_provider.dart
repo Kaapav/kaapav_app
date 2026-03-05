@@ -1,4 +1,4 @@
-﻿// lib/providers/message_provider.dart
+// lib/providers/message_provider.dart
 // ═══════════════════════════════════════════════════════════════
 // MESSAGE PROVIDER — Riverpod State Management
 // Aligned with: Message model, MessageApi
@@ -467,6 +467,40 @@ class MessageNotifier extends StateNotifier<MessageState> {
       return false;
     }
   }
+   
+    // ── DELETE MESSAGE (local only) ──
+  void deleteMessage(String phone, String messageId) {
+    final currentMessages = List<Message>.from(state.getMessages(phone));
+    currentMessages.removeWhere((m) => m.messageId == messageId);
+    state = state.copyWith(
+      messagesByPhone: {...state.messagesByPhone, phone: currentMessages},
+    );
+    AppLogger.info('🗑️ Deleted message $messageId from $phone');
+  }
+
+     // ── STARRED MESSAGES ──
+  final Set<String> _starredIds = {};
+
+  void starMessage(String phone, String messageId) {
+    if (_starredIds.contains(messageId)) {
+      _starredIds.remove(messageId);
+      AppLogger.info('⭐ Unstarred $messageId');
+    } else {
+      _starredIds.add(messageId);
+      AppLogger.info('⭐ Starred $messageId');
+    }
+    state = state.copyWith(messagesByPhone: {...state.messagesByPhone});
+  }
+
+  bool isStarred(String messageId) => _starredIds.contains(messageId);
+
+  List<Message> getStarredMessages() {
+    final starred = <Message>[];
+    for (final msgs in state.messagesByPhone.values) {
+      starred.addAll(msgs.where((m) => _starredIds.contains(m.messageId)));
+    }
+    return starred;
+  }
 
   // ─────────────────────────────────────────────────────────────
   // CLEAR / RESET
@@ -514,4 +548,9 @@ final currentMessagesProvider = Provider<List<Message>>((ref) {
 
 final isSendingProvider = Provider<bool>((ref) {
   return ref.watch(messageProvider).isSending;
+});
+
+final starredMessagesProvider = Provider<List<Message>>((ref) {
+  ref.watch(messageProvider); // trigger rebuild
+  return ref.read(messageProvider.notifier).getStarredMessages();
 });

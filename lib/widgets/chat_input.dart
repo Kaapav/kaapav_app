@@ -1,13 +1,14 @@
-﻿// lib/widgets/chat_input.dart
-// ═══════════════════════════════════════════════════════════════
-// CHAT INPUT — Send bar with attachments
-// ═══════════════════════════════════════════════════════════════
+// lib/widgets/chat_input.dart
+// ---------------------------------------------------------------
+// CHAT INPUT � Send bar with attachments
+// ---------------------------------------------------------------
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../utils/logger.dart';
 import 'attachment_picker.dart';
+import 'voice_recorder.dart';
 
 class ChatInput extends StatefulWidget {
   final Function(String text) onSend;
@@ -19,6 +20,7 @@ class ChatInput extends StatefulWidget {
   final bool enabled;
   final String? hintText;
   final String? initialText;
+  final Function(String path, Duration duration)? onVoiceCompleted;
 
   const ChatInput({
     super.key,
@@ -27,6 +29,7 @@ class ChatInput extends StatefulWidget {
     this.onCameraPressed,
     this.onAttachPressed,
     this.onEmojiPressed,
+    this.onVoiceCompleted,
     this.isSending = false,
     this.enabled = true,
     this.hintText,
@@ -41,6 +44,7 @@ class ChatInputState extends State<ChatInput> {
   late TextEditingController _controller;
   final FocusNode _focusNode = FocusNode();
   bool _hasText = false;
+  bool _isRecording = false;
 
   @override
   void initState() {
@@ -75,9 +79,9 @@ class ChatInputState extends State<ChatInput> {
     _focusNode.requestFocus();
   }
 
-  // ─────────────────────────────────────────────────────────────
+  // -------------------------------------------------------------
   // ATTACHMENT PICKER
-  // ─────────────────────────────────────────────────────────────
+  // -------------------------------------------------------------
 
  void _showAttachmentPicker() {
   // If old callback exists, use it (backward compatible)
@@ -88,14 +92,14 @@ class ChatInputState extends State<ChatInput> {
   
   // Otherwise use new attachment picker
   showAttachmentPicker(context, (path, type) {
-    AppLogger.info('📎 File selected: $path ($type)');
+    AppLogger.info('?? File selected: $path ($type)');
     widget.onAttachment?.call(path, type);
   });
 }
 
-  // ─────────────────────────────────────────────────────────────
+  // -------------------------------------------------------------
   // PUBLIC METHODS
-  // ─────────────────────────────────────────────────────────────
+  // -------------------------------------------------------------
 
   void setText(String text) {
     _controller.text = text;
@@ -109,12 +113,23 @@ class ChatInputState extends State<ChatInput> {
   void clear() => _controller.clear();
   void focus() => _focusNode.requestFocus();
 
-  // ─────────────────────────────────────────────────────────────
+  // -------------------------------------------------------------
   // BUILD
-  // ─────────────────────────────────────────────────────────────
+  // -------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
+
+    // Show voice recorder overlay
+    if (_isRecording) {
+      return VoiceRecorder(
+        onCompleted: (path, duration) {
+          setState(() => _isRecording = false);
+          widget.onVoiceCompleted?.call(path, duration);
+        },
+        onCancel: () => setState(() => _isRecording = false),
+      );
+    }
     return Container(
       padding: EdgeInsets.only(
         left: 8,
@@ -126,7 +141,7 @@ class ChatInputState extends State<ChatInput> {
         color: KaapavTheme.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, -2),
           ),
@@ -183,7 +198,7 @@ class ChatInputState extends State<ChatInput> {
                       decoration: InputDecoration(
                         hintText: widget.hintText ?? 'Type a message...',
                         hintStyle: TextStyle(
- 			 color: Colors.white.withOpacity(0.5),  
+ 			 color: Colors.white.withValues(alpha: 0.5),  
   			 fontSize: 16,
 		     ),
                         border: InputBorder.none,
@@ -220,9 +235,9 @@ class ChatInputState extends State<ChatInput> {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
+  // -------------------------------------------------------------
   // ICON BUTTON
-  // ─────────────────────────────────────────────────────────────
+  // -------------------------------------------------------------
 
   Widget _buildIconButton({
     required IconData icon,
@@ -251,20 +266,38 @@ class ChatInputState extends State<ChatInput> {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
+  // -------------------------------------------------------------
   // SEND BUTTON
-  // ─────────────────────────────────────────────────────────────
+  // -------------------------------------------------------------
 
-  Widget _buildSendButton() {
+    Widget _buildSendButton() {
     final canSend = _hasText && !widget.isSending && widget.enabled;
+
+    // Mic button when no text
+    if (!_hasText && !widget.isSending && widget.onVoiceCompleted != null) {
+      return GestureDetector(
+        onTap: () {
+          HapticFeedback.mediumImpact();
+          setState(() => _isRecording = true);
+        },
+        child: Container(
+          width: 48, height: 48,
+          decoration: BoxDecoration(
+            gradient: KaapavTheme.goldGradient,
+            shape: BoxShape.circle,
+            boxShadow: [KaapavTheme.goldShadow],
+          ),
+          child: const Icon(Icons.mic, color: Colors.white, size: 22),
+        ),
+      );
+    }
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      width: 48,
-      height: 48,
+      width: 48, height: 48,
       decoration: BoxDecoration(
         gradient: canSend ? KaapavTheme.goldGradient : null,
-        color: canSend ? null : KaapavTheme.grayLight.withOpacity(0.3),
+        color: canSend ? null : KaapavTheme.grayLight.withValues(alpha: 0.3),
         shape: BoxShape.circle,
         boxShadow: canSend ? [KaapavTheme.goldShadow] : null,
       ),
@@ -275,19 +308,9 @@ class ChatInputState extends State<ChatInput> {
           borderRadius: BorderRadius.circular(24),
           child: Center(
             child: widget.isSending
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(Colors.white),
-                    ),
-                  )
-                : Icon(
-                    Icons.send,
-                    color: canSend ? Colors.white : KaapavTheme.grayLight,
-                    size: 20,
-                  ),
+                ? const SizedBox(width: 20, height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)))
+                : Icon(Icons.send, color: canSend ? Colors.white : KaapavTheme.grayLight, size: 20),
           ),
         ),
       ),

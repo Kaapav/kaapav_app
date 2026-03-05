@@ -1,7 +1,7 @@
-﻿// lib/widgets/common/custom_search_bar.dart
+// lib/widgets/common/custom_search_bar.dart
 
 import 'package:flutter/material.dart';
-import '../../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 
 class CustomSearchBar extends StatelessWidget {
   final String hintText;
@@ -24,9 +24,9 @@ class CustomSearchBar extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withOpacity(0.08) : const Color(0xFFF3F4F6),
+        color: isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFF3F4F6),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: KaapavTheme.border.withOpacity(0.5)),
+        border: Border.all(color: KaapavTheme.border.withValues(alpha: 0.5)),
       ),
       child: TextField(
         controller: controller,

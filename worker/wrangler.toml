@@ -2,6 +2,12 @@ name = "kaapav-app"
 main = "src/index.js"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = false  
+preview_urls = false
+
+routes = [
+  { pattern = "wa.kaapav.com/*", zone_name = "kaapav.com" }
+]
 
 [vars]
 ENVIRONMENT = "production"
@@ -32,7 +38,3 @@ bucket_name = "kaapav-media"
 
 [triggers]
 crons = ["*/5 * * * *"]
-
-routes = [
-  { pattern = "wa.kaapav.com/*", zone_name = "kaapav.com" }
-]

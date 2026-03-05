@@ -1,8 +1,8 @@
-﻿// lib/widgets/customer_panel.dart
+// lib/widgets/customer_panel.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../models/customer.dart';
 import '../models/chat.dart';
 import '../models/order.dart';
@@ -146,7 +146,7 @@ class _CustomerPanelState extends ConsumerState<CustomerPanel> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFD700).withOpacity(0.2),
+                          color: const Color(0xFFFFD700).withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Row(
@@ -183,7 +183,7 @@ class _CustomerPanelState extends ConsumerState<CustomerPanel> {
   Widget _buildBadge(String text, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
       child: Text(text, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: color)),
     );
   }
@@ -203,7 +203,7 @@ class _CustomerPanelState extends ConsumerState<CustomerPanel> {
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 4),
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-        decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
         child: Column(
           children: [
             Icon(icon, color: color, size: 24),
@@ -295,9 +295,9 @@ class _CustomerPanelState extends ConsumerState<CustomerPanel> {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
+            color: color.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withOpacity(0.5)),
+            border: Border.all(color: color.withValues(alpha: 0.5)),
           ),
           child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color)),
         );
@@ -327,7 +327,7 @@ class _CustomerPanelState extends ConsumerState<CustomerPanel> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(order.orderId, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: KaapavTheme.dark)),
-                    Text('${order.itemCount} items • ${Formatters.inr(order.total)}', style: const TextStyle(fontSize: 12, color: KaapavTheme.gray)),
+                    Text('${order.itemCount} items � ${Formatters.inr(order.total)}', style: const TextStyle(fontSize: 12, color: KaapavTheme.gray)),
                   ],
                 ),
               ),
@@ -362,7 +362,7 @@ class _CustomerPanelState extends ConsumerState<CustomerPanel> {
         borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-          decoration: BoxDecoration(border: Border.all(color: color.withOpacity(0.3)), borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(border: Border.all(color: color.withValues(alpha: 0.3)), borderRadius: BorderRadius.circular(12)),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [

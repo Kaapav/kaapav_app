@@ -1,17 +1,19 @@
-﻿// lib/screens/settings/settings_screen.dart
-// ═══════════════════════════════════════════════════════════════════════════════
-// KAAPAV SETTINGS SCREEN — Production Grade (Full Featured)
-// ═══════════════════════════════════════════════════════════════════════════════
+// lib/screens/settings/settings_screen.dart
+// -------------------------------------------------------------------------------
+// KAAPAV SETTINGS SCREEN   Production Grade (Full Featured)
+// -------------------------------------------------------------------------------
 
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../config/routes.dart';
-import '../../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/settings_provider.dart';
-import '../../utils/logger.dart';
+import '../../providers/theme_provider.dart';
+import '../../services/notification_service.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -55,6 +57,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   String _currency = 'INR';
   String _timezone = 'Asia/Kolkata';
   String _theme = 'light';
+  bool _readReceipts = true;
+  String _chatWallpaper = 'default';
 
   final _tabs = const [
     Tab(icon: Icon(Icons.store, size: 20), text: 'Business'),
@@ -86,29 +90,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     super.dispose();
   }
 
+  // Fix: microtask prevents "modify provider during build" error
   Future<void> _loadSettings() async {
-    await ref.read(settingsProvider.notifier).loadAll();
+    await Future.microtask(() =>
+        ref.read(settingsProvider.notifier).loadAll());
     final settings = ref.read(settingsProvider).settings;
-    
+
     setState(() {
-      _businessNameController.text = settings['business_name'] ?? 'KAAPAV Fashion Jewellery';
-      _businessPhoneController.text = settings['business_phone'] ?? '919148330016';
-      _businessEmailController.text = settings['business_email'] ?? 'kaapavin@gmail.com';
+      _businessNameController.text =
+          settings['business_name'] ?? 'KAAPAV Fashion Jewellery';
+      _businessPhoneController.text =
+          settings['business_phone'] ?? '919148330016';
+      _businessEmailController.text =
+          settings['business_email'] ?? 'kaapavin@gmail.com';
       _businessAddressController.text = settings['business_address'] ?? '';
-      _websiteUrlController.text = settings['website_url'] ?? 'https://www.kaapav.com';
+      _websiteUrlController.text =
+          settings['website_url'] ?? 'https://www.kaapav.com';
       _instagramUrlController.text = settings['instagram_url'] ?? '';
       _facebookUrlController.text = settings['facebook_url'] ?? '';
       _welcomeMessageController.text = settings['welcome_message'] ?? '';
       _awayMessageController.text = settings['away_message'] ?? '';
-      
-      _aiAutoReply = settings['ai_auto_reply'] == true || settings['ai_auto_reply'] == 'true';
-      _autoGreeting = settings['auto_greeting'] == true || settings['auto_greeting'] == 'true';
+
+      _aiAutoReply =
+          settings['ai_auto_reply'] == true ||
+          settings['ai_auto_reply'] == 'true';
+      _autoGreeting =
+          settings['auto_greeting'] == true ||
+          settings['auto_greeting'] == 'true';
       _businessHoursEnabled = settings['business_hours_enabled'] == true;
       _businessHoursStart = settings['business_hours_start'] ?? '10:00';
       _businessHoursEnd = settings['business_hours_end'] ?? '19:00';
       _orderConfirmation = settings['order_confirmation_enabled'] != false;
-      _shippingNotification = settings['shipping_notification_enabled'] != false;
-      _deliveryNotification = settings['delivery_notification_enabled'] != false;
+      _shippingNotification =
+          settings['shipping_notification_enabled'] != false;
+      _deliveryNotification =
+          settings['delivery_notification_enabled'] != false;
       _cartRecovery = settings['cart_recovery_enabled'] == true;
       _cartRecoveryHours = settings['cart_recovery_hours'] ?? 24;
       _reviewRequest = settings['review_request_enabled'] == true;
@@ -117,6 +133,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       _currency = settings['currency'] ?? 'INR';
       _timezone = settings['timezone'] ?? 'Asia/Kolkata';
       _theme = settings['theme'] ?? 'light';
+      _readReceipts = settings['read_receipts'] != false;
+      _chatWallpaper = settings['chat_wallpaper'] ?? 'default';
     });
   }
 
@@ -153,10 +171,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       'currency': _currency,
       'timezone': _timezone,
       'theme': _theme,
+      'read_receipts': _readReceipts,
+      'chat_wallpaper': _chatWallpaper,
     };
 
-    final success = await ref.read(settingsProvider.notifier).updateSettings(data);
-    
+    final success =
+        await ref.read(settingsProvider.notifier).updateSettings(data);
+
     setState(() {
       _saving = false;
       if (success) _hasChanges = false;
@@ -179,15 +200,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     }
 
     setState(() => _testingWhatsApp = true);
-    
-    final success = await ref.read(settingsProvider.notifier)
+
+    final success = await ref
+        .read(settingsProvider.notifier)
         .testWhatsApp(_businessPhoneController.text);
-    
+
     setState(() => _testingWhatsApp = false);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(success ? '✅ Test message sent!' : '❌ Test failed'),
+        content:
+            Text(success ? '✅ Test message sent!' : '❌ Test failed'),
         backgroundColor: success ? Colors.green : Colors.red,
       ));
     }
@@ -199,9 +222,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     final settingsState = ref.watch(settingsProvider);
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0A0A0A) : const Color(0xFFF5F5F5),
+      backgroundColor:
+          isDark ? const Color(0xFF0A0A0A) : const Color(0xFFF5F5F5),
       appBar: AppBar(
-        title: const Text('Settings', style: TextStyle(fontWeight: FontWeight.w700)),
+        title: const Text('Settings',
+            style: TextStyle(fontWeight: FontWeight.w700)),
         backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
         foregroundColor: isDark ? Colors.white : const Color(0xFF1A1A1A),
         elevation: 0,
@@ -209,7 +234,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           if (_hasChanges) ...[
             TextButton(
               onPressed: _loadSettings,
-              child: Text('Discard', style: TextStyle(color: Colors.grey[600])),
+              child: Text('Discard',
+                  style: TextStyle(color: Colors.grey[600])),
             ),
             Padding(
               padding: const EdgeInsets.only(right: 8),
@@ -218,10 +244,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 style: ElevatedButton.styleFrom(
                   backgroundColor: KaapavTheme.gold,
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20)),
                 ),
                 child: _saving
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
                     : const Text('Save'),
               ),
             ),
@@ -237,7 +268,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         ),
       ),
       body: settingsState.isLoading
-          ? const Center(child: CircularProgressIndicator(color: KaapavTheme.gold))
+          ? const Center(
+              child: CircularProgressIndicator(color: KaapavTheme.gold))
           : TabBarView(
               controller: _tabController,
               children: [
@@ -251,21 +283,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------------------
   // BUSINESS TAB
-  // ═══════════════════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------------------
 
   Widget _buildBusinessTab(bool isDark) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _buildSection('📊 Business Information', [
-          _buildTextField('Business Name', _businessNameController, Icons.store),
-          _buildTextField('Phone (with country code)', _businessPhoneController, Icons.phone,
-              keyboardType: TextInputType.phone, helper: 'Format: 919876543210'),
+        _buildSection('🏪 Business Information', [
+          _buildTextField(
+              'Business Name', _businessNameController, Icons.store),
+          _buildTextField(
+              'Phone (with country code)', _businessPhoneController, Icons.phone,
+              keyboardType: TextInputType.phone,
+              helper: 'Format: 919876543210'),
           _buildTextField('Email', _businessEmailController, Icons.email,
               keyboardType: TextInputType.emailAddress),
-          _buildTextField('Address', _businessAddressController, Icons.location_on,
+          _buildTextField(
+              'Address', _businessAddressController, Icons.location_on,
               maxLines: 2),
         ], isDark),
         const SizedBox(height: 16),
@@ -275,36 +311,43 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             ('USD', '\$ US Dollar'),
             ('EUR', '€ Euro'),
             ('GBP', '£ British Pound'),
-          ], (v) => setState(() { _currency = v; _markChanged(); })),
+          ], (v) => setState(() {
+                _currency = v;
+                _markChanged();
+              })),
           _buildDropdown('Timezone', _timezone, [
             ('Asia/Kolkata', 'IST (India)'),
             ('Asia/Dubai', 'GST (Dubai)'),
             ('America/New_York', 'EST (New York)'),
             ('Europe/London', 'GMT (London)'),
-          ], (v) => setState(() { _timezone = v; _markChanged(); })),
+          ], (v) => setState(() {
+                _timezone = v;
+                _markChanged();
+              })),
         ], isDark),
         const SizedBox(height: 16),
         _buildSection('🔗 Social Links', [
           _buildTextField('Website', _websiteUrlController, Icons.language,
               keyboardType: TextInputType.url),
-          _buildTextField('Instagram', _instagramUrlController, Icons.camera_alt,
+          _buildTextField(
+              'Instagram', _instagramUrlController, Icons.camera_alt,
               keyboardType: TextInputType.url),
-          _buildTextField('Facebook', _facebookUrlController, Icons.facebook,
+          _buildTextField(
+              'Facebook', _facebookUrlController, Icons.facebook,
               keyboardType: TextInputType.url),
         ], isDark),
       ],
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------------------
   // WHATSAPP TAB
-  // ═══════════════════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------------------
 
   Widget _buildWhatsAppTab(bool isDark) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // Connection status
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -317,8 +360,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             children: [
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                child: const Icon(Icons.chat, color: Color(0xFF25D366), size: 24),
+                decoration: const BoxDecoration(
+                    color: Colors.white, shape: BoxShape.circle),
+                child: const Icon(Icons.chat,
+                    color: Color(0xFF25D366), size: 24),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -327,7 +372,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   children: [
                     const Text('WhatsApp Business API',
                         style: TextStyle(fontWeight: FontWeight.w700)),
-                    Text('✅ Connected', style: TextStyle(color: Colors.green[700], fontSize: 12)),
+                    Text('✅ Connected',
+                        style: TextStyle(
+                            color: Colors.green[700], fontSize: 12)),
                   ],
                 ),
               ),
@@ -340,128 +387,235 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   side: const BorderSide(color: Color(0xFF25D366)),
                 ),
                 child: _testingWhatsApp
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
                     : const Text('Test'),
               ),
             ],
           ),
         ),
         const SizedBox(height: 16),
-        _buildSection('🤖 Auto-Reply', [
-          _buildToggle('AI Auto-Reply', 'Automatically respond to messages', _aiAutoReply,
-              (v) => setState(() { _aiAutoReply = v; _markChanged(); })),
-          _buildToggle('Auto Greeting', 'Welcome message to new customers', _autoGreeting,
-              (v) => setState(() { _autoGreeting = v; _markChanged(); })),
-          _buildToggle('Business Hours', 'Auto-reply when away', _businessHoursEnabled,
-              (v) => setState(() { _businessHoursEnabled = v; _markChanged(); })),
+        _buildSection('💬 Auto-Reply', [
+          _buildToggle('AI Auto-Reply', 'Automatically respond to messages',
+              _aiAutoReply, (v) => setState(() {
+                _aiAutoReply = v;
+                _markChanged();
+              })),
+          _buildToggle('Auto Greeting', 'Welcome message to new customers',
+              _autoGreeting, (v) => setState(() {
+                _autoGreeting = v;
+                _markChanged();
+              })),
+          _buildToggle('Business Hours', 'Auto-reply when away',
+              _businessHoursEnabled, (v) => setState(() {
+                _businessHoursEnabled = v;
+                _markChanged();
+              })),
         ], isDark),
         if (_businessHoursEnabled) ...[
           const SizedBox(height: 16),
           _buildSection('⏰ Business Hours', [
             Row(
               children: [
-                Expanded(child: _buildTimePicker('Start', _businessHoursStart,
-                    (v) => setState(() { _businessHoursStart = v; _markChanged(); }))),
+                Expanded(
+                    child: _buildTimePicker('Start', _businessHoursStart,
+                        (v) => setState(() {
+                              _businessHoursStart = v;
+                              _markChanged();
+                            }))),
                 const SizedBox(width: 16),
-                Expanded(child: _buildTimePicker('End', _businessHoursEnd,
-                    (v) => setState(() { _businessHoursEnd = v; _markChanged(); }))),
+                Expanded(
+                    child: _buildTimePicker('End', _businessHoursEnd,
+                        (v) => setState(() {
+                              _businessHoursEnd = v;
+                              _markChanged();
+                            }))),
               ],
             ),
             const SizedBox(height: 12),
-            _buildTextField('Away Message', _awayMessageController, Icons.schedule, maxLines: 2),
+            _buildTextField(
+                'Away Message', _awayMessageController, Icons.schedule,
+                maxLines: 2),
           ], isDark),
         ],
         const SizedBox(height: 16),
-        _buildSection('💬 Templates', [
-          _buildTextField('Welcome Message', _welcomeMessageController, Icons.waving_hand, maxLines: 3),
+        _buildSection('📝 Templates', [
+          _buildTextField('Welcome Message', _welcomeMessageController,
+              Icons.waving_hand,
+              maxLines: 3),
         ], isDark),
       ],
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------------------
   // AUTOMATION TAB
-  // ═══════════════════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------------------
 
   Widget _buildAutomationTab(bool isDark) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         _buildSection('📦 Order Automation', [
-          _buildToggle('Order Confirmation', 'Auto-send when order placed', _orderConfirmation,
-              (v) => setState(() { _orderConfirmation = v; _markChanged(); })),
-          _buildToggle('Shipping Updates', 'Notify when shipped', _shippingNotification,
-              (v) => setState(() { _shippingNotification = v; _markChanged(); })),
-          _buildToggle('Delivery Confirmation', 'Notify when delivered', _deliveryNotification,
-              (v) => setState(() { _deliveryNotification = v; _markChanged(); })),
+          _buildToggle('Order Confirmation', 'Auto-send when order placed',
+              _orderConfirmation, (v) => setState(() {
+                _orderConfirmation = v;
+                _markChanged();
+              })),
+          _buildToggle('Shipping Updates', 'Notify when shipped',
+              _shippingNotification, (v) => setState(() {
+                _shippingNotification = v;
+                _markChanged();
+              })),
+          _buildToggle('Delivery Confirmation', 'Notify when delivered',
+              _deliveryNotification, (v) => setState(() {
+                _deliveryNotification = v;
+                _markChanged();
+              })),
         ], isDark),
         const SizedBox(height: 16),
         _buildSection('🎯 Engagement', [
-          _buildToggle('Cart Recovery', 'Remind about abandoned carts', _cartRecovery,
-              (v) => setState(() { _cartRecovery = v; _markChanged(); })),
+          _buildToggle('Cart Recovery', 'Remind about abandoned carts',
+              _cartRecovery, (v) => setState(() {
+                _cartRecovery = v;
+                _markChanged();
+              })),
           if (_cartRecovery)
             Padding(
               padding: const EdgeInsets.only(left: 48, top: 8),
-              child: _buildDropdown('Reminder after', '$_cartRecoveryHours hours', [
+              child: _buildDropdown(
+                  'Reminder after', '$_cartRecoveryHours hours', [
                 ('6', '6 hours'),
                 ('12', '12 hours'),
                 ('24', '24 hours'),
                 ('48', '48 hours'),
-              ], (v) => setState(() { _cartRecoveryHours = int.parse(v); _markChanged(); })),
+              ], (v) => setState(() {
+                    _cartRecoveryHours = int.parse(v);
+                    _markChanged();
+                  })),
             ),
-          _buildToggle('Review Requests', 'Ask for reviews after delivery', _reviewRequest,
-              (v) => setState(() { _reviewRequest = v; _markChanged(); })),
+          _buildToggle('Review Requests', 'Ask for reviews after delivery',
+              _reviewRequest, (v) => setState(() {
+                _reviewRequest = v;
+                _markChanged();
+              })),
         ], isDark),
       ],
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------------------
   // NOTIFICATIONS TAB
-  // ═══════════════════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------------------
 
   Widget _buildNotificationsTab(bool isDark) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _buildSection('📱 App Notifications', [
-          _buildToggle('Push Notifications', 'Browser/App push alerts', _pushEnabled,
-              (v) => setState(() { _pushEnabled = v; _markChanged(); })),
-          _buildToggle('Sound Alerts', 'Play sound for new messages', _soundEnabled,
-              (v) => setState(() { _soundEnabled = v; _markChanged(); })),
+        _buildSection('🔔 App Notifications', [
+          _buildToggle(
+              'Push Notifications', 'Browser/App push alerts', _pushEnabled,
+              (v) => setState(() {
+                    _pushEnabled = v;
+                    _markChanged();
+                  })),
+          _buildToggle(
+              'Sound Alerts', 'Play sound for new messages', _soundEnabled,
+              (v) => setState(() {
+                    _soundEnabled = v;
+                    _markChanged();
+                  })),
         ], isDark),
         const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.orange.shade50,
+            color: Colors.green.shade50,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.orange.shade200),
+            border: Border.all(color: Colors.green.shade200),
           ),
           child: Row(
             children: [
-              Icon(Icons.info_outline, color: Colors.orange[700]),
+              Icon(Icons.check_circle_outline, color: Colors.green[700]),
               const SizedBox(width: 12),
               const Expanded(
                 child: Text(
-                  'FCM Push Notifications require Firebase setup. Coming soon!',
+                  'FCM Push Notifications active via Firebase.',
                   style: TextStyle(fontSize: 13),
                 ),
               ),
             ],
           ),
         ),
+        const SizedBox(height: 16),
+        // FCM Token Display — copy and paste into Cloudflare KV
+        FutureBuilder<String?>(
+          future: NotificationService.instance.token != null
+              ? Future.value(NotificationService.instance.token)
+              : FirebaseMessaging.instance.getToken(),
+          builder: (context, snapshot) {
+            final token = snapshot.data ?? 'Loading...';
+            return Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? const Color(0xFF1A1A1A)
+                    : Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text('FCM Device Token',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: () {
+                          Clipboard.setData(ClipboardData(text: token));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                  '✅ Token copied! Paste in Cloudflare KV'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        },
+                        child: const Icon(Icons.copy,
+                            size: 18, color: KaapavTheme.gold),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text('Key: fcm_token:flutter',
+                      style: TextStyle(
+                          fontSize: 10, color: Colors.grey)),
+                  const SizedBox(height: 8),
+                  Text(token,
+                      style: const TextStyle(fontSize: 10),
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            );
+          },
+        ),
       ],
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------------------
   // ACCOUNT TAB
-  // ═══════════════════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------------------
 
   Widget _buildAccountTab(bool isDark) {
     final user = ref.watch(authProvider).user;
     final auth = ref.watch(authProvider);
+    final currentThemeMode = ref.watch(themeProvider);
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -480,7 +634,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 backgroundColor: Colors.white24,
                 child: Text(
                   (user?.name ?? 'A')[0].toUpperCase(),
-                  style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700),
                 ),
               ),
               const SizedBox(width: 14),
@@ -489,19 +646,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(user?.name ?? 'Admin',
-                        style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700)),
                     Text(user?.email ?? '',
-                        style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 13)),
                     Container(
                       margin: const EdgeInsets.only(top: 6),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.white24,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(12)),
                       child: Text(
                         user?.role == 'admin' ? '👑 Admin' : '👤 User',
-                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600),
                       ),
                     ),
                   ],
@@ -511,6 +675,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           ),
         ),
         const SizedBox(height: 24),
+
         _buildSection('🔐 Security', [
           _SettingsTile(
             icon: Icons.pin,
@@ -521,17 +686,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           _SettingsTile(
             icon: Icons.fingerprint,
             title: 'Biometric Lock',
-            subtitle: auth.biometricAvailable ? 'Enabled' : 'Tap to enable',
+            subtitle:
+                auth.biometricAvailable ? 'Enabled' : 'Tap to enable',
             trailing: Switch(
               value: auth.biometricAvailable,
               onChanged: (v) async {
                 if (v) {
-                  await ref.read(authProvider.notifier).enableBiometric();
+                  await ref
+                      .read(authProvider.notifier)
+                      .enableBiometric();
                 } else {
-                  await ref.read(authProvider.notifier).disableBiometric();
+                  await ref
+                      .read(authProvider.notifier)
+                      .disableBiometric();
                 }
               },
-              activeColor: KaapavTheme.gold,
+              activeThumbColor: KaapavTheme.gold,
             ),
             onTap: () async {
               if (!auth.biometricAvailable) {
@@ -541,15 +711,91 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           ),
         ], isDark),
         const SizedBox(height: 16),
+
+        _buildSection('👁️ Privacy', [
+          _buildToggle(
+              'Read Receipts',
+              'Show blue ticks when you read messages',
+              _readReceipts, (v) => setState(() {
+                    _readReceipts = v;
+                    _markChanged();
+                  })),
+        ], isDark),
+        const SizedBox(height: 16),
+
         _buildSection('🎨 Appearance', [
-          _buildDropdown('Theme', _theme, [
-            ('light', '☀️ Light'),
-            ('dark', '🌙 Dark'),
-            ('auto', '🔄 Auto'),
-          ], (v) => setState(() { _theme = v; _markChanged(); })),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Dark Mode',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      Text('Switch between light and dark theme',
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.grey[600])),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: currentThemeMode == ThemeMode.dark,
+                  onChanged: (v) {
+                    ref.read(themeProvider.notifier).setTheme(
+                        v ? ThemeMode.dark : ThemeMode.light);
+                    setState(() {
+                      _theme = v ? 'dark' : 'light';
+                      _markChanged();
+                    });
+                  },
+                  activeThumbColor: KaapavTheme.gold,
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Chat Wallpaper',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 13)),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 64,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: [
+                      _wallpaperOption(
+                          'default',
+                          'Default',
+                          isDark
+                              ? const Color(0xFF121212)
+                              : const Color(0xFFFAFAD2)),
+                      _wallpaperOption(
+                          'cream', 'Cream', const Color(0xFFFBF8F1)),
+                      _wallpaperOption(
+                          'dark', 'Dark', const Color(0xFF1A1A1A)),
+                      _wallpaperOption(
+                          'gold', 'Gold', const Color(0xFFF5E6C8)),
+                      _wallpaperOption(
+                          'gray', 'Gray', const Color(0xFFF0F0F0)),
+                      _wallpaperOption(
+                          'mint', 'Mint', const Color(0xFFE8F5E9)),
+                      _wallpaperOption(
+                          'sky', 'Sky', const Color(0xFFE3F2FD)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ], isDark),
         const SizedBox(height: 24),
-        // Logout button
+
         Container(
           decoration: BoxDecoration(
             border: Border.all(color: Colors.red.shade200, width: 2),
@@ -557,14 +803,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           ),
           child: ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('Logout', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+            title: const Text('Logout',
+                style: TextStyle(
+                    color: Colors.red, fontWeight: FontWeight.w600)),
             onTap: () => _logout(),
           ),
         ),
         const SizedBox(height: 24),
         Center(
           child: Text(
-            'KAAPAV Business Suite v1.0.0\nBuilt with ❤️',
+            'KAAPAV Business Suite v1.0.0\nBuilt with 💛',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey[500], fontSize: 12),
           ),
@@ -573,9 +821,48 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════════
+  Widget _wallpaperOption(String id, String label, Color color) {
+    final isSelected = _chatWallpaper == id;
+    return GestureDetector(
+      onTap: () => setState(() {
+        _chatWallpaper = id;
+        _markChanged();
+      }),
+      child: Container(
+        width: 56,
+        margin: const EdgeInsets.only(right: 10),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected ? KaapavTheme.gold : Colors.grey.shade300,
+            width: isSelected ? 3 : 1,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            if (isSelected)
+              const Icon(Icons.check_circle,
+                  color: KaapavTheme.gold, size: 18),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(label,
+                  style: TextStyle(
+                      fontSize: 9,
+                      color: color.computeLuminance() > 0.5
+                          ? Colors.black54
+                          : Colors.white70)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------------------
   // HELPER WIDGETS
-  // ═══════════════════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------------------
 
   Widget _buildSection(String title, List<Widget> children, bool isDark) {
     return Container(
@@ -587,7 +874,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+          Text(title,
+              style: const TextStyle(
+                  fontWeight: FontWeight.w700, fontSize: 14)),
           const SizedBox(height: 16),
           ...children,
         ],
@@ -595,14 +884,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     );
   }
 
-  Widget _buildTextField(String label, TextEditingController controller, IconData icon,
+  Widget _buildTextField(
+      String label, TextEditingController controller, IconData icon,
       {TextInputType? keyboardType, int maxLines = 1, String? helper}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           TextField(
             controller: controller,
@@ -610,22 +902,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             maxLines: maxLines,
             onChanged: (_) => _markChanged(),
             decoration: InputDecoration(
-              prefixIcon: Icon(icon, size: 20, color: KaapavTheme.gold),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              prefixIcon:
+                  Icon(icon, size: 20, color: KaapavTheme.gold),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10)),
+              contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 14),
             ),
           ),
           if (helper != null)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text(helper, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+              child: Text(helper,
+                  style: TextStyle(
+                      fontSize: 11, color: Colors.grey[600])),
             ),
         ],
       ),
     );
   }
 
-  Widget _buildToggle(String title, String subtitle, bool value, ValueChanged<bool> onChanged) {
+  Widget _buildToggle(String title, String subtitle, bool value,
+      ValueChanged<bool> onChanged) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -634,29 +932,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-                Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                Text(title,
+                    style:
+                        const TextStyle(fontWeight: FontWeight.w600)),
+                Text(subtitle,
+                    style: TextStyle(
+                        fontSize: 12, color: Colors.grey[600])),
               ],
             ),
           ),
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: KaapavTheme.gold,
+            activeThumbColor: KaapavTheme.gold,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildDropdown(String label, String value, List<(String, String)> options,
-      ValueChanged<String> onChanged) {
+  Widget _buildDropdown(String label, String value,
+      List<(String, String)> options, ValueChanged<String> onChanged) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -666,9 +970,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
-                value: options.any((o) => o.$1 == value) ? value : options.first.$1,
+                value: options.any((o) => o.$1 == value)
+                    ? value
+                    : options.first.$1,
                 isExpanded: true,
-                items: options.map((o) => DropdownMenuItem(value: o.$1, child: Text(o.$2))).toList(),
+                items: options
+                    .map((o) => DropdownMenuItem(
+                        value: o.$1, child: Text(o.$2)))
+                    .toList(),
                 onChanged: (v) => onChanged(v!),
               ),
             ),
@@ -678,16 +987,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     );
   }
 
-  Widget _buildTimePicker(String label, String value, ValueChanged<String> onChanged) {
+  Widget _buildTimePicker(
+      String label, String value, ValueChanged<String> onChanged) {
     return GestureDetector(
       onTap: () async {
         final parts = value.split(':');
         final time = await showTimePicker(
           context: context,
-          initialTime: TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1])),
+          initialTime: TimeOfDay(
+              hour: int.parse(parts[0]),
+              minute: int.parse(parts[1])),
         );
         if (time != null) {
-          onChanged('${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}');
+          onChanged(
+              '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}');
         }
       },
       child: Container(
@@ -698,13 +1011,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         ),
         child: Row(
           children: [
-            const Icon(Icons.access_time, size: 20, color: KaapavTheme.gold),
+            const Icon(Icons.access_time,
+                size: 20, color: KaapavTheme.gold),
             const SizedBox(width: 8),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
-                Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(label,
+                    style: TextStyle(
+                        fontSize: 11, color: Colors.grey[600])),
+                Text(value,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600)),
               ],
             ),
           ],
@@ -726,23 +1044,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           maxLength: 6,
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 24, letterSpacing: 8),
-          decoration: const InputDecoration(hintText: '••••'),
+          decoration: const InputDecoration(hintText: '    '),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () async {
               if (controller.text.length >= 4) {
                 Navigator.pop(ctx);
-                await ref.read(authProvider.notifier).setupPIN(controller.text);
+                await ref
+                    .read(authProvider.notifier)
+                    .setupPIN(controller.text);
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('✅ PIN updated!'), backgroundColor: Colors.green),
+                    const SnackBar(
+                        content: Text('✅ PIN updated!'),
+                        backgroundColor: Colors.green),
                   );
                 }
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: KaapavTheme.gold),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: KaapavTheme.gold),
             child: const Text('Save'),
           ),
         ],
@@ -759,16 +1084,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             ? 'You have unsaved changes. Logout anyway?'
             : 'Are you sure you want to logout?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(ctx);
               await ref.read(authProvider.notifier).logout();
               if (mounted) {
-                Navigator.of(context).pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
+                Navigator.of(context).pushNamedAndRemoveUntil(
+                    AppRoutes.login, (_) => false);
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style:
+                ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Logout'),
           ),
         ],
@@ -777,9 +1106,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
 // SETTINGS TILE WIDGET
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
 
 class _SettingsTile extends StatelessWidget {
   final IconData icon;
@@ -803,14 +1132,18 @@ class _SettingsTile extends StatelessWidget {
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: KaapavTheme.gold.withOpacity(0.1),
+          color: KaapavTheme.gold.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(icon, color: KaapavTheme.gold, size: 20),
       ),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: subtitle != null ? Text(subtitle!, style: const TextStyle(fontSize: 12)) : null,
-      trailing: trailing ?? const Icon(Icons.chevron_right, color: Colors.grey),
+      title: Text(title,
+          style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: subtitle != null
+          ? Text(subtitle!, style: const TextStyle(fontSize: 12))
+          : null,
+      trailing: trailing ??
+          const Icon(Icons.chevron_right, color: Colors.grey),
       onTap: onTap,
     );
   }

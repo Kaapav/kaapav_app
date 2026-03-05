@@ -1,4 +1,4 @@
-﻿class Payment {
+class Payment {
   final int? id;
   final String paymentId;
   final String? orderId;

@@ -1,4 +1,4 @@
-﻿// lib/widgets/toast.dart
+// lib/widgets/toast.dart
 
 import 'package:flutter/material.dart';
 

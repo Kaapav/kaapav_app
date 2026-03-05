@@ -1,4 +1,4 @@
-﻿// lib/services/api/message_api.dart
+// lib/services/api/message_api.dart
 // ═══════════════════════════════════════════════════════════
 // MESSAGE API
 // Matches: worker/handlers/message.js + chat.js (getMessages)

@@ -1,4 +1,4 @@
-﻿class Chat {
+class Chat {
   final int? id;
   final String phone;
   final String customerName;

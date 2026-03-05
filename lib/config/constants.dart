@@ -1,12 +1,12 @@
-﻿class AppConstants {
+class AppConstants {
   AppConstants._();
 
-  // ═══════════════════════ API ═══════════════════════
+  // ----------------------- API -----------------------
   static const String baseUrl = 'https://wa.kaapav.com';
   static const String apiBaseUrl = 'https://wa.kaapav.com'; // alias
   static const String apiPrefix = '/api';
 
-  // ═══════════════════════ WEBSOCKET ═══════════════════════
+  // ----------------------- WEBSOCKET -----------------------
   static const String wsUrl = 'wss://wa.kaapav.com/ws';
   static const String wsNewMessage = 'new_message';
   static const String wsMessageStatus = 'message_status';
@@ -17,7 +17,7 @@
   static const String wsPing = 'ping';
   static const String wsPong = 'pong';
 
-  // ═══════════════════════ STORAGE KEYS ═══════════════════════
+  // ----------------------- STORAGE KEYS -----------------------
   static const String authTokenKey = 'auth_token';
   static const String tokenKey = 'auth_token'; // alias
   static const String refreshTokenKey = 'refresh_token';
@@ -31,13 +31,13 @@
   static const String lastSyncKey = 'last_sync';
   static const String firstLaunchKey = 'first_launch';
 
-  // ═══════════════════════ MEDIA LIMITS ═══════════════════════
+  // ----------------------- MEDIA LIMITS -----------------------
   static const int maxImageSize = 5 * 1024 * 1024;
   static const int maxDocSize = 16 * 1024 * 1024;
   static const int maxVideoSize = 16 * 1024 * 1024;
   static const int maxVoiceSize = 16 * 1024 * 1024;
 
-  // ═══════════════════════ TIMEOUTS ═══════════════════════
+  // ----------------------- TIMEOUTS -----------------------
   static const Duration apiTimeout = Duration(seconds: 30);
   static const Duration uploadTimeout = Duration(seconds: 120);
   static const Duration wsReconnectDelay = Duration(seconds: 5);
@@ -45,29 +45,29 @@
   static const Duration wsPingInterval = Duration(seconds: 30);
   static const Duration tokenRefreshBuffer = Duration(minutes: 5);
 
-  // ═══════════════════════ PAGINATION ═══════════════════════
+  // ----------------------- PAGINATION -----------------------
   static const int defaultPageSize = 50;
   static const int chatPageSize = 50;
   static const int messagePageSize = 50;
   static const int orderPageSize = 100;
   static const int productPageSize = 50;
 
-  // ═══════════════════════ CIRCUIT BREAKER ═══════════════════════
+  // ----------------------- CIRCUIT BREAKER -----------------------
   static const int circuitBreakerThreshold = 5;
   static const Duration circuitBreakerTimeout = Duration(seconds: 60);
   static const int maxRetries = 3;
   static const int maxConcurrentRequests = 6;
 
-  // ═══════════════════════ CACHE ═══════════════════════
+  // ----------------------- CACHE -----------------------
   static const Duration defaultCacheTTL = Duration(minutes: 5);
   static const Duration cacheTTL = Duration(minutes: 5); // alias
   static const Duration chatCacheTTL = Duration(minutes: 2);
   static const Duration productCacheTTL = Duration(minutes: 10);
 
-  // ═══════════════════════ RETRY ═══════════════════════
+  // ----------------------- RETRY -----------------------
   static const Duration retryMaxDelay = Duration(seconds: 30);
 
-  // ═══════════════════════ APP INFO ═══════════════════════
+  // ----------------------- APP INFO -----------------------
   static const String appName = 'KAAPAV';
   static const String appVersion = '1.0.0';
   static const String businessPhone = '919148330016';
@@ -76,7 +76,7 @@
   static const String catalogUrl = 'https://wa.me/c/919148330016';
   static const String wameChatUrl = 'https://wa.me/919148330016';
 
-  // ═══════════════════════ NOTIFICATION CHANNELS ═══════════════════════
+  // ----------------------- NOTIFICATION CHANNELS -----------------------
   static const String messageChannelId = 'kaapav_messages';
   static const String messageChannelName = 'Messages';
   static const String orderChannelId = 'kaapav_orders';
@@ -85,9 +85,9 @@
   static const String generalChannelName = 'General';
 }
 
-// ═══════════════════════════════════════════════
+// -----------------------------------------------
 // API ENDPOINTS
-// ═══════════════════════════════════════════════
+// -----------------------------------------------
 class ApiEndpoints {
   ApiEndpoints._();
 
@@ -200,6 +200,7 @@ class ApiEndpoints {
   static const String mediaUpload = '/api/media/upload';
 
   // Sync
+
   static const String syncCheck = '/api/sync/check';
   
  }
@@ -207,5 +208,6 @@ class ApiEndpoints {
  class AppVersion {
   static const String version = '1.0.0';
   static const int buildNumber = 2; // INCREMENT this every build
-  static const String buildId = '${version}+${buildNumber}';
+  static const String buildId = '$version+$buildNumber';
 }
+

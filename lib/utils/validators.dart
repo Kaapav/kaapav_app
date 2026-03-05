@@ -1,4 +1,4 @@
-﻿class Validators {
+class Validators {
   Validators._();
 
   static String? required(String? value, [String field = 'This field']) {

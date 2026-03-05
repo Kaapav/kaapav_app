@@ -1,4 +1,4 @@
-﻿// lib/services/notification_service.dart
+// lib/services/notification_service.dart
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'dart:convert';
@@ -48,7 +48,13 @@ class NotificationService {
       }
 
       // Initialize local notifications
-      await _initLocal();
+
+        await _initLocal();
+      	await _fcm.setForegroundNotificationPresentationOptions(
+ 	 alert: true,
+  	 badge: true,
+  	 sound: true,
+);
 
       // Get FCM token
       _token = await _fcm.getToken();

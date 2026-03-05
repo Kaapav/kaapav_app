@@ -1,4 +1,4 @@
-﻿// lib/services/api/api_client.dart
+// lib/services/api/api_client.dart
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';

@@ -1,0 +1,14 @@
+targets:
+  $default:
+    builders:
+      drift_dev|preparing_builder:
+        enabled: true
+      drift_dev|drift_builder:
+        enabled: true
+        generate_for:
+          include:
+            - lib/services/local_db_service.dart
+      json_serializable:
+        generate_for:
+          include:
+            - lib/models/**.dart

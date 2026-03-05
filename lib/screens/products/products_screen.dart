@@ -1,8 +1,8 @@
-﻿// lib/screens/products/products_screen.dart
+// lib/screens/products/products_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../../config/routes.dart';
 import '../../providers/product_provider.dart';
 import '../../widgets/product_card.dart';

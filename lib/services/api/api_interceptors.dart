@@ -1,4 +1,4 @@
-﻿// lib/services/api/api_interceptors.dart
+// lib/services/api/api_interceptors.dart
 
 import 'dart:async';
 import 'dart:convert';
@@ -153,7 +153,10 @@ class AuthInterceptor extends Interceptor {
   }
 
   bool _isAuthPath(String path) =>
-      path.contains('/auth/login') || path.contains('/auth/register') || path.contains('/auth/refresh');
+      path.contains('/auth/login') || 
+      path.contains('/auth/register') || 
+      path.contains('/auth/refresh') ||
+      path.contains('/push/fcm-register');
 
   Dio _freshDio() => Dio(BaseOptions(
         baseUrl: AppConstants.apiBaseUrl,

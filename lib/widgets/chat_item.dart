@@ -1,5 +1,5 @@
-﻿import 'package:flutter/material.dart';
-import '../config/theme.dart';
+import 'package:flutter/material.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../models/chat.dart';
 
 class ChatItem extends StatelessWidget {
@@ -27,13 +27,13 @@ class ChatItem extends StatelessWidget {
         decoration: BoxDecoration(
           color: hasUnread
               ? (isDark
-                  ? KaapavTheme.gold.withOpacity(0.05)
+                  ? KaapavTheme.gold.withValues(alpha: 0.05)
                   : const Color(0xFFFBF8F1))
               : Colors.transparent,
           border: Border(
             bottom: BorderSide(
               color: isDark
-                  ? Colors.white.withOpacity(0.06)
+                  ? Colors.white.withValues(alpha: 0.06)
                   : const Color(0xFFE5E7EB),
               width: 0.5,
             ),
@@ -41,11 +41,11 @@ class ChatItem extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // ── Avatar ──
+            // -- Avatar --
             _buildAvatar(isDark),
             const SizedBox(width: 12),
 
-            // ── Content ──
+            // -- Content --
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -174,7 +174,7 @@ class ChatItem extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 6, vertical: 1),
                           decoration: BoxDecoration(
-                            color: KaapavTheme.gold.withOpacity(0.1),
+                            color: KaapavTheme.gold.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
@@ -211,7 +211,7 @@ class ChatItem extends StatelessWidget {
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-            color: KaapavTheme.gold.withOpacity(0.2),
+            color: KaapavTheme.gold.withValues(alpha: 0.2),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -245,15 +245,15 @@ class ChatItem extends StatelessWidget {
 
     switch (chat.lastMessageType) {
       case 'image':
-        return '📷 Photo';
+        return '?? Photo';
       case 'video':
-        return '🎥 Video';
+        return '?? Video';
       case 'audio':
-        return '🎵 Audio';
+        return '?? Audio';
       case 'document':
-        return '📄 Document';
+        return '?? Document';
       case 'sticker':
-        return '🏷️ Sticker';
+        return '??? Sticker';
       default:
         return chat.lastMessage!;
     }

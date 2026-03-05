@@ -1,6 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../../providers/broadcast_provider.dart';
 import '../../widgets/common/empty_state.dart';
 
@@ -45,14 +45,14 @@ class _BroadcastsScreenState extends ConsumerState<BroadcastsScreen> {
                         decoration: BoxDecoration(
                           color: isDark ? const Color(0xFF2C2C2C) : Colors.white,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFE5E7EB)),
+                          border: Border.all(color: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFE5E7EB)),
                         ),
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Row(children: [
                             Expanded(child: Text(b.name, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
                                 color: isDark ? Colors.white : const Color(0xFF1A1A1A)))),
                             Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(color: KaapavTheme.gold.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                              decoration: BoxDecoration(color: KaapavTheme.gold.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
                               child: Text(b.status, style: const TextStyle(fontSize: 11, color: KaapavTheme.gold, fontWeight: FontWeight.w600))),
                           ]),
                           const SizedBox(height: 8),

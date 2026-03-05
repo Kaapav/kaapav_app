@@ -1,11 +1,11 @@
-﻿// lib/screens/home_screen.dart
-// ═══════════════════════════════════════════════════════════
-// MAIN TAB CONTAINER — 5 tabs matching your PWA
-// ═══════════════════════════════════════════════════════════
+// lib/screens/home_screen.dart
+// -----------------------------------------------------------
+// MAIN TAB CONTAINER � 5 tabs matching your PWA
+// -----------------------------------------------------------
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../providers/chat_provider.dart';
 import '../providers/order_provider.dart';
 import '../providers/analytics_provider.dart';
@@ -70,7 +70,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _onTabTapped(int index) {
     if (_currentIndex == index) {
-      // Double tap — scroll to top / refresh
+      // Double tap � scroll to top / refresh
       return;
     }
     setState(() => _currentIndex = index);
@@ -98,10 +98,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 // BOTTOM NAVIGATION BAR
 // Matches your PWA: Dashboard, Chats, Orders, Products, Settings
-// ═══════════════════════════════════════════════════════════
+// -----------------------------------------------------------
 
 class _BottomNav extends StatelessWidget {
   final int currentIndex;
@@ -123,7 +123,7 @@ class _BottomNav extends StatelessWidget {
         color: KaapavColors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 20,
             offset: const Offset(0, -4),
           ),
@@ -200,7 +200,7 @@ class _NavItem extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           color: isActive
-              ? KaapavColors.gold.withOpacity(0.1)
+              ? KaapavColors.gold.withValues(alpha: 0.1)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),
@@ -229,7 +229,7 @@ class _NavItem extends StatelessWidget {
                         borderRadius: BorderRadius.circular(10),
                         boxShadow: [
                           BoxShadow(
-                            color: KaapavColors.error.withOpacity(0.3),
+                            color: KaapavColors.error.withValues(alpha: 0.3),
                             blurRadius: 4,
                             offset: const Offset(0, 2),
                           ),

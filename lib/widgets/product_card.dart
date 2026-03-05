@@ -1,8 +1,8 @@
-﻿// lib/widgets/product_card.dart
+// lib/widgets/product_card.dart
 
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../models/product.dart';
 
 class ProductCard extends StatelessWidget {
@@ -24,12 +24,12 @@ class ProductCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isDark
-                ? Colors.white.withOpacity(0.06)
+                ? Colors.white.withValues(alpha: 0.06)
                 : const Color(0xFFE5E7EB),
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withValues(alpha: 0.03),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -88,7 +88,7 @@ class ProductCard extends StatelessWidget {
                   Row(
                     children: [
                       Text(
-                        '₹${product.price.toStringAsFixed(0)}',
+                        '?${product.price.toStringAsFixed(0)}',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -98,7 +98,7 @@ class ProductCard extends StatelessWidget {
                       if (product.hasDiscount) ...[
                         const SizedBox(width: 6),
                         Text(
-                          '₹${product.comparePrice!.toStringAsFixed(0)}',
+                          '?${product.comparePrice!.toStringAsFixed(0)}',
                           style: const TextStyle(
                             fontSize: 11,
                             color: Color(0xFF9CA3AF),

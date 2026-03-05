@@ -1,4 +1,4 @@
-﻿// GENERATED CODE - DO NOT MODIFY BY HAND
+// GENERATED CODE - DO NOT MODIFY BY HAND
 
 part of 'local_db_service.dart';
 
@@ -5407,22 +5407,227 @@ typedef $$LocalChatsTableUpdateCompanionBuilder = LocalChatsCompanion Function({
   Value<String?> updatedAt,
 });
 
+class $$LocalChatsTableFilterComposer
+    extends Composer<_$LocalDatabase, $LocalChatsTable> {
+  $$LocalChatsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get phone => $composableBuilder(
+      column: $table.phone, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get customerName => $composableBuilder(
+      column: $table.customerName, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get lastMessage => $composableBuilder(
+      column: $table.lastMessage, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get lastMessageType => $composableBuilder(
+      column: $table.lastMessageType,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get lastTimestamp => $composableBuilder(
+      column: $table.lastTimestamp, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get lastDirection => $composableBuilder(
+      column: $table.lastDirection, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get unreadCount => $composableBuilder(
+      column: $table.unreadCount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get totalMessages => $composableBuilder(
+      column: $table.totalMessages, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get assignedTo => $composableBuilder(
+      column: $table.assignedTo, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get priority => $composableBuilder(
+      column: $table.priority, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get labels => $composableBuilder(
+      column: $table.labels, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get isStarred => $composableBuilder(
+      column: $table.isStarred, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get isBlocked => $composableBuilder(
+      column: $table.isBlocked, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get isBotEnabled => $composableBuilder(
+      column: $table.isBotEnabled, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$LocalChatsTableOrderingComposer
+    extends Composer<_$LocalDatabase, $LocalChatsTable> {
+  $$LocalChatsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get phone => $composableBuilder(
+      column: $table.phone, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get customerName => $composableBuilder(
+      column: $table.customerName,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get lastMessage => $composableBuilder(
+      column: $table.lastMessage, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get lastMessageType => $composableBuilder(
+      column: $table.lastMessageType,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get lastTimestamp => $composableBuilder(
+      column: $table.lastTimestamp,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get lastDirection => $composableBuilder(
+      column: $table.lastDirection,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get unreadCount => $composableBuilder(
+      column: $table.unreadCount, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get totalMessages => $composableBuilder(
+      column: $table.totalMessages,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get assignedTo => $composableBuilder(
+      column: $table.assignedTo, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get priority => $composableBuilder(
+      column: $table.priority, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get labels => $composableBuilder(
+      column: $table.labels, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get isStarred => $composableBuilder(
+      column: $table.isStarred, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get isBlocked => $composableBuilder(
+      column: $table.isBlocked, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get isBotEnabled => $composableBuilder(
+      column: $table.isBotEnabled,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$LocalChatsTableAnnotationComposer
+    extends Composer<_$LocalDatabase, $LocalChatsTable> {
+  $$LocalChatsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get phone =>
+      $composableBuilder(column: $table.phone, builder: (column) => column);
+
+  GeneratedColumn<String> get customerName => $composableBuilder(
+      column: $table.customerName, builder: (column) => column);
+
+  GeneratedColumn<String> get lastMessage => $composableBuilder(
+      column: $table.lastMessage, builder: (column) => column);
+
+  GeneratedColumn<String> get lastMessageType => $composableBuilder(
+      column: $table.lastMessageType, builder: (column) => column);
+
+  GeneratedColumn<String> get lastTimestamp => $composableBuilder(
+      column: $table.lastTimestamp, builder: (column) => column);
+
+  GeneratedColumn<String> get lastDirection => $composableBuilder(
+      column: $table.lastDirection, builder: (column) => column);
+
+  GeneratedColumn<int> get unreadCount => $composableBuilder(
+      column: $table.unreadCount, builder: (column) => column);
+
+  GeneratedColumn<int> get totalMessages => $composableBuilder(
+      column: $table.totalMessages, builder: (column) => column);
+
+  GeneratedColumn<String> get assignedTo => $composableBuilder(
+      column: $table.assignedTo, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<String> get priority =>
+      $composableBuilder(column: $table.priority, builder: (column) => column);
+
+  GeneratedColumn<String> get labels =>
+      $composableBuilder(column: $table.labels, builder: (column) => column);
+
+  GeneratedColumn<bool> get isStarred =>
+      $composableBuilder(column: $table.isStarred, builder: (column) => column);
+
+  GeneratedColumn<bool> get isBlocked =>
+      $composableBuilder(column: $table.isBlocked, builder: (column) => column);
+
+  GeneratedColumn<bool> get isBotEnabled => $composableBuilder(
+      column: $table.isBotEnabled, builder: (column) => column);
+
+  GeneratedColumn<String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
 class $$LocalChatsTableTableManager extends RootTableManager<
     _$LocalDatabase,
     $LocalChatsTable,
     LocalChat,
     $$LocalChatsTableFilterComposer,
     $$LocalChatsTableOrderingComposer,
+    $$LocalChatsTableAnnotationComposer,
     $$LocalChatsTableCreateCompanionBuilder,
-    $$LocalChatsTableUpdateCompanionBuilder> {
+    $$LocalChatsTableUpdateCompanionBuilder,
+    (LocalChat, BaseReferences<_$LocalDatabase, $LocalChatsTable, LocalChat>),
+    LocalChat,
+    PrefetchHooks Function()> {
   $$LocalChatsTableTableManager(_$LocalDatabase db, $LocalChatsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
-          filteringComposer:
-              $$LocalChatsTableFilterComposer(ComposerState(db, table)),
-          orderingComposer:
-              $$LocalChatsTableOrderingComposer(ComposerState(db, table)),
+          createFilteringComposer: () =>
+              $$LocalChatsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LocalChatsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LocalChatsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
             Value<String> phone = const Value.absent(),
@@ -5503,197 +5708,25 @@ class $$LocalChatsTableTableManager extends RootTableManager<
             createdAt: createdAt,
             updatedAt: updatedAt,
           ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
         ));
 }
 
-class $$LocalChatsTableFilterComposer
-    extends FilterComposer<_$LocalDatabase, $LocalChatsTable> {
-  $$LocalChatsTableFilterComposer(super.$state);
-  ColumnFilters<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get phone => $state.composableBuilder(
-      column: $state.table.phone,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get customerName => $state.composableBuilder(
-      column: $state.table.customerName,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get lastMessage => $state.composableBuilder(
-      column: $state.table.lastMessage,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get lastMessageType => $state.composableBuilder(
-      column: $state.table.lastMessageType,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get lastTimestamp => $state.composableBuilder(
-      column: $state.table.lastTimestamp,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get lastDirection => $state.composableBuilder(
-      column: $state.table.lastDirection,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<int> get unreadCount => $state.composableBuilder(
-      column: $state.table.unreadCount,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<int> get totalMessages => $state.composableBuilder(
-      column: $state.table.totalMessages,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get assignedTo => $state.composableBuilder(
-      column: $state.table.assignedTo,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get status => $state.composableBuilder(
-      column: $state.table.status,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get priority => $state.composableBuilder(
-      column: $state.table.priority,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get labels => $state.composableBuilder(
-      column: $state.table.labels,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<bool> get isStarred => $state.composableBuilder(
-      column: $state.table.isStarred,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<bool> get isBlocked => $state.composableBuilder(
-      column: $state.table.isBlocked,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<bool> get isBotEnabled => $state.composableBuilder(
-      column: $state.table.isBotEnabled,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get updatedAt => $state.composableBuilder(
-      column: $state.table.updatedAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-}
-
-class $$LocalChatsTableOrderingComposer
-    extends OrderingComposer<_$LocalDatabase, $LocalChatsTable> {
-  $$LocalChatsTableOrderingComposer(super.$state);
-  ColumnOrderings<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get phone => $state.composableBuilder(
-      column: $state.table.phone,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get customerName => $state.composableBuilder(
-      column: $state.table.customerName,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get lastMessage => $state.composableBuilder(
-      column: $state.table.lastMessage,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get lastMessageType => $state.composableBuilder(
-      column: $state.table.lastMessageType,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get lastTimestamp => $state.composableBuilder(
-      column: $state.table.lastTimestamp,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get lastDirection => $state.composableBuilder(
-      column: $state.table.lastDirection,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<int> get unreadCount => $state.composableBuilder(
-      column: $state.table.unreadCount,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<int> get totalMessages => $state.composableBuilder(
-      column: $state.table.totalMessages,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get assignedTo => $state.composableBuilder(
-      column: $state.table.assignedTo,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get status => $state.composableBuilder(
-      column: $state.table.status,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get priority => $state.composableBuilder(
-      column: $state.table.priority,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get labels => $state.composableBuilder(
-      column: $state.table.labels,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<bool> get isStarred => $state.composableBuilder(
-      column: $state.table.isStarred,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<bool> get isBlocked => $state.composableBuilder(
-      column: $state.table.isBlocked,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<bool> get isBotEnabled => $state.composableBuilder(
-      column: $state.table.isBotEnabled,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get updatedAt => $state.composableBuilder(
-      column: $state.table.updatedAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-}
-
+typedef $$LocalChatsTableProcessedTableManager = ProcessedTableManager<
+    _$LocalDatabase,
+    $LocalChatsTable,
+    LocalChat,
+    $$LocalChatsTableFilterComposer,
+    $$LocalChatsTableOrderingComposer,
+    $$LocalChatsTableAnnotationComposer,
+    $$LocalChatsTableCreateCompanionBuilder,
+    $$LocalChatsTableUpdateCompanionBuilder,
+    (LocalChat, BaseReferences<_$LocalDatabase, $LocalChatsTable, LocalChat>),
+    LocalChat,
+    PrefetchHooks Function()>;
 typedef $$LocalMessagesTableCreateCompanionBuilder = LocalMessagesCompanion
     Function({
   Value<int> id,
@@ -5747,23 +5780,273 @@ typedef $$LocalMessagesTableUpdateCompanionBuilder = LocalMessagesCompanion
   Value<String?> createdAt,
 });
 
+class $$LocalMessagesTableFilterComposer
+    extends Composer<_$LocalDatabase, $LocalMessagesTable> {
+  $$LocalMessagesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get messageId => $composableBuilder(
+      column: $table.messageId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get phone => $composableBuilder(
+      column: $table.phone, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get msgText => $composableBuilder(
+      column: $table.msgText, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get messageType => $composableBuilder(
+      column: $table.messageType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get direction => $composableBuilder(
+      column: $table.direction, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mediaId => $composableBuilder(
+      column: $table.mediaId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mediaUrl => $composableBuilder(
+      column: $table.mediaUrl, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mediaMime => $composableBuilder(
+      column: $table.mediaMime, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mediaCaption => $composableBuilder(
+      column: $table.mediaCaption, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get buttonId => $composableBuilder(
+      column: $table.buttonId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get buttonText => $composableBuilder(
+      column: $table.buttonText, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get buttons => $composableBuilder(
+      column: $table.buttons, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get contextMessageId => $composableBuilder(
+      column: $table.contextMessageId,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get isForwarded => $composableBuilder(
+      column: $table.isForwarded, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get isAutoReply => $composableBuilder(
+      column: $table.isAutoReply, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get isTemplate => $composableBuilder(
+      column: $table.isTemplate, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get templateName => $composableBuilder(
+      column: $table.templateName, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get timestamp => $composableBuilder(
+      column: $table.timestamp, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get deliveredAt => $composableBuilder(
+      column: $table.deliveredAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get readAt => $composableBuilder(
+      column: $table.readAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$LocalMessagesTableOrderingComposer
+    extends Composer<_$LocalDatabase, $LocalMessagesTable> {
+  $$LocalMessagesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get messageId => $composableBuilder(
+      column: $table.messageId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get phone => $composableBuilder(
+      column: $table.phone, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get msgText => $composableBuilder(
+      column: $table.msgText, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get messageType => $composableBuilder(
+      column: $table.messageType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get direction => $composableBuilder(
+      column: $table.direction, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get mediaId => $composableBuilder(
+      column: $table.mediaId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get mediaUrl => $composableBuilder(
+      column: $table.mediaUrl, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get mediaMime => $composableBuilder(
+      column: $table.mediaMime, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get mediaCaption => $composableBuilder(
+      column: $table.mediaCaption,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get buttonId => $composableBuilder(
+      column: $table.buttonId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get buttonText => $composableBuilder(
+      column: $table.buttonText, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get buttons => $composableBuilder(
+      column: $table.buttons, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get contextMessageId => $composableBuilder(
+      column: $table.contextMessageId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get isForwarded => $composableBuilder(
+      column: $table.isForwarded, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get isAutoReply => $composableBuilder(
+      column: $table.isAutoReply, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get isTemplate => $composableBuilder(
+      column: $table.isTemplate, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get templateName => $composableBuilder(
+      column: $table.templateName,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get timestamp => $composableBuilder(
+      column: $table.timestamp, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get deliveredAt => $composableBuilder(
+      column: $table.deliveredAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get readAt => $composableBuilder(
+      column: $table.readAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$LocalMessagesTableAnnotationComposer
+    extends Composer<_$LocalDatabase, $LocalMessagesTable> {
+  $$LocalMessagesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get messageId =>
+      $composableBuilder(column: $table.messageId, builder: (column) => column);
+
+  GeneratedColumn<String> get phone =>
+      $composableBuilder(column: $table.phone, builder: (column) => column);
+
+  GeneratedColumn<String> get msgText =>
+      $composableBuilder(column: $table.msgText, builder: (column) => column);
+
+  GeneratedColumn<String> get messageType => $composableBuilder(
+      column: $table.messageType, builder: (column) => column);
+
+  GeneratedColumn<String> get direction =>
+      $composableBuilder(column: $table.direction, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaId =>
+      $composableBuilder(column: $table.mediaId, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaUrl =>
+      $composableBuilder(column: $table.mediaUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaMime =>
+      $composableBuilder(column: $table.mediaMime, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaCaption => $composableBuilder(
+      column: $table.mediaCaption, builder: (column) => column);
+
+  GeneratedColumn<String> get buttonId =>
+      $composableBuilder(column: $table.buttonId, builder: (column) => column);
+
+  GeneratedColumn<String> get buttonText => $composableBuilder(
+      column: $table.buttonText, builder: (column) => column);
+
+  GeneratedColumn<String> get buttons =>
+      $composableBuilder(column: $table.buttons, builder: (column) => column);
+
+  GeneratedColumn<String> get contextMessageId => $composableBuilder(
+      column: $table.contextMessageId, builder: (column) => column);
+
+  GeneratedColumn<bool> get isForwarded => $composableBuilder(
+      column: $table.isForwarded, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<bool> get isAutoReply => $composableBuilder(
+      column: $table.isAutoReply, builder: (column) => column);
+
+  GeneratedColumn<bool> get isTemplate => $composableBuilder(
+      column: $table.isTemplate, builder: (column) => column);
+
+  GeneratedColumn<String> get templateName => $composableBuilder(
+      column: $table.templateName, builder: (column) => column);
+
+  GeneratedColumn<String> get timestamp =>
+      $composableBuilder(column: $table.timestamp, builder: (column) => column);
+
+  GeneratedColumn<String> get deliveredAt => $composableBuilder(
+      column: $table.deliveredAt, builder: (column) => column);
+
+  GeneratedColumn<String> get readAt =>
+      $composableBuilder(column: $table.readAt, builder: (column) => column);
+
+  GeneratedColumn<String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
 class $$LocalMessagesTableTableManager extends RootTableManager<
     _$LocalDatabase,
     $LocalMessagesTable,
     LocalMessage,
     $$LocalMessagesTableFilterComposer,
     $$LocalMessagesTableOrderingComposer,
+    $$LocalMessagesTableAnnotationComposer,
     $$LocalMessagesTableCreateCompanionBuilder,
-    $$LocalMessagesTableUpdateCompanionBuilder> {
+    $$LocalMessagesTableUpdateCompanionBuilder,
+    (
+      LocalMessage,
+      BaseReferences<_$LocalDatabase, $LocalMessagesTable, LocalMessage>
+    ),
+    LocalMessage,
+    PrefetchHooks Function()> {
   $$LocalMessagesTableTableManager(
       _$LocalDatabase db, $LocalMessagesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
-          filteringComposer:
-              $$LocalMessagesTableFilterComposer(ComposerState(db, table)),
-          orderingComposer:
-              $$LocalMessagesTableOrderingComposer(ComposerState(db, table)),
+          createFilteringComposer: () =>
+              $$LocalMessagesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LocalMessagesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LocalMessagesTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
             Value<String?> messageId = const Value.absent(),
@@ -5864,247 +6147,28 @@ class $$LocalMessagesTableTableManager extends RootTableManager<
             readAt: readAt,
             createdAt: createdAt,
           ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
         ));
 }
 
-class $$LocalMessagesTableFilterComposer
-    extends FilterComposer<_$LocalDatabase, $LocalMessagesTable> {
-  $$LocalMessagesTableFilterComposer(super.$state);
-  ColumnFilters<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get messageId => $state.composableBuilder(
-      column: $state.table.messageId,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get phone => $state.composableBuilder(
-      column: $state.table.phone,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get msgText => $state.composableBuilder(
-      column: $state.table.msgText,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get messageType => $state.composableBuilder(
-      column: $state.table.messageType,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get direction => $state.composableBuilder(
-      column: $state.table.direction,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get mediaId => $state.composableBuilder(
-      column: $state.table.mediaId,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get mediaUrl => $state.composableBuilder(
-      column: $state.table.mediaUrl,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get mediaMime => $state.composableBuilder(
-      column: $state.table.mediaMime,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get mediaCaption => $state.composableBuilder(
-      column: $state.table.mediaCaption,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get buttonId => $state.composableBuilder(
-      column: $state.table.buttonId,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get buttonText => $state.composableBuilder(
-      column: $state.table.buttonText,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get buttons => $state.composableBuilder(
-      column: $state.table.buttons,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get contextMessageId => $state.composableBuilder(
-      column: $state.table.contextMessageId,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<bool> get isForwarded => $state.composableBuilder(
-      column: $state.table.isForwarded,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get status => $state.composableBuilder(
-      column: $state.table.status,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<bool> get isAutoReply => $state.composableBuilder(
-      column: $state.table.isAutoReply,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<bool> get isTemplate => $state.composableBuilder(
-      column: $state.table.isTemplate,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get templateName => $state.composableBuilder(
-      column: $state.table.templateName,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get timestamp => $state.composableBuilder(
-      column: $state.table.timestamp,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get deliveredAt => $state.composableBuilder(
-      column: $state.table.deliveredAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get readAt => $state.composableBuilder(
-      column: $state.table.readAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-}
-
-class $$LocalMessagesTableOrderingComposer
-    extends OrderingComposer<_$LocalDatabase, $LocalMessagesTable> {
-  $$LocalMessagesTableOrderingComposer(super.$state);
-  ColumnOrderings<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get messageId => $state.composableBuilder(
-      column: $state.table.messageId,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get phone => $state.composableBuilder(
-      column: $state.table.phone,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get msgText => $state.composableBuilder(
-      column: $state.table.msgText,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get messageType => $state.composableBuilder(
-      column: $state.table.messageType,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get direction => $state.composableBuilder(
-      column: $state.table.direction,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get mediaId => $state.composableBuilder(
-      column: $state.table.mediaId,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get mediaUrl => $state.composableBuilder(
-      column: $state.table.mediaUrl,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get mediaMime => $state.composableBuilder(
-      column: $state.table.mediaMime,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get mediaCaption => $state.composableBuilder(
-      column: $state.table.mediaCaption,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get buttonId => $state.composableBuilder(
-      column: $state.table.buttonId,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get buttonText => $state.composableBuilder(
-      column: $state.table.buttonText,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get buttons => $state.composableBuilder(
-      column: $state.table.buttons,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get contextMessageId => $state.composableBuilder(
-      column: $state.table.contextMessageId,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<bool> get isForwarded => $state.composableBuilder(
-      column: $state.table.isForwarded,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get status => $state.composableBuilder(
-      column: $state.table.status,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<bool> get isAutoReply => $state.composableBuilder(
-      column: $state.table.isAutoReply,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<bool> get isTemplate => $state.composableBuilder(
-      column: $state.table.isTemplate,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get templateName => $state.composableBuilder(
-      column: $state.table.templateName,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get timestamp => $state.composableBuilder(
-      column: $state.table.timestamp,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get deliveredAt => $state.composableBuilder(
-      column: $state.table.deliveredAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get readAt => $state.composableBuilder(
-      column: $state.table.readAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-}
-
+typedef $$LocalMessagesTableProcessedTableManager = ProcessedTableManager<
+    _$LocalDatabase,
+    $LocalMessagesTable,
+    LocalMessage,
+    $$LocalMessagesTableFilterComposer,
+    $$LocalMessagesTableOrderingComposer,
+    $$LocalMessagesTableAnnotationComposer,
+    $$LocalMessagesTableCreateCompanionBuilder,
+    $$LocalMessagesTableUpdateCompanionBuilder,
+    (
+      LocalMessage,
+      BaseReferences<_$LocalDatabase, $LocalMessagesTable, LocalMessage>
+    ),
+    LocalMessage,
+    PrefetchHooks Function()>;
 typedef $$LocalCustomersTableCreateCompanionBuilder = LocalCustomersCompanion
     Function({
   Value<int> id,
@@ -6154,23 +6218,252 @@ typedef $$LocalCustomersTableUpdateCompanionBuilder = LocalCustomersCompanion
   Value<String?> updatedAt,
 });
 
+class $$LocalCustomersTableFilterComposer
+    extends Composer<_$LocalDatabase, $LocalCustomersTable> {
+  $$LocalCustomersTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get phone => $composableBuilder(
+      column: $table.phone, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get email => $composableBuilder(
+      column: $table.email, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get address => $composableBuilder(
+      column: $table.address, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get state => $composableBuilder(
+      column: $table.state, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get city => $composableBuilder(
+      column: $table.city, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get pincode => $composableBuilder(
+      column: $table.pincode, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get segment => $composableBuilder(
+      column: $table.segment, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get tier => $composableBuilder(
+      column: $table.tier, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get labels => $composableBuilder(
+      column: $table.labels, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get messageCount => $composableBuilder(
+      column: $table.messageCount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get orderCount => $composableBuilder(
+      column: $table.orderCount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get totalSpent => $composableBuilder(
+      column: $table.totalSpent, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get language => $composableBuilder(
+      column: $table.language, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get optedIn => $composableBuilder(
+      column: $table.optedIn, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get firstSeen => $composableBuilder(
+      column: $table.firstSeen, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get lastSeen => $composableBuilder(
+      column: $table.lastSeen, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get lastOrderAt => $composableBuilder(
+      column: $table.lastOrderAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$LocalCustomersTableOrderingComposer
+    extends Composer<_$LocalDatabase, $LocalCustomersTable> {
+  $$LocalCustomersTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get phone => $composableBuilder(
+      column: $table.phone, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get email => $composableBuilder(
+      column: $table.email, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get address => $composableBuilder(
+      column: $table.address, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get state => $composableBuilder(
+      column: $table.state, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get city => $composableBuilder(
+      column: $table.city, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get pincode => $composableBuilder(
+      column: $table.pincode, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get segment => $composableBuilder(
+      column: $table.segment, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get tier => $composableBuilder(
+      column: $table.tier, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get labels => $composableBuilder(
+      column: $table.labels, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get messageCount => $composableBuilder(
+      column: $table.messageCount,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get orderCount => $composableBuilder(
+      column: $table.orderCount, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get totalSpent => $composableBuilder(
+      column: $table.totalSpent, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get language => $composableBuilder(
+      column: $table.language, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get optedIn => $composableBuilder(
+      column: $table.optedIn, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get firstSeen => $composableBuilder(
+      column: $table.firstSeen, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get lastSeen => $composableBuilder(
+      column: $table.lastSeen, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get lastOrderAt => $composableBuilder(
+      column: $table.lastOrderAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$LocalCustomersTableAnnotationComposer
+    extends Composer<_$LocalDatabase, $LocalCustomersTable> {
+  $$LocalCustomersTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get phone =>
+      $composableBuilder(column: $table.phone, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get email =>
+      $composableBuilder(column: $table.email, builder: (column) => column);
+
+  GeneratedColumn<String> get address =>
+      $composableBuilder(column: $table.address, builder: (column) => column);
+
+  GeneratedColumn<String> get state =>
+      $composableBuilder(column: $table.state, builder: (column) => column);
+
+  GeneratedColumn<String> get city =>
+      $composableBuilder(column: $table.city, builder: (column) => column);
+
+  GeneratedColumn<String> get pincode =>
+      $composableBuilder(column: $table.pincode, builder: (column) => column);
+
+  GeneratedColumn<String> get segment =>
+      $composableBuilder(column: $table.segment, builder: (column) => column);
+
+  GeneratedColumn<String> get tier =>
+      $composableBuilder(column: $table.tier, builder: (column) => column);
+
+  GeneratedColumn<String> get labels =>
+      $composableBuilder(column: $table.labels, builder: (column) => column);
+
+  GeneratedColumn<int> get messageCount => $composableBuilder(
+      column: $table.messageCount, builder: (column) => column);
+
+  GeneratedColumn<int> get orderCount => $composableBuilder(
+      column: $table.orderCount, builder: (column) => column);
+
+  GeneratedColumn<double> get totalSpent => $composableBuilder(
+      column: $table.totalSpent, builder: (column) => column);
+
+  GeneratedColumn<String> get language =>
+      $composableBuilder(column: $table.language, builder: (column) => column);
+
+  GeneratedColumn<bool> get optedIn =>
+      $composableBuilder(column: $table.optedIn, builder: (column) => column);
+
+  GeneratedColumn<String> get firstSeen =>
+      $composableBuilder(column: $table.firstSeen, builder: (column) => column);
+
+  GeneratedColumn<String> get lastSeen =>
+      $composableBuilder(column: $table.lastSeen, builder: (column) => column);
+
+  GeneratedColumn<String> get lastOrderAt => $composableBuilder(
+      column: $table.lastOrderAt, builder: (column) => column);
+
+  GeneratedColumn<String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
 class $$LocalCustomersTableTableManager extends RootTableManager<
     _$LocalDatabase,
     $LocalCustomersTable,
     LocalCustomer,
     $$LocalCustomersTableFilterComposer,
     $$LocalCustomersTableOrderingComposer,
+    $$LocalCustomersTableAnnotationComposer,
     $$LocalCustomersTableCreateCompanionBuilder,
-    $$LocalCustomersTableUpdateCompanionBuilder> {
+    $$LocalCustomersTableUpdateCompanionBuilder,
+    (
+      LocalCustomer,
+      BaseReferences<_$LocalDatabase, $LocalCustomersTable, LocalCustomer>
+    ),
+    LocalCustomer,
+    PrefetchHooks Function()> {
   $$LocalCustomersTableTableManager(
       _$LocalDatabase db, $LocalCustomersTable table)
       : super(TableManagerState(
           db: db,
           table: table,
-          filteringComposer:
-              $$LocalCustomersTableFilterComposer(ComposerState(db, table)),
-          orderingComposer:
-              $$LocalCustomersTableOrderingComposer(ComposerState(db, table)),
+          createFilteringComposer: () =>
+              $$LocalCustomersTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LocalCustomersTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LocalCustomersTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
             Value<String> phone = const Value.absent(),
@@ -6263,227 +6556,28 @@ class $$LocalCustomersTableTableManager extends RootTableManager<
             createdAt: createdAt,
             updatedAt: updatedAt,
           ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
         ));
 }
 
-class $$LocalCustomersTableFilterComposer
-    extends FilterComposer<_$LocalDatabase, $LocalCustomersTable> {
-  $$LocalCustomersTableFilterComposer(super.$state);
-  ColumnFilters<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get phone => $state.composableBuilder(
-      column: $state.table.phone,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get name => $state.composableBuilder(
-      column: $state.table.name,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get email => $state.composableBuilder(
-      column: $state.table.email,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get address => $state.composableBuilder(
-      column: $state.table.address,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get state => $state.composableBuilder(
-      column: $state.table.state,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get city => $state.composableBuilder(
-      column: $state.table.city,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get pincode => $state.composableBuilder(
-      column: $state.table.pincode,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get segment => $state.composableBuilder(
-      column: $state.table.segment,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get tier => $state.composableBuilder(
-      column: $state.table.tier,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get labels => $state.composableBuilder(
-      column: $state.table.labels,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<int> get messageCount => $state.composableBuilder(
-      column: $state.table.messageCount,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<int> get orderCount => $state.composableBuilder(
-      column: $state.table.orderCount,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<double> get totalSpent => $state.composableBuilder(
-      column: $state.table.totalSpent,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get language => $state.composableBuilder(
-      column: $state.table.language,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<bool> get optedIn => $state.composableBuilder(
-      column: $state.table.optedIn,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get firstSeen => $state.composableBuilder(
-      column: $state.table.firstSeen,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get lastSeen => $state.composableBuilder(
-      column: $state.table.lastSeen,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get lastOrderAt => $state.composableBuilder(
-      column: $state.table.lastOrderAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get updatedAt => $state.composableBuilder(
-      column: $state.table.updatedAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-}
-
-class $$LocalCustomersTableOrderingComposer
-    extends OrderingComposer<_$LocalDatabase, $LocalCustomersTable> {
-  $$LocalCustomersTableOrderingComposer(super.$state);
-  ColumnOrderings<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get phone => $state.composableBuilder(
-      column: $state.table.phone,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get name => $state.composableBuilder(
-      column: $state.table.name,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get email => $state.composableBuilder(
-      column: $state.table.email,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get address => $state.composableBuilder(
-      column: $state.table.address,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get state => $state.composableBuilder(
-      column: $state.table.state,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get city => $state.composableBuilder(
-      column: $state.table.city,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get pincode => $state.composableBuilder(
-      column: $state.table.pincode,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get segment => $state.composableBuilder(
-      column: $state.table.segment,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get tier => $state.composableBuilder(
-      column: $state.table.tier,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get labels => $state.composableBuilder(
-      column: $state.table.labels,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<int> get messageCount => $state.composableBuilder(
-      column: $state.table.messageCount,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<int> get orderCount => $state.composableBuilder(
-      column: $state.table.orderCount,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<double> get totalSpent => $state.composableBuilder(
-      column: $state.table.totalSpent,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get language => $state.composableBuilder(
-      column: $state.table.language,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<bool> get optedIn => $state.composableBuilder(
-      column: $state.table.optedIn,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get firstSeen => $state.composableBuilder(
-      column: $state.table.firstSeen,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get lastSeen => $state.composableBuilder(
-      column: $state.table.lastSeen,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get lastOrderAt => $state.composableBuilder(
-      column: $state.table.lastOrderAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get updatedAt => $state.composableBuilder(
-      column: $state.table.updatedAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-}
-
+typedef $$LocalCustomersTableProcessedTableManager = ProcessedTableManager<
+    _$LocalDatabase,
+    $LocalCustomersTable,
+    LocalCustomer,
+    $$LocalCustomersTableFilterComposer,
+    $$LocalCustomersTableOrderingComposer,
+    $$LocalCustomersTableAnnotationComposer,
+    $$LocalCustomersTableCreateCompanionBuilder,
+    $$LocalCustomersTableUpdateCompanionBuilder,
+    (
+      LocalCustomer,
+      BaseReferences<_$LocalDatabase, $LocalCustomersTable, LocalCustomer>
+    ),
+    LocalCustomer,
+    PrefetchHooks Function()>;
 typedef $$LocalOrdersTableCreateCompanionBuilder = LocalOrdersCompanion
     Function({
   Value<int> id,
@@ -6531,22 +6625,245 @@ typedef $$LocalOrdersTableUpdateCompanionBuilder = LocalOrdersCompanion
   Value<String?> updatedAt,
 });
 
+class $$LocalOrdersTableFilterComposer
+    extends Composer<_$LocalDatabase, $LocalOrdersTable> {
+  $$LocalOrdersTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get orderId => $composableBuilder(
+      column: $table.orderId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get phone => $composableBuilder(
+      column: $table.phone, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get customerName => $composableBuilder(
+      column: $table.customerName, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get items => $composableBuilder(
+      column: $table.items, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get itemCount => $composableBuilder(
+      column: $table.itemCount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get subtotal => $composableBuilder(
+      column: $table.subtotal, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get discount => $composableBuilder(
+      column: $table.discount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get shippingCost => $composableBuilder(
+      column: $table.shippingCost, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get tax => $composableBuilder(
+      column: $table.tax, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get total => $composableBuilder(
+      column: $table.total, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get paymentStatus => $composableBuilder(
+      column: $table.paymentStatus, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get paymentMethod => $composableBuilder(
+      column: $table.paymentMethod, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get courier => $composableBuilder(
+      column: $table.courier, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get trackingId => $composableBuilder(
+      column: $table.trackingId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get awbNumber => $composableBuilder(
+      column: $table.awbNumber, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get source => $composableBuilder(
+      column: $table.source, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$LocalOrdersTableOrderingComposer
+    extends Composer<_$LocalDatabase, $LocalOrdersTable> {
+  $$LocalOrdersTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get orderId => $composableBuilder(
+      column: $table.orderId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get phone => $composableBuilder(
+      column: $table.phone, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get customerName => $composableBuilder(
+      column: $table.customerName,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get items => $composableBuilder(
+      column: $table.items, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get itemCount => $composableBuilder(
+      column: $table.itemCount, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get subtotal => $composableBuilder(
+      column: $table.subtotal, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get discount => $composableBuilder(
+      column: $table.discount, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get shippingCost => $composableBuilder(
+      column: $table.shippingCost,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get tax => $composableBuilder(
+      column: $table.tax, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get total => $composableBuilder(
+      column: $table.total, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get paymentStatus => $composableBuilder(
+      column: $table.paymentStatus,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get paymentMethod => $composableBuilder(
+      column: $table.paymentMethod,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get courier => $composableBuilder(
+      column: $table.courier, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get trackingId => $composableBuilder(
+      column: $table.trackingId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get awbNumber => $composableBuilder(
+      column: $table.awbNumber, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get source => $composableBuilder(
+      column: $table.source, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$LocalOrdersTableAnnotationComposer
+    extends Composer<_$LocalDatabase, $LocalOrdersTable> {
+  $$LocalOrdersTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get orderId =>
+      $composableBuilder(column: $table.orderId, builder: (column) => column);
+
+  GeneratedColumn<String> get phone =>
+      $composableBuilder(column: $table.phone, builder: (column) => column);
+
+  GeneratedColumn<String> get customerName => $composableBuilder(
+      column: $table.customerName, builder: (column) => column);
+
+  GeneratedColumn<String> get items =>
+      $composableBuilder(column: $table.items, builder: (column) => column);
+
+  GeneratedColumn<int> get itemCount =>
+      $composableBuilder(column: $table.itemCount, builder: (column) => column);
+
+  GeneratedColumn<double> get subtotal =>
+      $composableBuilder(column: $table.subtotal, builder: (column) => column);
+
+  GeneratedColumn<double> get discount =>
+      $composableBuilder(column: $table.discount, builder: (column) => column);
+
+  GeneratedColumn<double> get shippingCost => $composableBuilder(
+      column: $table.shippingCost, builder: (column) => column);
+
+  GeneratedColumn<double> get tax =>
+      $composableBuilder(column: $table.tax, builder: (column) => column);
+
+  GeneratedColumn<double> get total =>
+      $composableBuilder(column: $table.total, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<String> get paymentStatus => $composableBuilder(
+      column: $table.paymentStatus, builder: (column) => column);
+
+  GeneratedColumn<String> get paymentMethod => $composableBuilder(
+      column: $table.paymentMethod, builder: (column) => column);
+
+  GeneratedColumn<String> get courier =>
+      $composableBuilder(column: $table.courier, builder: (column) => column);
+
+  GeneratedColumn<String> get trackingId => $composableBuilder(
+      column: $table.trackingId, builder: (column) => column);
+
+  GeneratedColumn<String> get awbNumber =>
+      $composableBuilder(column: $table.awbNumber, builder: (column) => column);
+
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
 class $$LocalOrdersTableTableManager extends RootTableManager<
     _$LocalDatabase,
     $LocalOrdersTable,
     LocalOrder,
     $$LocalOrdersTableFilterComposer,
     $$LocalOrdersTableOrderingComposer,
+    $$LocalOrdersTableAnnotationComposer,
     $$LocalOrdersTableCreateCompanionBuilder,
-    $$LocalOrdersTableUpdateCompanionBuilder> {
+    $$LocalOrdersTableUpdateCompanionBuilder,
+    (
+      LocalOrder,
+      BaseReferences<_$LocalDatabase, $LocalOrdersTable, LocalOrder>
+    ),
+    LocalOrder,
+    PrefetchHooks Function()> {
   $$LocalOrdersTableTableManager(_$LocalDatabase db, $LocalOrdersTable table)
       : super(TableManagerState(
           db: db,
           table: table,
-          filteringComposer:
-              $$LocalOrdersTableFilterComposer(ComposerState(db, table)),
-          orderingComposer:
-              $$LocalOrdersTableOrderingComposer(ComposerState(db, table)),
+          createFilteringComposer: () =>
+              $$LocalOrdersTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LocalOrdersTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LocalOrdersTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
             Value<String> orderId = const Value.absent(),
@@ -6635,217 +6952,28 @@ class $$LocalOrdersTableTableManager extends RootTableManager<
             createdAt: createdAt,
             updatedAt: updatedAt,
           ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
         ));
 }
 
-class $$LocalOrdersTableFilterComposer
-    extends FilterComposer<_$LocalDatabase, $LocalOrdersTable> {
-  $$LocalOrdersTableFilterComposer(super.$state);
-  ColumnFilters<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get orderId => $state.composableBuilder(
-      column: $state.table.orderId,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get phone => $state.composableBuilder(
-      column: $state.table.phone,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get customerName => $state.composableBuilder(
-      column: $state.table.customerName,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get items => $state.composableBuilder(
-      column: $state.table.items,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<int> get itemCount => $state.composableBuilder(
-      column: $state.table.itemCount,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<double> get subtotal => $state.composableBuilder(
-      column: $state.table.subtotal,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<double> get discount => $state.composableBuilder(
-      column: $state.table.discount,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<double> get shippingCost => $state.composableBuilder(
-      column: $state.table.shippingCost,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<double> get tax => $state.composableBuilder(
-      column: $state.table.tax,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<double> get total => $state.composableBuilder(
-      column: $state.table.total,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get status => $state.composableBuilder(
-      column: $state.table.status,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get paymentStatus => $state.composableBuilder(
-      column: $state.table.paymentStatus,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get paymentMethod => $state.composableBuilder(
-      column: $state.table.paymentMethod,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get courier => $state.composableBuilder(
-      column: $state.table.courier,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get trackingId => $state.composableBuilder(
-      column: $state.table.trackingId,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get awbNumber => $state.composableBuilder(
-      column: $state.table.awbNumber,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get source => $state.composableBuilder(
-      column: $state.table.source,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get updatedAt => $state.composableBuilder(
-      column: $state.table.updatedAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-}
-
-class $$LocalOrdersTableOrderingComposer
-    extends OrderingComposer<_$LocalDatabase, $LocalOrdersTable> {
-  $$LocalOrdersTableOrderingComposer(super.$state);
-  ColumnOrderings<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get orderId => $state.composableBuilder(
-      column: $state.table.orderId,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get phone => $state.composableBuilder(
-      column: $state.table.phone,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get customerName => $state.composableBuilder(
-      column: $state.table.customerName,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get items => $state.composableBuilder(
-      column: $state.table.items,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<int> get itemCount => $state.composableBuilder(
-      column: $state.table.itemCount,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<double> get subtotal => $state.composableBuilder(
-      column: $state.table.subtotal,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<double> get discount => $state.composableBuilder(
-      column: $state.table.discount,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<double> get shippingCost => $state.composableBuilder(
-      column: $state.table.shippingCost,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<double> get tax => $state.composableBuilder(
-      column: $state.table.tax,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<double> get total => $state.composableBuilder(
-      column: $state.table.total,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get status => $state.composableBuilder(
-      column: $state.table.status,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get paymentStatus => $state.composableBuilder(
-      column: $state.table.paymentStatus,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get paymentMethod => $state.composableBuilder(
-      column: $state.table.paymentMethod,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get courier => $state.composableBuilder(
-      column: $state.table.courier,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get trackingId => $state.composableBuilder(
-      column: $state.table.trackingId,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get awbNumber => $state.composableBuilder(
-      column: $state.table.awbNumber,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get source => $state.composableBuilder(
-      column: $state.table.source,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get updatedAt => $state.composableBuilder(
-      column: $state.table.updatedAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-}
-
+typedef $$LocalOrdersTableProcessedTableManager = ProcessedTableManager<
+    _$LocalDatabase,
+    $LocalOrdersTable,
+    LocalOrder,
+    $$LocalOrdersTableFilterComposer,
+    $$LocalOrdersTableOrderingComposer,
+    $$LocalOrdersTableAnnotationComposer,
+    $$LocalOrdersTableCreateCompanionBuilder,
+    $$LocalOrdersTableUpdateCompanionBuilder,
+    (
+      LocalOrder,
+      BaseReferences<_$LocalDatabase, $LocalOrdersTable, LocalOrder>
+    ),
+    LocalOrder,
+    PrefetchHooks Function()>;
 typedef $$LocalProductsTableCreateCompanionBuilder = LocalProductsCompanion
     Function({
   Value<int> id,
@@ -6881,23 +7009,189 @@ typedef $$LocalProductsTableUpdateCompanionBuilder = LocalProductsCompanion
   Value<String?> updatedAt,
 });
 
+class $$LocalProductsTableFilterComposer
+    extends Composer<_$LocalDatabase, $LocalProductsTable> {
+  $$LocalProductsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get sku => $composableBuilder(
+      column: $table.sku, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get description => $composableBuilder(
+      column: $table.description, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get price => $composableBuilder(
+      column: $table.price, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get comparePrice => $composableBuilder(
+      column: $table.comparePrice, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get category => $composableBuilder(
+      column: $table.category, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get stock => $composableBuilder(
+      column: $table.stock, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get imageUrl => $composableBuilder(
+      column: $table.imageUrl, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get images => $composableBuilder(
+      column: $table.images, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get isActive => $composableBuilder(
+      column: $table.isActive, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get isFeatured => $composableBuilder(
+      column: $table.isFeatured, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$LocalProductsTableOrderingComposer
+    extends Composer<_$LocalDatabase, $LocalProductsTable> {
+  $$LocalProductsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get sku => $composableBuilder(
+      column: $table.sku, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get description => $composableBuilder(
+      column: $table.description, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get price => $composableBuilder(
+      column: $table.price, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get comparePrice => $composableBuilder(
+      column: $table.comparePrice,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get category => $composableBuilder(
+      column: $table.category, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get stock => $composableBuilder(
+      column: $table.stock, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get imageUrl => $composableBuilder(
+      column: $table.imageUrl, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get images => $composableBuilder(
+      column: $table.images, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get isActive => $composableBuilder(
+      column: $table.isActive, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get isFeatured => $composableBuilder(
+      column: $table.isFeatured, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$LocalProductsTableAnnotationComposer
+    extends Composer<_$LocalDatabase, $LocalProductsTable> {
+  $$LocalProductsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get sku =>
+      $composableBuilder(column: $table.sku, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get description => $composableBuilder(
+      column: $table.description, builder: (column) => column);
+
+  GeneratedColumn<double> get price =>
+      $composableBuilder(column: $table.price, builder: (column) => column);
+
+  GeneratedColumn<double> get comparePrice => $composableBuilder(
+      column: $table.comparePrice, builder: (column) => column);
+
+  GeneratedColumn<String> get category =>
+      $composableBuilder(column: $table.category, builder: (column) => column);
+
+  GeneratedColumn<int> get stock =>
+      $composableBuilder(column: $table.stock, builder: (column) => column);
+
+  GeneratedColumn<String> get imageUrl =>
+      $composableBuilder(column: $table.imageUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get images =>
+      $composableBuilder(column: $table.images, builder: (column) => column);
+
+  GeneratedColumn<bool> get isActive =>
+      $composableBuilder(column: $table.isActive, builder: (column) => column);
+
+  GeneratedColumn<bool> get isFeatured => $composableBuilder(
+      column: $table.isFeatured, builder: (column) => column);
+
+  GeneratedColumn<String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
 class $$LocalProductsTableTableManager extends RootTableManager<
     _$LocalDatabase,
     $LocalProductsTable,
     LocalProduct,
     $$LocalProductsTableFilterComposer,
     $$LocalProductsTableOrderingComposer,
+    $$LocalProductsTableAnnotationComposer,
     $$LocalProductsTableCreateCompanionBuilder,
-    $$LocalProductsTableUpdateCompanionBuilder> {
+    $$LocalProductsTableUpdateCompanionBuilder,
+    (
+      LocalProduct,
+      BaseReferences<_$LocalDatabase, $LocalProductsTable, LocalProduct>
+    ),
+    LocalProduct,
+    PrefetchHooks Function()> {
   $$LocalProductsTableTableManager(
       _$LocalDatabase db, $LocalProductsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
-          filteringComposer:
-              $$LocalProductsTableFilterComposer(ComposerState(db, table)),
-          orderingComposer:
-              $$LocalProductsTableOrderingComposer(ComposerState(db, table)),
+          createFilteringComposer: () =>
+              $$LocalProductsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LocalProductsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LocalProductsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
             Value<String> sku = const Value.absent(),
@@ -6962,157 +7256,28 @@ class $$LocalProductsTableTableManager extends RootTableManager<
             createdAt: createdAt,
             updatedAt: updatedAt,
           ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
         ));
 }
 
-class $$LocalProductsTableFilterComposer
-    extends FilterComposer<_$LocalDatabase, $LocalProductsTable> {
-  $$LocalProductsTableFilterComposer(super.$state);
-  ColumnFilters<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get sku => $state.composableBuilder(
-      column: $state.table.sku,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get name => $state.composableBuilder(
-      column: $state.table.name,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get description => $state.composableBuilder(
-      column: $state.table.description,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<double> get price => $state.composableBuilder(
-      column: $state.table.price,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<double> get comparePrice => $state.composableBuilder(
-      column: $state.table.comparePrice,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get category => $state.composableBuilder(
-      column: $state.table.category,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<int> get stock => $state.composableBuilder(
-      column: $state.table.stock,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get imageUrl => $state.composableBuilder(
-      column: $state.table.imageUrl,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get images => $state.composableBuilder(
-      column: $state.table.images,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<bool> get isActive => $state.composableBuilder(
-      column: $state.table.isActive,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<bool> get isFeatured => $state.composableBuilder(
-      column: $state.table.isFeatured,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get updatedAt => $state.composableBuilder(
-      column: $state.table.updatedAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-}
-
-class $$LocalProductsTableOrderingComposer
-    extends OrderingComposer<_$LocalDatabase, $LocalProductsTable> {
-  $$LocalProductsTableOrderingComposer(super.$state);
-  ColumnOrderings<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get sku => $state.composableBuilder(
-      column: $state.table.sku,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get name => $state.composableBuilder(
-      column: $state.table.name,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get description => $state.composableBuilder(
-      column: $state.table.description,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<double> get price => $state.composableBuilder(
-      column: $state.table.price,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<double> get comparePrice => $state.composableBuilder(
-      column: $state.table.comparePrice,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get category => $state.composableBuilder(
-      column: $state.table.category,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<int> get stock => $state.composableBuilder(
-      column: $state.table.stock,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get imageUrl => $state.composableBuilder(
-      column: $state.table.imageUrl,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get images => $state.composableBuilder(
-      column: $state.table.images,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<bool> get isActive => $state.composableBuilder(
-      column: $state.table.isActive,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<bool> get isFeatured => $state.composableBuilder(
-      column: $state.table.isFeatured,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get updatedAt => $state.composableBuilder(
-      column: $state.table.updatedAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-}
-
+typedef $$LocalProductsTableProcessedTableManager = ProcessedTableManager<
+    _$LocalDatabase,
+    $LocalProductsTable,
+    LocalProduct,
+    $$LocalProductsTableFilterComposer,
+    $$LocalProductsTableOrderingComposer,
+    $$LocalProductsTableAnnotationComposer,
+    $$LocalProductsTableCreateCompanionBuilder,
+    $$LocalProductsTableUpdateCompanionBuilder,
+    (
+      LocalProduct,
+      BaseReferences<_$LocalDatabase, $LocalProductsTable, LocalProduct>
+    ),
+    LocalProduct,
+    PrefetchHooks Function()>;
 typedef $$LocalQuickRepliesTableCreateCompanionBuilder
     = LocalQuickRepliesCompanion Function({
   Value<int> id,
@@ -7138,23 +7303,144 @@ typedef $$LocalQuickRepliesTableUpdateCompanionBuilder
   Value<String?> createdAt,
 });
 
+class $$LocalQuickRepliesTableFilterComposer
+    extends Composer<_$LocalDatabase, $LocalQuickRepliesTable> {
+  $$LocalQuickRepliesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get shortcut => $composableBuilder(
+      column: $table.shortcut, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get message => $composableBuilder(
+      column: $table.message, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get messageType => $composableBuilder(
+      column: $table.messageType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get category => $composableBuilder(
+      column: $table.category, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get useCount => $composableBuilder(
+      column: $table.useCount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get isActive => $composableBuilder(
+      column: $table.isActive, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$LocalQuickRepliesTableOrderingComposer
+    extends Composer<_$LocalDatabase, $LocalQuickRepliesTable> {
+  $$LocalQuickRepliesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get shortcut => $composableBuilder(
+      column: $table.shortcut, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get message => $composableBuilder(
+      column: $table.message, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get messageType => $composableBuilder(
+      column: $table.messageType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get category => $composableBuilder(
+      column: $table.category, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get useCount => $composableBuilder(
+      column: $table.useCount, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get isActive => $composableBuilder(
+      column: $table.isActive, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$LocalQuickRepliesTableAnnotationComposer
+    extends Composer<_$LocalDatabase, $LocalQuickRepliesTable> {
+  $$LocalQuickRepliesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get shortcut =>
+      $composableBuilder(column: $table.shortcut, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get message =>
+      $composableBuilder(column: $table.message, builder: (column) => column);
+
+  GeneratedColumn<String> get messageType => $composableBuilder(
+      column: $table.messageType, builder: (column) => column);
+
+  GeneratedColumn<String> get category =>
+      $composableBuilder(column: $table.category, builder: (column) => column);
+
+  GeneratedColumn<int> get useCount =>
+      $composableBuilder(column: $table.useCount, builder: (column) => column);
+
+  GeneratedColumn<bool> get isActive =>
+      $composableBuilder(column: $table.isActive, builder: (column) => column);
+
+  GeneratedColumn<String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
 class $$LocalQuickRepliesTableTableManager extends RootTableManager<
     _$LocalDatabase,
     $LocalQuickRepliesTable,
     LocalQuickReply,
     $$LocalQuickRepliesTableFilterComposer,
     $$LocalQuickRepliesTableOrderingComposer,
+    $$LocalQuickRepliesTableAnnotationComposer,
     $$LocalQuickRepliesTableCreateCompanionBuilder,
-    $$LocalQuickRepliesTableUpdateCompanionBuilder> {
+    $$LocalQuickRepliesTableUpdateCompanionBuilder,
+    (
+      LocalQuickReply,
+      BaseReferences<_$LocalDatabase, $LocalQuickRepliesTable, LocalQuickReply>
+    ),
+    LocalQuickReply,
+    PrefetchHooks Function()> {
   $$LocalQuickRepliesTableTableManager(
       _$LocalDatabase db, $LocalQuickRepliesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
-          filteringComposer:
-              $$LocalQuickRepliesTableFilterComposer(ComposerState(db, table)),
-          orderingComposer: $$LocalQuickRepliesTableOrderingComposer(
-              ComposerState(db, table)),
+          createFilteringComposer: () =>
+              $$LocalQuickRepliesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LocalQuickRepliesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LocalQuickRepliesTableAnnotationComposer(
+                  $db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
             Value<String> shortcut = const Value.absent(),
@@ -7199,107 +7485,28 @@ class $$LocalQuickRepliesTableTableManager extends RootTableManager<
             isActive: isActive,
             createdAt: createdAt,
           ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
         ));
 }
 
-class $$LocalQuickRepliesTableFilterComposer
-    extends FilterComposer<_$LocalDatabase, $LocalQuickRepliesTable> {
-  $$LocalQuickRepliesTableFilterComposer(super.$state);
-  ColumnFilters<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get shortcut => $state.composableBuilder(
-      column: $state.table.shortcut,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get title => $state.composableBuilder(
-      column: $state.table.title,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get message => $state.composableBuilder(
-      column: $state.table.message,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get messageType => $state.composableBuilder(
-      column: $state.table.messageType,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get category => $state.composableBuilder(
-      column: $state.table.category,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<int> get useCount => $state.composableBuilder(
-      column: $state.table.useCount,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<bool> get isActive => $state.composableBuilder(
-      column: $state.table.isActive,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-}
-
-class $$LocalQuickRepliesTableOrderingComposer
-    extends OrderingComposer<_$LocalDatabase, $LocalQuickRepliesTable> {
-  $$LocalQuickRepliesTableOrderingComposer(super.$state);
-  ColumnOrderings<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get shortcut => $state.composableBuilder(
-      column: $state.table.shortcut,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get title => $state.composableBuilder(
-      column: $state.table.title,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get message => $state.composableBuilder(
-      column: $state.table.message,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get messageType => $state.composableBuilder(
-      column: $state.table.messageType,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get category => $state.composableBuilder(
-      column: $state.table.category,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<int> get useCount => $state.composableBuilder(
-      column: $state.table.useCount,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<bool> get isActive => $state.composableBuilder(
-      column: $state.table.isActive,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-}
-
+typedef $$LocalQuickRepliesTableProcessedTableManager = ProcessedTableManager<
+    _$LocalDatabase,
+    $LocalQuickRepliesTable,
+    LocalQuickReply,
+    $$LocalQuickRepliesTableFilterComposer,
+    $$LocalQuickRepliesTableOrderingComposer,
+    $$LocalQuickRepliesTableAnnotationComposer,
+    $$LocalQuickRepliesTableCreateCompanionBuilder,
+    $$LocalQuickRepliesTableUpdateCompanionBuilder,
+    (
+      LocalQuickReply,
+      BaseReferences<_$LocalDatabase, $LocalQuickRepliesTable, LocalQuickReply>
+    ),
+    LocalQuickReply,
+    PrefetchHooks Function()>;
 typedef $$LocalLabelsTableCreateCompanionBuilder = LocalLabelsCompanion
     Function({
   Value<int> id,
@@ -7323,22 +7530,134 @@ typedef $$LocalLabelsTableUpdateCompanionBuilder = LocalLabelsCompanion
   Value<String?> createdAt,
 });
 
+class $$LocalLabelsTableFilterComposer
+    extends Composer<_$LocalDatabase, $LocalLabelsTable> {
+  $$LocalLabelsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get color => $composableBuilder(
+      column: $table.color, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get description => $composableBuilder(
+      column: $table.description, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get customerCount => $composableBuilder(
+      column: $table.customerCount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get chatCount => $composableBuilder(
+      column: $table.chatCount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get isActive => $composableBuilder(
+      column: $table.isActive, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$LocalLabelsTableOrderingComposer
+    extends Composer<_$LocalDatabase, $LocalLabelsTable> {
+  $$LocalLabelsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get color => $composableBuilder(
+      column: $table.color, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get description => $composableBuilder(
+      column: $table.description, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get customerCount => $composableBuilder(
+      column: $table.customerCount,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get chatCount => $composableBuilder(
+      column: $table.chatCount, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get isActive => $composableBuilder(
+      column: $table.isActive, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$LocalLabelsTableAnnotationComposer
+    extends Composer<_$LocalDatabase, $LocalLabelsTable> {
+  $$LocalLabelsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get color =>
+      $composableBuilder(column: $table.color, builder: (column) => column);
+
+  GeneratedColumn<String> get description => $composableBuilder(
+      column: $table.description, builder: (column) => column);
+
+  GeneratedColumn<int> get customerCount => $composableBuilder(
+      column: $table.customerCount, builder: (column) => column);
+
+  GeneratedColumn<int> get chatCount =>
+      $composableBuilder(column: $table.chatCount, builder: (column) => column);
+
+  GeneratedColumn<bool> get isActive =>
+      $composableBuilder(column: $table.isActive, builder: (column) => column);
+
+  GeneratedColumn<String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
 class $$LocalLabelsTableTableManager extends RootTableManager<
     _$LocalDatabase,
     $LocalLabelsTable,
     LocalLabel,
     $$LocalLabelsTableFilterComposer,
     $$LocalLabelsTableOrderingComposer,
+    $$LocalLabelsTableAnnotationComposer,
     $$LocalLabelsTableCreateCompanionBuilder,
-    $$LocalLabelsTableUpdateCompanionBuilder> {
+    $$LocalLabelsTableUpdateCompanionBuilder,
+    (
+      LocalLabel,
+      BaseReferences<_$LocalDatabase, $LocalLabelsTable, LocalLabel>
+    ),
+    LocalLabel,
+    PrefetchHooks Function()> {
   $$LocalLabelsTableTableManager(_$LocalDatabase db, $LocalLabelsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
-          filteringComposer:
-              $$LocalLabelsTableFilterComposer(ComposerState(db, table)),
-          orderingComposer:
-              $$LocalLabelsTableOrderingComposer(ComposerState(db, table)),
+          createFilteringComposer: () =>
+              $$LocalLabelsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LocalLabelsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LocalLabelsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
             Value<String> name = const Value.absent(),
@@ -7379,96 +7698,28 @@ class $$LocalLabelsTableTableManager extends RootTableManager<
             isActive: isActive,
             createdAt: createdAt,
           ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
         ));
 }
 
-class $$LocalLabelsTableFilterComposer
-    extends FilterComposer<_$LocalDatabase, $LocalLabelsTable> {
-  $$LocalLabelsTableFilterComposer(super.$state);
-  ColumnFilters<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get name => $state.composableBuilder(
-      column: $state.table.name,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get color => $state.composableBuilder(
-      column: $state.table.color,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get description => $state.composableBuilder(
-      column: $state.table.description,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<int> get customerCount => $state.composableBuilder(
-      column: $state.table.customerCount,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<int> get chatCount => $state.composableBuilder(
-      column: $state.table.chatCount,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<bool> get isActive => $state.composableBuilder(
-      column: $state.table.isActive,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-
-  ColumnFilters<String> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnFilters(column, joinBuilders: joinBuilders));
-}
-
-class $$LocalLabelsTableOrderingComposer
-    extends OrderingComposer<_$LocalDatabase, $LocalLabelsTable> {
-  $$LocalLabelsTableOrderingComposer(super.$state);
-  ColumnOrderings<int> get id => $state.composableBuilder(
-      column: $state.table.id,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get name => $state.composableBuilder(
-      column: $state.table.name,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get color => $state.composableBuilder(
-      column: $state.table.color,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get description => $state.composableBuilder(
-      column: $state.table.description,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<int> get customerCount => $state.composableBuilder(
-      column: $state.table.customerCount,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<int> get chatCount => $state.composableBuilder(
-      column: $state.table.chatCount,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<bool> get isActive => $state.composableBuilder(
-      column: $state.table.isActive,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-
-  ColumnOrderings<String> get createdAt => $state.composableBuilder(
-      column: $state.table.createdAt,
-      builder: (column, joinBuilders) =>
-          ColumnOrderings(column, joinBuilders: joinBuilders));
-}
+typedef $$LocalLabelsTableProcessedTableManager = ProcessedTableManager<
+    _$LocalDatabase,
+    $LocalLabelsTable,
+    LocalLabel,
+    $$LocalLabelsTableFilterComposer,
+    $$LocalLabelsTableOrderingComposer,
+    $$LocalLabelsTableAnnotationComposer,
+    $$LocalLabelsTableCreateCompanionBuilder,
+    $$LocalLabelsTableUpdateCompanionBuilder,
+    (
+      LocalLabel,
+      BaseReferences<_$LocalDatabase, $LocalLabelsTable, LocalLabel>
+    ),
+    LocalLabel,
+    PrefetchHooks Function()>;
 
 class $LocalDatabaseManager {
   final _$LocalDatabase _db;

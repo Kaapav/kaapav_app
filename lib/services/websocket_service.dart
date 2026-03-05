@@ -1,4 +1,4 @@
-﻿// lib/services/websocket_service.dart
+// lib/services/websocket_service.dart
 // ═══════════════════════════════════════════════════════════════
 // WEBSOCKET SERVICE — Real-time message sync
 // Singleton pattern matching sync_service.dart

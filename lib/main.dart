@@ -1,4 +1,4 @@
-﻿// lib/main.dart
+// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,9 +6,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'dart:ui';
-import 'dart:convert';
 import 'app.dart';
 import 'services/notification_service.dart';
 import 'utils/logger.dart';
@@ -19,40 +17,45 @@ import 'utils/logger.dart';
 // ═══════════════════════════════════════════════════════════════
 @pragma('vm:entry-point')
 Future<void> firebaseBackgroundHandler(RemoteMessage message) async {
-  // Initialize Firebase in background isolate
   await Firebase.initializeApp();
+  debugPrint('🔥 BACKGROUND HANDLER FIRED: ${message.data}');
+
+ /* // ← REMOVE the if condition, ALWAYS show notification
+  final plugin = FlutterLocalNotificationsPlugin();
   
-  debugPrint('🔔 Background message received: ${message.messageId}');
-  
-  // Show local notification for DATA-only messages
-  // (notification messages are shown automatically by system)
-  if (message.notification == null && message.data.isNotEmpty) {
-    final plugin = FlutterLocalNotificationsPlugin();
-    
-    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const settings = InitializationSettings(android: android);
-    await plugin.initialize(settings);
-    
-    await plugin.show(
-      message.hashCode,
-      message.data['title'] ?? 'New Message',
-      message.data['body'] ?? message.data['message'] ?? '',
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'kaapav_messages',
-          'Messages',
-          channelDescription: 'New WhatsApp messages',
-          importance: Importance.high,
-          priority: Priority.high,
-          playSound: true,
-          enableVibration: true,
-          icon: '@mipmap/ic_launcher',
-        ),
+  const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const settings = InitializationSettings(android: android);
+  await plugin.initialize(settings);
+
+  final title = message.notification?.title ?? 
+                message.data['title'] ?? 
+                'New Message';
+  final body = message.notification?.body ?? 
+               message.data['body'] ?? 
+               message.data['message'] ?? 
+               '';
+
+  await plugin.show(
+    message.hashCode,
+    title,
+    body,
+    const NotificationDetails(
+      android: AndroidNotificationDetails(
+        'kaapav_messages',
+        'Messages',
+        channelDescription: 'New WhatsApp messages',
+        importance: Importance.max,
+        priority: Priority.max,
+        playSound: true,
+        enableVibration: true,
+        icon: '@mipmap/ic_launcher',
+        visibility: NotificationVisibility.public,
       ),
-      payload: jsonEncode(message.data),
-    );
-  }
-}
+    ),
+    payload: jsonEncode(message.data),
+  ); 
+*/
+} 
 
 // ═══════════════════════════════════════════════════════════════
 // MAIN

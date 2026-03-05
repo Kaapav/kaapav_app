@@ -1,4 +1,4 @@
-﻿class Customer {
+class Customer {
   final int? id;
   final String phone;
   final String name;

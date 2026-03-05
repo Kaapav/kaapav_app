@@ -1,4 +1,4 @@
-﻿// lib/services/api/order_api.dart
+// lib/services/api/order_api.dart
 // ═══════════════════════════════════════════════════════════
 // ORDER API
 // Matches: worker/handlers/order.js

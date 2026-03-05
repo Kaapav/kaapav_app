@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- FCM and notifications -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -78,6 +79,25 @@
         <meta-data
     	    android:name="firebase_messaging_auto_init_enabled"
     	    android:value="true" />
+
+       <!-- FCM Background Service -->
+<service
+    android:name="com.google.firebase.messaging.FirebaseMessagingService"
+    android:exported="false">
+    <intent-filter android:priority="100">
+        <action android:name="com.google.firebase.MESSAGING_EVENT"/>
+    </intent-filter>
+</service>
+
+<!-- Auto start after reboot -->
+<receiver
+    android:name="androidx.work.impl.background.systemalarm.RescheduleReceiver"
+    android:exported="false"
+    android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
+    <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED"/>
+    </intent-filter>
+</receiver>
   
     </application>
 

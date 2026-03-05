@@ -1,4 +1,4 @@
-﻿// lib/services/api/chat_api.dart
+// lib/services/api/chat_api.dart
 // ═══════════════════════════════════════════════════════════
 // CHAT & CUSTOMER API
 // Matches: worker/handlers/chat.js

@@ -1,10 +1,10 @@
-﻿// lib/screens/splash_screen.dart
-// ═══════════════════════════════════════════════════════════════════════════════
-// KAAPAV SPLASH SCREEN — Production Grade
-// ═══════════════════════════════════════════════════════════════════════════════
+// lib/screens/splash_screen.dart
+// -------------------------------------------------------------------------------
+// KAAPAV SPLASH SCREEN � Production Grade
+// -------------------------------------------------------------------------------
 
 import 'package:flutter/material.dart';
-import '../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -72,7 +72,7 @@ class _SplashScreenState extends State<SplashScreen>
                   borderRadius: BorderRadius.circular(30),
                   boxShadow: [
                     BoxShadow(
-                      color: KaapavTheme.gold.withOpacity(0.4),
+                      color: KaapavTheme.gold.withValues(alpha: 0.4),
                       blurRadius: 30,
                       offset: const Offset(0, 10),
                     ),

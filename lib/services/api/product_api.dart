@@ -1,4 +1,4 @@
-﻿// lib/services/api/product_api.dart
+// lib/services/api/product_api.dart
 // ═══════════════════════════════════════════════════════════
 // PRODUCT API
 // Matches: worker/handlers/product.js

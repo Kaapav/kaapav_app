@@ -1,4 +1,4 @@
-﻿class Product {
+class Product {
   final int? id;
   final String sku;
   final String name;

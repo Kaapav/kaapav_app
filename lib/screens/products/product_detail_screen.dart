@@ -1,7 +1,7 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../../providers/product_provider.dart';
 
 class ProductDetailScreen extends ConsumerWidget {
@@ -42,11 +42,11 @@ class ProductDetailScreen extends ConsumerWidget {
                 Text(product.sku, style: const TextStyle(fontSize: 14, color: Color(0xFF9CA3AF))),
                 const SizedBox(height: 16),
                 Row(children: [
-                  Text('₹${product.price.toStringAsFixed(0)}',
+                  Text('?${product.price.toStringAsFixed(0)}',
                       style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: KaapavTheme.gold)),
                   if (product.hasDiscount) ...[
                     const SizedBox(width: 12),
-                    Text('₹${product.comparePrice!.toStringAsFixed(0)}',
+                    Text('?${product.comparePrice!.toStringAsFixed(0)}',
                         style: const TextStyle(fontSize: 18, color: Color(0xFF9CA3AF), decoration: TextDecoration.lineThrough)),
                     const SizedBox(width: 8),
                     Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

@@ -1,11 +1,12 @@
-﻿// lib/screens/chats/chats_screen.dart
+// lib/screens/chats/chats_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:timeago/timeago.dart' as timeago;
-import '../../config/theme.dart';
+import 'package:kaapav_app/config/theme.dart';
 import '../../config/routes.dart';
 import '../../models/chat.dart';
 import '../../providers/chat_provider.dart';
+import 'package:flutter/services.dart';
 
 class ChatsScreen extends ConsumerStatefulWidget {
   const ChatsScreen({super.key});
@@ -33,7 +34,19 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
       if (_query.isEmpty) return true;
       final q = _query.toLowerCase();
       return c.customerName.toLowerCase().contains(q) || c.phone.contains(q) || (c.lastMessage?.toLowerCase().contains(q) ?? false);
-    }).toList();
+       }).toList();
+
+    // Sort: pinned first, then by last timestamp
+    final pinnedSet = ref.watch(chatProvider).pinnedChats;
+    filtered.sort((a, b) {
+      final aPinned = pinnedSet.contains(a.phone);
+      final bPinned = pinnedSet.contains(b.phone);
+      if (aPinned && !bPinned) return -1;
+      if (!aPinned && bPinned) return 1;
+      final aTime = a.lastTimestamp ?? '';
+      final bTime = b.lastTimestamp ?? '';
+      return bTime.compareTo(aTime);
+    });
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0A0A0A) : const Color(0xFFF5F5F5),
@@ -103,14 +116,51 @@ class _ChatTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isUnread = chat.unreadCount > 0;
-    return InkWell(
-      onTap: () {
+    final isPinned = ref.watch(chatProvider).pinnedChats.contains(chat.phone);
+    final isMuted = ref.watch(chatProvider).mutedChats.contains(chat.phone);
+    return Dismissible(
+      key: Key('chat_${chat.phone}'),
+      direction: DismissDirection.horizontal,
+      confirmDismiss: (direction) async {
+        HapticFeedback.lightImpact();
+        if (direction == DismissDirection.startToEnd) {
+          // Swipe right ? Pin
+          ref.read(chatProvider.notifier).togglePin(chat.phone);
+          return false;
+        } else {
+          // Swipe left ? Mute
+          ref.read(chatProvider.notifier).toggleMute(chat.phone);
+          return false;
+        }
+      },
+      background: Container(
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 24),
+        color: KaapavTheme.gold.withValues(alpha: 0.15),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(isPinned ? Icons.push_pin_outlined : Icons.push_pin, color: KaapavTheme.gold),
+          const SizedBox(width: 8),
+          Text(isPinned ? 'Unpin' : 'Pin', style: const TextStyle(color: KaapavTheme.gold, fontWeight: FontWeight.w600)),
+        ]),
+      ),
+      secondaryBackground: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 24),
+        color: Colors.grey.withValues(alpha: 0.15),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(isMuted ? 'Unmute' : 'Mute', style: const TextStyle(color: Color(0xFF6B7280), fontWeight: FontWeight.w600)),
+          const SizedBox(width: 8),
+          Icon(isMuted ? Icons.notifications : Icons.notifications_off, color: const Color(0xFF6B7280)),
+        ]),
+      ),
+      child: InkWell(
+        onTap: () {
         ref.read(chatProvider.notifier).markRead(chat.phone);
         AppRoutes.openChat(context, chat.phone, name: chat.customerName);
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        color: isUnread ? KaapavTheme.gold.withOpacity(isDark ? 0.05 : 0.03) : Colors.transparent,
+        color: isUnread ? KaapavTheme.gold.withValues(alpha: isDark ? 0.05 : 0.03) : Colors.transparent,
         child: Row(children: [
           _Avatar(name: chat.customerName, isUnread: isUnread),
           const SizedBox(width: 12),
@@ -121,41 +171,57 @@ class _ChatTile extends ConsumerWidget {
                 style: TextStyle(fontSize: 15, fontWeight: isUnread ? FontWeight.w700 : FontWeight.w500, color: isDark ? Colors.white : const Color(0xFF1A1A1A)),
                 maxLines: 1, overflow: TextOverflow.ellipsis,
               )),
-              if (chat.lastTimestamp != null)
-                Text(_formatTime(chat.lastTimestamp!), style: TextStyle(fontSize: 12, color: isUnread ? KaapavTheme.gold : const Color(0xFF9CA3AF), fontWeight: isUnread ? FontWeight.w600 : FontWeight.normal)),
+                            Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isPinned)
+                    const Padding(
+                      padding: EdgeInsets.only(right: 4),
+                      child: Icon(Icons.push_pin, size: 12, color: KaapavTheme.gold),
+                    ),
+                  if (chat.lastTimestamp != null)
+                    Text(_formatTime(chat.lastTimestamp!), style: TextStyle(fontSize: 12, color: isUnread ? KaapavTheme.gold : const Color(0xFF9CA3AF), fontWeight: isUnread ? FontWeight.w600 : FontWeight.normal)),
+                ],
+              ),
             ]),
             const SizedBox(height: 3),
             Row(children: [
               if (chat.lastDirection == 'outgoing')
                 const Padding(padding: EdgeInsets.only(right: 3), child: Icon(Icons.done_all, size: 14, color: Color(0xFF9CA3AF))),
               Expanded(child: Text(_previewText(), style: TextStyle(fontSize: 13, color: isUnread ? (isDark ? Colors.white70 : const Color(0xFF374151)) : const Color(0xFF9CA3AF), fontWeight: isUnread ? FontWeight.w500 : FontWeight.normal), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                            if (isMuted)
+                const Padding(
+                  padding: EdgeInsets.only(left: 4),
+                  child: Icon(Icons.notifications_off, size: 14, color: Color(0xFF9CA3AF)),
+                ),
               if (isUnread)
                 Container(
                   margin: const EdgeInsets.only(left: 8),
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(color: KaapavTheme.gold, borderRadius: BorderRadius.circular(10)),
+                  decoration: BoxDecoration(color: isMuted ? const Color(0xFF9CA3AF) : KaapavTheme.gold, borderRadius: BorderRadius.circular(10)),
                   child: Text(chat.unreadCount > 99 ? '99+' : chat.unreadCount.toString(), style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
                 ),
             ]),
             if (chat.labels.isNotEmpty)
               Padding(padding: const EdgeInsets.only(top: 4), child: Wrap(spacing: 4, children: chat.labels.take(3).map((l) => Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                decoration: BoxDecoration(color: KaapavTheme.gold.withOpacity(0.15), borderRadius: BorderRadius.circular(6)),
+                decoration: BoxDecoration(color: KaapavTheme.gold.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(6)),
                 child: Text(l, style: const TextStyle(fontSize: 10, color: KaapavTheme.gold, fontWeight: FontWeight.w500)),
               )).toList())),
           ])),
         ]),
       ),
+     ),
     );
   }
 
   String _previewText() {
     if (chat.lastMessage?.isNotEmpty == true) return chat.lastMessage!;
     switch (chat.lastMessageType) {
-      case 'image': return '📷 Photo';
-      case 'video': return '🎥 Video';
-      case 'audio': return '🎵 Audio';
-      case 'document': return '📄 Document';
+      case 'image': return '?? Photo';
+      case 'video': return '?? Video';
+      case 'audio': return '?? Audio';
+      case 'document': return '?? Document';
       default: return 'Tap to open chat';
     }
   }
@@ -175,7 +241,7 @@ class _Avatar extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: isUnread ? KaapavTheme.goldGradient : const LinearGradient(colors: [Color(0xFF374151), Color(0xFF1F2937)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-        boxShadow: isUnread ? [BoxShadow(color: KaapavTheme.gold.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 2))] : null,
+        boxShadow: isUnread ? [BoxShadow(color: KaapavTheme.gold.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 2))] : null,
       ),
       child: Center(child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700))),
     );

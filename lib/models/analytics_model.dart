@@ -1,4 +1,4 @@
-﻿// lib/models/analytics_model.dart
+// lib/models/analytics_model.dart
 
 import 'package:flutter/material.dart';
 

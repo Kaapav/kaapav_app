@@ -1,4 +1,4 @@
-﻿// lib/providers/connectivity_provider.dart
+// lib/providers/connectivity_provider.dart
 // ═══════════════════════════════════════════════════════════
 // CONNECTIVITY STATE — Drives offline banner + auto-sync
 // ═══════════════════════════════════════════════════════════

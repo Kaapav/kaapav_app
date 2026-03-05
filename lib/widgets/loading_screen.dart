@@ -1,5 +1,5 @@
-﻿import 'package:flutter/material.dart';
-import '../config/theme.dart';
+import 'package:flutter/material.dart';
+import 'package:kaapav_app/config/theme.dart';
 
 class LoadingScreen extends StatelessWidget {
   final String? message;
@@ -22,7 +22,7 @@ class LoadingScreen extends StatelessWidget {
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: KaapavTheme.gold.withOpacity(0.3),
+                    color: KaapavTheme.gold.withValues(alpha: 0.3),
                     blurRadius: 20,
                     offset: const Offset(0, 8),
                   ),

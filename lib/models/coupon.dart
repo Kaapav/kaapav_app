@@ -1,4 +1,4 @@
-﻿class Coupon {
+class Coupon {
   final int? id;
   final String code;
   final String type;

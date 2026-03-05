@@ -1,4 +1,4 @@
-﻿// lib/widgets/common/shimmer_loading.dart
+// lib/widgets/common/shimmer_loading.dart
 
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
@@ -17,9 +17,9 @@ class ShimmerLoading extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final baseColor =
-        isDark ? Colors.white.withOpacity(0.05) : const Color(0xFFE5E7EB);
+        isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFE5E7EB);
     final highlightColor =
-        isDark ? Colors.white.withOpacity(0.1) : const Color(0xFFF3F4F6);
+        isDark ? Colors.white.withValues(alpha: 0.1) : const Color(0xFFF3F4F6);
 
     switch (type) {
       case ShimmerType.chatList:

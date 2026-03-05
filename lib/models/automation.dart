@@ -1,4 +1,4 @@
-﻿class Automation {
+class Automation {
   final int? id;
   final String name;
   final String? description;

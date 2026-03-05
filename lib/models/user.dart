@@ -1,4 +1,4 @@
-﻿class User {
+class User {
   final int? id;
   final String userId;
   final String email;

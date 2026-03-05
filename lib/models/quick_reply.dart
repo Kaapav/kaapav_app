@@ -1,4 +1,4 @@
-﻿class QuickReply {
+class QuickReply {
   final int? id;
   final String shortcut;
   final String title;

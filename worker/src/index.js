@@ -801,7 +801,6 @@ ${env.PAYMENT_URL}
 Track here:
 ${env.TRACKING_URL}
 
-Or share your Order ID (KP-XXXXX) and we'll check for you!
 
 ═══════════════════════════
 💎 KAAPAV Fashion Jewellery`
@@ -902,13 +901,16 @@ export default {
       return jsonResponse({ success: true, user: { id: 'admin', email: 'admin@kaapav.com', name: 'KAAPAV Admin', role: 'admin' } });
     }
     if (path === '/api/auth/refresh' && method === 'POST') {
-      const payload = { userId: 'admin', email: 'admin@kaapav.com', role: 'admin', exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 };
-      const token = await generateJWT(payload, env.JWT_SECRET);
-      return jsonResponse({ success: true, token });
-    }
+  const payload = { userId: 'admin', email: 'admin@kaapav.com', role: 'admin', exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 };
+  const token = await generateJWT(payload, env.JWT_SECRET);
+  return jsonResponse({ success: true, token });
+}
 
-    const user = await authMiddleware(request, env);
-    if (!user) return errorResponse('Unauthorized', 401);
+// PUBLIC — no auth needed, must be BEFORE auth wall
+if (path === '/api/push/fcm-register' && method === 'POST') return handleRegisterFCM(request, env);
+
+const user = await authMiddleware(request, env);
+if (!user) return errorResponse('Unauthorized', 401);
 
     if (path === '/api/chats' && method === 'GET') return handleGetChats(request, env);
     if (path.match(/^\/api\/chats\/(.+)\/messages$/) && method === 'GET') {
@@ -971,7 +973,6 @@ export default {
     }
 
     if (path === '/api/sync/check' && method === 'GET') return handleSyncCheck(env);
-    if (path === '/api/push/fcm-register' && method === 'POST') return handleRegisterFCM(request, env);
     if (path === '/api/settings/test-whatsapp' && method === 'POST') {
       const result = await sendWhatsAppText(env, env.WA_PHONE_ID, 'Test message from KAAPAV Worker ✅');
       return jsonResponse({ success: true, result });

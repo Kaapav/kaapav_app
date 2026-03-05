@@ -1,4 +1,4 @@
-﻿class Template {
+class Template {
   final int? id;
   final String name;
   final String? waTemplateId;

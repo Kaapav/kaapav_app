@@ -1,4 +1,4 @@
-﻿// lib/providers/auth_provider.dart
+// lib/providers/auth_provider.dart
 // ═══════════════════════════════════════════════════════════════════════════════
 // KAAPAV AUTH PROVIDER — Production Grade (Samsung Knox Compatible) — FIXED
 // ═══════════════════════════════════════════════════════════════════════════════

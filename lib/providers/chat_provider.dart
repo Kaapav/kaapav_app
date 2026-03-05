@@ -1,4 +1,4 @@
-﻿// lib/providers/chat_provider.dart
+// lib/providers/chat_provider.dart
 // ═══════════════════════════════════════════════════════════════
 // CHAT PROVIDER — Riverpod State Management
 // Aligned with: Chat model, ChatApi
@@ -26,8 +26,10 @@ class ChatState {
   final bool isLoading;
   final String? error;
   final DateTime? lastSync;
+  final Set<String> pinnedChats;
+  final Set<String> mutedChats;
 
-  const ChatState({
+    ChatState({
     this.chats = const [],
     this.currentChatPhone,
     this.currentCustomer,
@@ -37,9 +39,12 @@ class ChatState {
     this.isLoading = false,
     this.error,
     this.lastSync,
-  });
+    Set<String>? pinnedChats,
+    Set<String>? mutedChats,
+  })  : pinnedChats = pinnedChats ?? {},
+        mutedChats = mutedChats ?? {};
 
-  ChatState copyWith({
+    ChatState copyWith({
     List<Chat>? chats,
     String? currentChatPhone,
     Customer? currentCustomer,
@@ -49,6 +54,8 @@ class ChatState {
     bool? isLoading,
     String? error,
     DateTime? lastSync,
+    Set<String>? pinnedChats,
+    Set<String>? mutedChats,
     bool clearCurrentChat = false,
     bool clearCustomer = false,
     bool clearError = false,
@@ -63,6 +70,8 @@ class ChatState {
       isLoading: isLoading ?? this.isLoading,
       error: clearError ? null : (error ?? this.error),
       lastSync: lastSync ?? this.lastSync,
+      pinnedChats: pinnedChats ?? this.pinnedChats,
+      mutedChats: mutedChats ?? this.mutedChats,
     );
   }
 
@@ -86,7 +95,43 @@ class ChatNotifier extends StateNotifier<ChatState> {
   final ChatApi _chatApi;
   Timer? _autoRefreshTimer;
 
-  ChatNotifier(this._chatApi) : super(const ChatState());
+  ChatNotifier(this._chatApi) : super(ChatState());
+
+       // ── PIN ──
+  void togglePin(String phone) {
+    final updated = Set<String>.from(state.pinnedChats);
+    if (updated.contains(phone)) {
+      updated.remove(phone);
+      AppLogger.info('📌 Unpinned $phone');
+    } else {
+      updated.add(phone);
+      AppLogger.info('📌 Pinned $phone');
+    }
+    state = state.copyWith(pinnedChats: updated);
+  }
+
+  // ── MUTE ──
+  void toggleMute(String phone) {
+    final updated = Set<String>.from(state.mutedChats);
+    if (updated.contains(phone)) {
+      updated.remove(phone);
+      AppLogger.info('🔔 Unmuted $phone');
+    } else {
+      updated.add(phone);
+      AppLogger.info('🔇 Muted $phone');
+    }
+    state = state.copyWith(mutedChats: updated);
+  }
+
+  // ── BLOCK ──
+  void toggleBlock(String phone) {
+    final chat = state.getChatByPhone(phone);
+    if (chat == null) return;
+    final newValue = !(chat.isBlocked);
+    updateChat(phone, isBlocked: newValue);
+    AppLogger.info('🚫 ${newValue ? "Blocked" : "Unblocked"} $phone');
+  }
+
 
   // ─────────────────────────────────────────────────────────────
   // FETCH CHATS (aliased as loadChats)
@@ -421,7 +466,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   void reset() {
     stopAutoRefresh();
-    state = const ChatState();
+    state = ChatState();
   }
 
   @override
@@ -441,6 +486,7 @@ final chatProvider = StateNotifierProvider<ChatNotifier, ChatState>((ref) {
   return ChatNotifier(ref.watch(chatApiProvider));
 });
 
+ 
 // Selectors
 final currentChatProvider = Provider<Chat?>((ref) {
   return ref.watch(chatProvider).currentChat;
