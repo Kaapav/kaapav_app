@@ -10,6 +10,8 @@ import 'dart:ui';
 import 'app.dart';
 import 'services/notification_service.dart';
 import 'utils/logger.dart';
+import 'dart:convert';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 // ═══════════════════════════════════════════════════════════════
 // BACKGROUND HANDLER — MUST BE TOP-LEVEL (Outside any class!)
@@ -20,7 +22,6 @@ Future<void> firebaseBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   debugPrint('🔥 BACKGROUND HANDLER FIRED: ${message.data}');
 
- /* // ← REMOVE the if condition, ALWAYS show notification
   final plugin = FlutterLocalNotificationsPlugin();
   
   const android = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -54,7 +55,6 @@ Future<void> firebaseBackgroundHandler(RemoteMessage message) async {
     ),
     payload: jsonEncode(message.data),
   ); 
-*/
 } 
 
 // ═══════════════════════════════════════════════════════════════

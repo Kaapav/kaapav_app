@@ -92,6 +92,8 @@ async function sendFCMNotification(env, phone, name, text) {
   try {
     const deviceToken = await env.KV.get('fcm_token:flutter');
     if (!deviceToken) return;
+    console.log("FCM token from KV:", deviceToken.substring(0, 20));
+
     const accessToken = await getAccessToken(env);
     if (!accessToken) return;
     const fcmRes = await fetch(`https://fcm.googleapis.com/v1/projects/${env.FCM_PROJECT_ID}/messages:send`, {

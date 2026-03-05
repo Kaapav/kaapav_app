@@ -13,6 +13,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
 
     <!-- FCM and notifications -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -79,6 +82,11 @@
         <meta-data
     	    android:name="firebase_messaging_auto_init_enabled"
     	    android:value="true" />
+
+	<!-- Inside <application> tag -->
+        <meta-data
+    	    android:name="com.google.firebase.messaging.default_notification_channel_id"
+    	    android:value="kaapav_messages"/>
 
        <!-- FCM Background Service -->
 <service
