@@ -110,10 +110,9 @@ async function sendFCMNotification(env, phone, name, text) {
             priority: 'high',
             notification: {
               channel_id: 'kaapav_messages',
-              priority: 'max',
               default_vibrate_timings: true,
               default_sound: true,
-              visibility: 'public',
+              visibility: 'PUBLIC',
             },
           },
           data: {
