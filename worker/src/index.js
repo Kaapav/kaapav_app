@@ -88,8 +88,18 @@ async function getAccessToken(env) {
   return null;
 }
 
-async function sendFCMNotification(env, phone, name, text) {
-  try {
+async function sendFCMNotification(env, phone, name, text, messageId) {
+   try {
+    // ← DEDUP
+    if (messageId) {
+      const already = await env.KV.get(`fcm_notif:${messageId}`);
+      if (already) {
+        console.log('FCM: duplicate skipped', messageId);
+        return;
+      }
+      await env.KV.put(`fcm_notif:${messageId}`, '1', { expirationTtl: 300 });
+    }
+
     const deviceToken = await env.KV.get('fcm_token:flutter');
     if (!deviceToken) return;
     console.log("FCM token from KV:", deviceToken.substring(0, 20));
