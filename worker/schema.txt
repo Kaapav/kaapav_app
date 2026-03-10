@@ -1,0 +1,3025 @@
+// ═══════════════════════════════════════════════════════
+// KAAPAV WHATSAPP WORKER — COMPLETE PRODUCTION BUILD
+// Cloudflare Worker + D1 + KV + R2
+// WhatsApp Cloud API + Razorpay + FCM
+// ═══════════════════════════════════════════════════════
+
+// ═══════════════════ CORS & RESPONSE HELPERS ═══════════
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Platform, X-Client-Version',
+};
+
+function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
+
+function errorResponse(message, status = 400) {
+  return jsonResponse({ success: false, error: message }, status);
+}
+
+// ═══════════════════ JWT ═══════════════════════════════
+async function generateJWT(payload, secret) {
+  const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const body = btoa(JSON.stringify(payload))
+    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const data = `${header}.${body}`;
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)))
+    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  return `${data}.${sigB64}`;
+}
+
+async function verifyJWT(token, secret) {
+  try {
+    const [header, payload, sig] = token.split('.');
+    const data = `${header}.${payload}`;
+    const key = await crypto.subtle.importKey(
+      'raw', new TextEncoder().encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
+    );
+    const sigBytes = Uint8Array.from(
+      atob(sig.replace(/-/g, '+').replace(/_/g, '/')),
+      c => c.charCodeAt(0)
+    );
+    const valid = await crypto.subtle.verify(
+      'HMAC', key, sigBytes, new TextEncoder().encode(data)
+    );
+    if (!valid) return null;
+    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    if (decoded.exp < Math.floor(Date.now() / 1000)) return null;
+    return decoded;
+  } catch { return null; }
+}
+
+async function authMiddleware(request, env) {
+  const auth = request.headers.get('Authorization');
+  if (!auth?.startsWith('Bearer ')) return null;
+  return await verifyJWT(auth.slice(7), env.JWT_SECRET);
+}
+
+// ═══════════════════ FCM ═══════════════════════════════
+function b64url(str) {
+  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+async function getAccessToken(env) {
+  const cached = await env.KV.get('fcm_access_token');
+  if (cached) return cached;
+  try {
+    const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+    const now = Math.floor(Date.now() / 1000);
+    const claim = b64url(JSON.stringify({
+      iss: env.FCM_CLIENT_EMAIL,
+      scope: 'https://www.googleapis.com/auth/firebase.messaging',
+      aud: 'https://oauth2.googleapis.com/token',
+      iat: now,
+      exp: now + 3600,
+    }));
+    const sigInput = `${header}.${claim}`;
+    const pemBody = env.FCM_PRIVATE_KEY
+      .replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\n/g, '');
+    const binaryDer = Uint8Array.from(atob(pemBody), c => c.charCodeAt(0));
+    const privateKey = await crypto.subtle.importKey(
+      'pkcs8', binaryDer,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']
+    );
+    const sigBuffer = await crypto.subtle.sign(
+      'RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(sigInput)
+    );
+    let sigStr = '';
+    new Uint8Array(sigBuffer).forEach(b => sigStr += String.fromCharCode(b));
+    const jwt = `${sigInput}.${b64url(sigStr)}`;
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+    });
+    const tokenData = await tokenRes.json();
+    if (tokenData.access_token) {
+      await env.KV.put('fcm_access_token', tokenData.access_token, { expirationTtl: 3300 });
+      return tokenData.access_token;
+    }
+  } catch (e) { console.error('FCM token error:', e); }
+  return null;
+}
+
+async function sendFCMNotification(env, phone, name, text, messageId) {
+  try {
+    if (messageId) {
+      const already = await env.KV.get(`fcm_notif:${messageId}`);
+      if (already) return;
+      await env.KV.put(`fcm_notif:${messageId}`, '1', { expirationTtl: 300 });
+    }
+    const deviceToken = await env.KV.get('fcm_token:flutter');
+    if (!deviceToken) return;
+    const accessToken = await getAccessToken(env);
+    if (!accessToken) return;
+    await fetch(
+      `https://fcm.googleapis.com/v1/projects/${env.FCM_PROJECT_ID}/messages:send`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: {
+            token: deviceToken,
+            notification: { title: name || phone, body: text || 'New message' },
+            android: {
+              priority: 'high',
+              notification: {
+                channel_id: 'kaapav_messages',
+                default_vibrate_timings: true,
+                default_sound: true,
+                visibility: 'PUBLIC',
+              },
+            },
+            data: {
+              phone,
+              type: 'new_message',
+              title: name || phone,
+              body: text || 'New message',
+            },
+          },
+        }),
+      }
+    );
+  } catch (e) { console.error('FCM error:', e); }
+}
+
+// FCM alert specifically for you (new order / unmatched / payment)
+async function sendFCMAlert(env, title, body, type = 'alert', data = {}) {
+  try {
+    const deviceToken = await env.KV.get('fcm_token:flutter');
+    if (!deviceToken) return;
+    const accessToken = await getAccessToken(env);
+    if (!accessToken) return;
+    await fetch(
+      `https://fcm.googleapis.com/v1/projects/${env.FCM_PROJECT_ID}/messages:send`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: {
+            token: deviceToken,
+            notification: { title, body },
+            android: {
+              priority: 'high',
+              notification: {
+                channel_id: 'kaapav_alerts',
+                default_sound: true,
+              },
+            },
+            data: { type, ...data },
+          },
+        }),
+      }
+    );
+  } catch (e) { console.error('FCM alert error:', e); }
+}
+
+// ═══════════════════ WHATSAPP SENDERS ══════════════════
+async function sendWhatsAppText(env, phone, text) {
+  const res = await fetch(
+    `https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.WA_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: phone,
+        type: 'text',
+        text: { body: text },
+      }),
+    }
+  );
+  return res.json();
+}
+
+async function sendWhatsAppButtons(env, phone, text, buttons, footer = null) {
+  const interactive = {
+    type: 'button',
+    body: { text },
+    action: {
+      buttons: buttons.map(b => ({
+        type: 'reply',
+        reply: { id: b.id, title: b.title },
+      })),
+    },
+  };
+  if (footer) interactive.footer = { text: footer };
+  const res = await fetch(
+    `https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.WA_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: phone,
+        type: 'interactive',
+        interactive,
+      }),
+    }
+  );
+  return res.json();
+}
+
+async function sendWhatsAppImage(env, phone, mediaUrl, caption) {
+  const res = await fetch(
+    `https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.WA_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: phone,
+        type: 'image',
+        image: { link: mediaUrl, ...(caption ? { caption } : {}) },
+      }),
+    }
+  );
+  return res.json();
+}
+
+async function sendWhatsAppDocument(env, phone, mediaUrl, filename, caption) {
+  const res = await fetch(
+    `https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.WA_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: phone,
+        type: 'document',
+        document: {
+          link: mediaUrl,
+          ...(filename ? { filename } : {}),
+          ...(caption ? { caption } : {}),
+        },
+      }),
+    }
+  );
+  return res.json();
+}
+
+async function sendWhatsAppVideo(env, phone, mediaUrl, caption) {
+  const res = await fetch(
+    `https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.WA_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: phone,
+        type: 'video',
+        video: { link: mediaUrl, ...(caption ? { caption } : {}) },
+      }),
+    }
+  );
+  return res.json();
+}
+
+// ═══════════════════ RAZORPAY ══════════════════════════
+async function createRazorpayLink(env, { amount, phone, name, email, orderId, description }) {
+  // amount in paise (₹499 = 49900)
+  const credentials = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`);
+  const res = await fetch('https://api.razorpay.com/v1/payment_links', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${credentials}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      amount: Math.round(amount * 100), // paise
+      currency: 'INR',
+      accept_partial: false,
+      description,
+      customer: {
+        name,
+        email: email || undefined,
+        contact: `+91${phone.replace(/^91/, '')}`,
+      },
+      notify: { sms: false, email: !!email },
+      reminder_enable: false,
+      notes: { order_id: orderId, phone },
+      callback_url: `${env.WORKER_URL}/api/razorpay/callback`,
+      callback_method: 'get',
+      // expires in 30 minutes
+      expire_by: Math.floor(Date.now() / 1000) + 1800,
+    }),
+  });
+  return res.json();
+}
+
+// ═══════════════════ CONVERSATION STATE ════════════════
+// Uses KV for real-time state per customer
+// TTL: 24 hours (auto-expires if customer abandons)
+
+async function getConversationState(env, phone) {
+  const raw = await env.KV.get(`state:${phone}`);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+async function setConversationState(env, phone, state) {
+  await env.KV.put(`state:${phone}`, JSON.stringify(state), {
+    expirationTtl: 86400, // 24 hours
+  });
+}
+
+async function clearConversationState(env, phone) {
+  await env.KV.delete(`state:${phone}`);
+}
+
+// ═══════════════════ DB HELPERS ════════════════════════
+async function saveOutgoingMessage(env, phone, text, type = 'text', extra = {}) {
+  const msgId = `auto_${Date.now()}_${Math.random().toString(36).slice(2)}_${phone}`;
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO messages 
+      (message_id, phone, text, message_type, direction, 
+       status, is_auto_reply, matched_faq, timestamp, created_at)
+    VALUES (?, ?, ?, ?, 'outgoing', 'sent', 1, ?, datetime('now'), datetime('now'))
+  `).bind(
+    msgId, phone, text, type, extra.matchedFaq || null
+  ).run();
+
+  await env.DB.prepare(`
+    UPDATE chats SET 
+      last_message = ?, 
+      last_message_type = ?,
+      last_timestamp = datetime('now'),
+      last_direction = 'outgoing',
+      updated_at = datetime('now')
+    WHERE phone = ?
+  `).bind(text, type, phone).run();
+}
+
+async function logUnmatchedMessage(env, phone, message) {
+  await env.DB.prepare(`
+    INSERT INTO unmatched_messages (phone, message, created_at)
+    VALUES (?, ?, datetime('now'))
+  `).bind(phone, message).run();
+}
+
+async function generateOrderId() {
+  const ts = Date.now().toString(36).toUpperCase();
+  const rand = Math.random().toString(36).slice(2, 5).toUpperCase();
+  return `KP-${ts}${rand}`;
+}
+
+// ═══════════════════ FAQ ENGINE ════════════════════════
+
+// All 50 FAQs with keywords
+// Loaded from DB in production, hardcoded here for speed
+// (Cloudflare Worker = no cold start penalty for const)
+
+const FAQ_DATA = [
+  // ── GROUP 1: Appearance ──────────────────────────────
+  {
+    shortcut: 'faq_photo',
+    title: 'Will it look the same as photos?',
+    message: `═══════════════════════════
+📸 *Photo vs Reality*
+═══════════════════════════
+Simple Luxury. What You See = What You Get. 💎
+
+100% same as photos!
+We shoot in natural light — no filters, no tricks.
+
+Browse our collection:
+www.kaapav.com
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["real","photo","actual","look","same","different","dikhega","image","picture","pic","original look","real life","as shown","like photo","photo same","real photo","actual look","will it look","how it looks","dekh","dekhna","dikhta","color same","exactly same","what it looks"],
+  },
+
+  // ── GROUP 2: Durability ──────────────────────────────
+  {
+    shortcut: 'faq_last',
+    title: 'How long will it last?',
+    message: `═══════════════════════════
+⏳ *How Long Will It Last?*
+═══════════════════════════
+Simple Luxury. Built to Last. 💎
+
+With basic care — months to years!
+✅ High quality alloy
+✅ Anti-tarnish coated
+✅ Built for regular wear
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["last","how long","durable","kitne din","long","lifetime","long lasting","months","years","chalega","chalta","kitne time","lasting","long time","kab tak","how many days"],
+  },
+  {
+    shortcut: 'faq_tarnish',
+    title: 'Will it turn black or green?',
+    message: `═══════════════════════════
+🌿 *Black or Green?*
+═══════════════════════════
+Simple Luxury. Stay Shiny. 💎
+
+Not if you follow basic care!
+❌ Avoid water, perfume, soap
+✅ Wipe after use
+✅ Store in pouch
+
+Our customers wear it daily — no issues!
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["black","green","tarnish","colour change","rust","fade","kaala","hara","color change","turn black","blacken","discolor","colour fade","oxidize","dark","stain","kharab","rang","color jaega","green ho","black ho"],
+  },
+  {
+    shortcut: 'faq_daily',
+    title: 'Can I wear it daily?',
+    message: `═══════════════════════════
+💫 *Daily Wear?*
+═══════════════════════════
+Simple Luxury. Every Day. 💎
+
+Absolutely yes!
+✅ Office & college wear
+✅ Casual & festive
+✅ Lightweight all-day comfort
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["daily","everyday","regular","roz","wear daily","daily use","daily wear","har roz","every day","office","college","school","regular use","all day","pehnte rehna","daily pehnna"],
+  },
+  {
+    shortcut: 'faq_plating',
+    title: 'How long before plating fades?',
+    message: `═══════════════════════════
+✨ *Plating & Finish*
+═══════════════════════════
+Simple Luxury. Long Lasting. 💎
+
+Stays beautiful with care!
+✅ Keep away from water
+✅ Remove before bath
+✅ Store in pouch
+✅ No perfume contact
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["plating","polish","coating","fade","finish","gold plating","silver plating","plating jaegi","polish jaegi","gold fade","silver fade","plating kitne din","how long plating","plating last","shine jae","luster","shiny","brightness fade"],
+  },
+  {
+    shortcut: 'faq_strong',
+    title: 'Is it strong?',
+    message: `═══════════════════════════
+💪 *Strength & Durability*
+═══════════════════════════
+Simple Luxury. Built Strong. 💎
+
+✅ High quality alloy base
+✅ Secure clasps & hooks
+✅ Tested for daily wear
+
+Handle with normal care — it won't disappoint!
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["break","fragile","strong","weak","toot","tutega","tootega","breaking","clasp","hook","lock","chain break","easily break","delicate","sturdy","solid","robust","will it break","kya tootega","material strong","build quality","cheap"],
+  },
+
+  // ── GROUP 3: Size & Fit ──────────────────────────────
+  {
+    shortcut: 'faq_ring_size',
+    title: 'Will the ring fit?',
+    message: `═══════════════════════════
+💍 *Ring Size*
+═══════════════════════════
+Simple Luxury. Perfect Fit. 💎
+
+✅ All rings are adjustable
+✅ Fits most finger sizes
+✅ Easy to resize at home
+
+One size fits all!
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["ring size","ring fit","ungli","finger size","which size","size kya","fit hogi","fit hoga","small ring","big ring","ring number","adjustable ring"],
+  },
+  {
+    shortcut: 'faq_bracelet_size',
+    title: 'Will the bracelet fit?',
+    message: `═══════════════════════════
+📿 *Bracelet Size*
+═══════════════════════════
+Simple Luxury. Perfect Fit. 💎
+
+✅ Size: 2.6 inches
+✅ Adjustable: 2.4 to 2.6 inches
+✅ Fits most wrist sizes
+
+Slim or regular wrist — fits all!
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["bracelet size","bracelet fit","wrist size","hand size","haath","kada","bangle","kangan","adjustable bracelet","slim wrist","big wrist","2.6"],
+  },
+  {
+    shortcut: 'faq_necklace_length',
+    title: 'How long is the necklace?',
+    message: `═══════════════════════════
+📿 *Necklace Length*
+═══════════════════════════
+Simple Luxury. Elegant Fit. 💎
+
+✅ Length: 18 to 20 inches
+✅ Varies by design
+✅ Sits beautifully on all necklines
+
+Exact measurements on:
+www.kaapav.com
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["necklace length","chain length","how long necklace","necklace size","18 inch","20 inch","kitni lambi","lambi chain","haar kitni","choker length"],
+  },
+  {
+    shortcut: 'faq_earring_weight',
+    title: 'Are earrings heavy?',
+    message: `═══════════════════════════
+👂 *Earring Weight*
+═══════════════════════════
+Simple Luxury. Feather Light. 💎
+
+✅ Super lightweight
+✅ Designed for all-day comfort
+✅ No ear pain or pulling
+
+Wear from morning to night — zero discomfort!
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["earring heavy","earring weight","ear pain","kaan mein dard","pulling","earlobe","lightweight earring","bhaari","halka","ear hurts","kaan kheenchna"],
+  },
+  {
+    shortcut: 'faq_piercing',
+    title: 'Do I need pierced ears?',
+    message: `═══════════════════════════
+👂 *Piercing Required?*
+═══════════════════════════
+Simple Luxury. For Everyone. 💎
+
+Most earrings need pierced ears.
+Types available:
+✅ Studs (pierced)
+✅ Hook/drop (pierced)
+✅ Ear cuffs (no piercing!)
+
+Check product details:
+www.kaapav.com
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["pierced","without piercing","no piercing","kaan cheda","piercing chahiye","bina piercing","clip on","ear cuff","without hole","bina chhed","piercing needed","unpierced"],
+  },
+
+  // ── GROUP 4: Pricing ─────────────────────────────────
+  {
+    shortcut: 'faq_price',
+    title: 'What are the prices?',
+    message: `═══════════════════════════
+💰 *KAAPAV Flat Pricing*
+═══════════════════════════
+Simple Luxury. Honest Pricing. 💎
+
+💍 Earrings & Rings → ₹249/-
+📿 Necklace, Bracelet & Pendant → ₹499/-
+✨ Earring + Pendant Set → ₹699/-
+
+🔥 50% OFF — Introductory offer!
+🚚 FREE shipping above ₹498/-
+
+www.kaapav.com
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["price","cost","rate","how much","kitna","pricing","daam","kitne ka","price kya","price list","price range","249","499","699","rupees","amount","charges","total amount","kitne mein"],
+  },
+  {
+    shortcut: 'faq_discount',
+    title: 'Any discount or coupon?',
+    message: `═══════════════════════════
+🎁 *Offers & Discounts*
+═══════════════════════════
+Simple Luxury. Amazing Value. 💎
+
+🔥 50% OFF on most collections!
+✅ Best prices starting ₹249/-
+✅ FREE shipping above ₹498/-
+
+Follow for exclusive deals:
+📘 facebook.com/kaapavfashionjewellery
+📷 instagram.com/kaapavfashionjewellery
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["discount","coupon","offer","promo","sale","deal","save","less price","discount code","promo code","any offer","koi offer","discount milega","sale hai","50 off","percent off","special offer","festive offer"],
+  },
+  {
+    shortcut: 'faq_shipping_cost',
+    title: 'Is delivery free?',
+    message: `═══════════════════════════
+🚚 *Delivery Charges*
+═══════════════════════════
+Simple Luxury. Fast Delivery. 💎
+
+✅ FREE shipping above ₹498/-
+✅ Below ₹498/- — calculated at
+   checkout based on pincode
+
+💡 Add one more piece → FREE shipping!
+
+www.kaapav.com
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["delivery charge","shipping cost","free delivery","free shipping","charge","delivery kitna","shipping charge","delivery free","free hai","shipping fee","delivery fee","postage","courier charge","charges lagenge","extra charge"],
+  },
+  {
+    shortcut: 'faq_combo',
+    title: 'Any combo deals?',
+    message: `═══════════════════════════
+✨ *Combo Deals*
+═══════════════════════════
+Simple Luxury. Better Together. 💎
+
+✅ Earring + Pendant Sets → ₹699/-
+✅ Save vs buying separately!
+
+Browse all combos:
+www.kaapav.com
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["combo","set","bundle","together","pair","earring set","necklace set","jewellery set","matching set","complete set","full set","set price","combo price","2 piece","two piece","matching","set milega","full jewellery"],
+  },
+  {
+    shortcut: 'faq_minimum',
+    title: 'Minimum order?',
+    message: `═══════════════════════════
+🛍️ *Minimum Order*
+═══════════════════════════
+Simple Luxury. No Limits. 💎
+
+✅ No minimum order!
+✅ Single piece from ₹249/-
+✅ Order as many as you like
+
+Start with one — you will come back for more!
+www.kaapav.com
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["minimum","single","one piece","one item","ek","min order","ek hi","sirf ek","only one","just one","single item","minimum order","ek piece","1 piece","minimum kharidna"],
+  },
+
+  // ── GROUP 5: Ordering & Payment ──────────────────────
+  {
+    shortcut: 'faq_how_order',
+    title: 'How to place an order?',
+    message: `═══════════════════════════
+🛒 *How to Order*
+═══════════════════════════
+Simple Luxury. Easy Ordering. 💎
+
+3 easy ways:
+1️⃣ Website → www.kaapav.com
+2️⃣ WhatsApp Catalogue →
+   wa.me/c/919148330016
+3️⃣ WhatsApp — just tell me what you like!
+
+Type *order karna hai* to start
+ordering right here! 💬
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["how to order","order kaise","kaise kharidun","kaise lu","how to buy","ordering process","place order","order karna","kharidna","purchase karna","order place","order dena","buying process","shop kaise"],
+  },
+  {
+    shortcut: 'faq_payment_online',
+    title: 'COD available?',
+    message: `═══════════════════════════
+💳 *Payment Options*
+═══════════════════════════
+Simple Luxury. Secure Payment. 💎
+
+✅ UPI — GPay, PhonePe, Paytm
+✅ Credit / Debit Cards
+✅ Net Banking
+✅ Razorpay Payment Link
+
+⚠️ COD not available currently.
+
+100% secure checkout!
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["cod","cash on delivery","cash","pay on delivery","cod milega","cod available","cash milega","ghar pe pay","naqd","nakit","payment method","upi","gpay","phonepe","paytm","card","net banking","online payment","kaise pay","payment kaise"],
+  },
+  {
+    shortcut: 'faq_payment_safe',
+    title: 'Is payment safe?',
+    message: `═══════════════════════════
+🔒 *Payment Safety*
+═══════════════════════════
+Simple Luxury. 100% Secure. 💎
+
+✅ Powered by Razorpay
+✅ Bank-grade encryption
+✅ UPI / Cards / Net Banking
+
+Trusted by customers across India!
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["safe payment","payment safe","secure payment","payment secure","secure hai","safe hai","reliable payment","razorpay safe","is it safe","trust","scam","fraud","fake"],
+  },
+  {
+    shortcut: 'faq_confirmation',
+    title: 'How will I get confirmation?',
+    message: `═══════════════════════════
+✅ *Order Confirmation*
+═══════════════════════════
+Simple Luxury. Always Updated. 💎
+
+After ordering you get:
+✅ WhatsApp confirmation
+✅ Order ID (KP-XXXXX)
+✅ Shipping update when dispatched
+✅ Tracking link via WhatsApp
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["order confirm","kaise pata","how to know","order place hua","order hua","order successful","confirmation milega","message milega","whatsapp aayega","receipt","invoice","order receipt","proof of order"],
+  },
+  {
+    shortcut: 'faq_gift_order',
+    title: 'Can I order as a gift?',
+    message: `═══════════════════════════
+🎁 *Gifting Orders*
+═══════════════════════════
+Simple Luxury. Perfect Gift. 💎
+
+✅ Order to any address in India
+✅ Gift message included
+✅ Packed neatly & securely
+
+Starting ₹249/- — most affordable
+luxury gift for her!
+
+www.kaapav.com
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["gift order","different address","kisi aur ko","doosre ko","alag address","deliver to friend","send as gift","gift bhejana","sister gift","mom gift","wife gift","girlfriend gift","surprise gift","gift for her"],
+  },
+
+  // ── GROUP 6: Delivery ────────────────────────────────
+  {
+    shortcut: 'faq_delivery_time',
+    title: 'Delivery time?',
+    message: `═══════════════════════════
+🚚 *Delivery Time*
+═══════════════════════════
+Simple Luxury. Fast Delivery. 💎
+
+📦 2 to 4 working days!
+Order → Confirmed same day
+Packed → Dispatched next day
+Delivered → 2-4 working days
+
+Tracking link sent once shipped!
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["delivery time","kitne din mein","kab milega","kab aayega","when will arrive","delivery kab","expected delivery","estimated delivery","delivery date","fast delivery","express","2 days","3 days","4 days","kitne days"],
+  },
+  {
+    shortcut: 'faq_delivery_area',
+    title: 'Do you deliver to my area?',
+    message: `═══════════════════════════
+📍 *Delivery Locations*
+═══════════════════════════
+Simple Luxury. Pan India. 💎
+
+✅ All states covered
+✅ Metro & Tier 2/3 cities
+✅ Villages & towns too
+✅ Powered by Shiprocket
+
+Share your pincode — I'll confirm!
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["delivery area","mera area","mere yahan","yahan milega","deliver hoga","delivery available","my city","my pincode","village","town","district","rural","remote","pan india","all india","india mein deliver"],
+  },
+  {
+    shortcut: 'faq_packaging',
+    title: 'Will packaging be safe?',
+    message: `═══════════════════════════
+📦 *Packaging*
+═══════════════════════════
+Simple Luxury. Packed with Care. 💎
+
+✅ Secure multi-layer packaging
+✅ Jewellery pouch included
+✅ Damage-proof for transit
+✅ Neat enough to gift directly!
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["packing","packaging","packing safe","packing kaisi","secure packing","damage proof","bubble wrap","parcel","safely packed","gift packing","packaging quality","how packed"],
+  },
+  {
+    shortcut: 'faq_track',
+    title: 'How to track my order?',
+    message: `═══════════════════════════
+📦 *Track Your Order*
+═══════════════════════════
+Simple Luxury. Full Transparency. 💎
+
+Share your Order ID (KP-XXXXX)
+I will fetch status instantly!
+
+Or track directly:
+www.shiprocket.in/shipment-tracking/
+
+Tracking link sent via WhatsApp
+once shipped!
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["track","tracking","order status","kahan hai","where is order","tracking number","AWB","tracking link","track karna","order kahan","parcel kahan","delivery status","shipment status","out for delivery","in transit"],
+  },
+  {
+    shortcut: 'faq_delayed',
+    title: 'What if delivery is delayed?',
+    message: `═══════════════════════════
+⏰ *Delayed Delivery?*
+═══════════════════════════
+Simple Luxury. Always Reliable. 💎
+
+Track your order live:
+www.shiprocket.in/shipment-tracking/
+
+Your Order ID (KP-XXXXX) sent
+via WhatsApp once shipped.
+
+Need help? Email:
+care.kaapav@gmail.com
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["late","delay","not received","delayed","nahi aaya","abhi tak nahi","still not received","waiting","order late","delivery late","late ho gaya","zyada din","too long","taking too long","not delivered","delivery delayed","stuck","overdue"],
+  },
+
+  // ── GROUP 7: Returns & Refunds ───────────────────────
+  {
+    shortcut: 'faq_return',
+    title: 'Can I return?',
+    message: `═══════════════════════════
+🔄 *Return Policy*
+═══════════════════════════
+Simple Luxury. Hassle-free Returns. 💎
+
+✅ 7-Day Return Policy
+1️⃣ Email within 7 days of delivery
+2️⃣ care.kaapav@gmail.com
+3️⃣ Order ID + reason + unboxing video
+
+• ₹60/- reverse shipping deducted
+• Unworn, unused & original condition
+• Refund in 7 days after quality check
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["return","wapas","send back","dont like","not happy","return policy","wapas karna","return kar sakti","return ho sakta","7 day return","pasand nahi","not satisfied","want to return","how to return","return process"],
+  },
+  {
+    shortcut: 'faq_damaged',
+    title: 'What if damaged?',
+    message: `═══════════════════════════
+😟 *Damaged Product?*
+═══════════════════════════
+Simple Luxury. We Make It Right. 💎
+
+1️⃣ Record unboxing video (mandatory)
+2️⃣ Email within 7 days:
+   care.kaapav@gmail.com
+3️⃣ Order ID + clear video
+
+We do 3-layer quality check before
+every shipment.
+
+Damaged = full refund/replacement!
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["damage","broken","defective","wrong item","damaged","tuta","toot gaya","damaged product","cracked","bent","scratched","faulty","wrong product","wrong order","missing item","incomplete order","partial delivery"],
+  },
+  {
+    shortcut: 'faq_refund_time',
+    title: 'How long for refund?',
+    message: `═══════════════════════════
+💰 *Refund Timeline*
+═══════════════════════════
+Simple Luxury. Fast Refunds. 💎
+
+✅ Return received → Inspected
+✅ Approved → Refund in 7 days
+✅ Credited to original payment
+
+care.kaapav@gmail.com
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["refund","money back","paise wapas","refund kab","paise kab","money return","refund milega","refund kitne din","bank mein","account mein","amount return","how long refund","refund time","money credited"],
+  },
+  {
+    shortcut: 'faq_exchange',
+    title: 'Can I exchange?',
+    message: `═══════════════════════════
+🔄 *Exchange Policy*
+═══════════════════════════
+Simple Luxury. Easy Exchange. 💎
+
+1️⃣ Email within 7 days
+2️⃣ care.kaapav@gmail.com
+3️⃣ Order ID + preferred item
+
+• ₹60/- reverse shipping applies
+• Item must be unworn & unused
+• Subject to availability
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["exchange","swap","replace","exchange karna","badalna","different product","another piece","other design","change design","exchange policy","different colour","exchange milega","exchange ho sakta"],
+  },
+  {
+    shortcut: 'faq_cancel',
+    title: 'Can I cancel?',
+    message: `═══════════════════════════
+❌ *Order Cancellation*
+═══════════════════════════
+Simple Luxury. Quick Processing. 💎
+
+We process orders immediately
+for fastest delivery.
+
+Cancellations not accepted
+after placing.
+
+Please review carefully
+before confirming!
+
+Need help? care.kaapav@gmail.com
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["cancel","cancellation","stop order","cancel karna","order cancel","cancel order","nahi chahiye","changed mind","cancel ho sakta","order band","order rok","cancellation policy","can i cancel"],
+  },
+
+  // ── GROUP 8: Care ────────────────────────────────────
+  {
+    shortcut: 'faq_care',
+    title: 'How to care for jewellery?',
+    message: `═══════════════════════════
+✨ *Jewellery Care Guide*
+═══════════════════════════
+Simple Luxury. Long Lasting Shine. 💎
+
+✅ Wipe with soft cloth after use
+✅ Store in pouch provided
+✅ Wear after perfume & makeup
+
+❌ Avoid water, sweat, soap
+❌ No sleeping with it on
+❌ Keep from chemicals
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["care","maintain","clean","how to care","care tips","jewellery care","maintenance","dekhbhal","clean karna","how to maintain","long lasting tips","care guide","cleaning tips","storage","how to clean","jewellery tips","shine maintain"],
+  },
+  {
+    shortcut: 'faq_perfume',
+    title: 'Can I spray perfume?',
+    message: `═══════════════════════════
+🌸 *Perfume & Jewellery*
+═══════════════════════════
+Simple Luxury. Stay Shiny. 💎
+
+Best practice:
+✅ Apply perfume FIRST
+✅ Let it dry completely
+✅ Then wear your jewellery
+
+Keeps shine & finish lasting longer!
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["perfume","spray","deodorant","scent","ittar","attar","body spray","fragrance","deo","perfume lagana","perfume damage","chemical damage","soap","lotion","cream","moisturizer","chemical contact"],
+  },
+  {
+    shortcut: 'faq_sleep',
+    title: 'Can I sleep wearing it?',
+    message: `═══════════════════════════
+🌙 *Sleeping With Jewellery*
+═══════════════════════════
+Simple Luxury. Gentle Care. 💎
+
+We recommend removing it!
+
+❌ Chain can tangle
+❌ Stress on clasps
+❌ Reduces lifespan
+
+Remove → Store in pouch → Wear fresh!
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["sleep","sleeping","raat ko","sone ke baad","pehnke so","overnight","24 hours","all night","bathing","shower","swimming","while sleeping","remove karna","kab utare","when to remove"],
+  },
+
+  // ── GROUP 9: Gifting ─────────────────────────────────
+  {
+    shortcut: 'faq_gifting',
+    title: 'Is it good for gifting?',
+    message: `═══════════════════════════
+🎁 *Perfect Gift Choice!*
+═══════════════════════════
+Simple Luxury. Most Thoughtful Gift. 💎
+
+Perfect for:
+🎂 Birthdays & Anniversaries
+🎓 Graduations
+🥳 Celebrations
+💕 Just because!
+
+Starting ₹249/- — luxury look
+at unbeatable price!
+
+www.kaapav.com
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["gift","present","birthday","anniversary","gifting","gift dena","surprise","gift idea","gift for her","gift for girlfriend","gift for wife","gift for sister","gift for mom","birthday gift","anniversary gift","diwali gift","rakhi gift","valentine gift"],
+  },
+  {
+    shortcut: 'faq_gift_pack',
+    title: 'Gift packaging available?',
+    message: `═══════════════════════════
+🎁 *Gift Packaging*
+═══════════════════════════
+Simple Luxury. Gift Ready. 💎
+
+Premium gift packaging coming soon!
+
+Currently packed neatly & securely
+— ready to gift as-is!
+
+Follow for updates:
+📷 instagram.com/kaapavfashionjewellery
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["gift pack","gift box","gift wrapping","gift wrap","special packaging","gift bag","fancy box","gift packaging","gift packing","nicely packed","surprise box","wrapped","decorated box"],
+  },
+  {
+    shortcut: 'faq_multiple',
+    title: 'Can I order multiple pieces?',
+    message: `═══════════════════════════
+🛍️ *Multiple Pieces*
+═══════════════════════════
+Simple Luxury. No Limits. 💎
+
+✅ No maximum limit
+✅ Mix & match freely
+✅ FREE shipping above ₹498/-
+
+More pieces = more savings on shipping!
+
+www.kaapav.com
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["multiple","quantity","more than one","bulk","many pieces","zyada","kai pieces","2 pieces","3 pieces","multiple items","many items","lot of","several","mix match","different pieces","bulk order","large quantity"],
+  },
+
+  // ── GROUP 10: Brand ──────────────────────────────────
+  {
+    shortcut: 'faq_about',
+    title: 'About KAAPAV',
+    message: `═══════════════════════════
+👑 *About KAAPAV*
+═══════════════════════════
+Simple Luxury. Crafted for You. 💎
+
+Premium Indian fashion jewellery
+designed for the modern woman
+who loves style without
+spending a fortune.
+
+✅ Trendy & timeless designs
+✅ Lightweight & comfortable
+✅ Starting ₹249/- only
+
+www.kaapav.com
+📷 instagram.com/kaapavfashionjewellery
+📘 facebook.com/kaapavfashionjewellery
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["about kaapav","brand","who are you","what is kaapav","brand details","company","about brand","kaapav kya hai","brand story","your brand","indian brand","fashion brand","jewellery brand","who makes","founded","started","history"],
+  },
+  {
+    shortcut: 'faq_social',
+    title: 'Social media links?',
+    message: `═══════════════════════════
+📱 *Follow KAAPAV*
+═══════════════════════════
+Simple Luxury. Every Day. 💎
+
+✨ New launches
+🔥 Exclusive offers
+📸 Styling inspiration
+🎁 Giveaways & deals
+
+📷 instagram.com/kaapavfashionjewellery
+📘 facebook.com/kaapavfashionjewellery
+🌐 www.kaapav.com
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["instagram","facebook","social media","follow","insta","fb","instagram link","facebook link","follow karna","kaapav instagram","kaapav facebook","handle","social page","find online","brand page","official page"],
+  },
+  {
+    shortcut: 'faq_contact',
+    title: 'How to contact?',
+    message: `═══════════════════════════
+💬 *Contact KAAPAV*
+═══════════════════════════
+Simple Luxury. Always Here. 💎
+
+📧 care.kaapav@gmail.com
+🌐 www.kaapav.com
+📱 WhatsApp: You are already here!
+
+🕙 10:30 AM – 7:00 PM IST
+📅 Monday to Saturday
+
+We respond within 24 hours!
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["contact","email","reach","talk","human","support","help","contact us","get in touch","helpline","customer care","customer support","speak to","agent","real person","call","phone number","contact number","email id","write to us","feedback","complaint","query"],
+  },
+
+  // ── GROUP 11: Material & Safety (NEW) ────────────────
+  {
+    shortcut: 'faq_real_gold',
+    title: 'Is it real gold or silver?',
+    message: `═══════════════════════════
+💛 *Real Gold or Silver?*
+═══════════════════════════
+Simple Luxury. Honest Always. 💎
+
+KAAPAV is *fashion jewellery* —
+premium alloy with gold/silver finish.
+
+NOT real gold/silver — and that's
+exactly why it's ₹249!
+
+Same luxury look. Fraction of price.
+That's Simple Luxury. 💎
+
+www.kaapav.com
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["real gold","real silver","actual gold","sona","chandi","gold hai","silver hai","is it real","original gold","pure gold","pure silver","hallmark","24 karat","22 karat","karat","artificial","imitation","fake gold","asli","nakli","gold wala","silver wala"],
+  },
+  {
+    shortcut: 'faq_skin_safe',
+    title: 'Safe for skin / allergy?',
+    message: `═══════════════════════════
+🌿 *Skin Safety*
+═══════════════════════════
+Simple Luxury. Safe to Wear. 💎
+
+✅ Premium alloy material
+✅ Safe for regular wear
+✅ Thousands of happy customers!
+
+Tip: If you have very sensitive skin,
+test on wrist for 30 mins first.
+Remove if irritation occurs.
+
+Any concerns? We're here:
+care.kaapav@gmail.com
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["skin allergy","allergy","allergic","sensitive skin","skin reaction","rash","nickel allergy","itching","kharish","chamdi","skin safe","safe for skin","skin problem","irritation","reaction","skin friendly","hypoallergenic"],
+  },
+  {
+    shortcut: 'faq_material',
+    title: 'What material is it?',
+    message: `═══════════════════════════
+🔬 *Material & Quality*
+═══════════════════════════
+Simple Luxury. Quality First. 💎
+
+✅ Premium fashion alloy base
+✅ Gold / Silver / Oxidised finish
+✅ Anti-tarnish coating
+✅ Lightweight & durable
+
+Designed for the modern Indian woman
+who wants luxury without the price tag!
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["material","dhatu","kya bana","what is made","which metal","alloy","base metal","quality","composition","made of","kya hai isme","metal type","finish","coating","what material"],
+  },
+
+  // ── GROUP 12: Purchase Intent (NEW) ──────────────────
+  {
+    shortcut: 'faq_order_intent',
+    title: 'I want to order',
+    message: `═══════════════════════════
+🛒 *Ready to Order?*
+═══════════════════════════
+Simple Luxury. Let's Go! 💎
+
+3 easy ways to order:
+
+1️⃣ *Website* (easiest):
+   www.kaapav.com
+
+2️⃣ *WhatsApp Catalogue*:
+   wa.me/c/919148330016
+
+3️⃣ *Order here on WhatsApp*:
+   Just type the product name
+   and I'll guide you through!
+
+Which do you prefer? 💬
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["order karna hai","buy karna hai","purchase karna hai","lena hai","kharidna hai","want to buy","i want","mujhe chahiye","order please","place order","kharidna","buy now","shop now","order dena hai","mujhe lena","le leti","le leta"],
+  },
+  {
+    shortcut: 'faq_negotiate',
+    title: 'Can you reduce the price?',
+    message: `═══════════════════════════
+💰 *Our Pricing*
+═══════════════════════════
+Simple Luxury. Best Value. 💎
+
+Our prices are already the lowest!
+
+💍 ₹249 for earrings & rings
+📿 ₹499 for necklaces & bracelets
+✨ ₹699 for full sets
+
+🔥 50% OFF already applied!
+
+This is real luxury at honest pricing.
+No bargaining needed — you're already
+getting the best deal! 😊
+
+www.kaapav.com
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["kam karo","discount do","thoda kam","negotiate","bargain","less price","reduce price","cheap karo","aur kam","price kam karo","aur discount","fixed price","is this final","last price","best price","lowest price","can you reduce","negotiable"],
+  },
+
+  // ── GROUP 13: Policy Gaps (NEW) ──────────────────────
+  {
+    shortcut: 'faq_wholesale',
+    title: 'Wholesale available?',
+    message: `═══════════════════════════
+🏪 *Wholesale*
+═══════════════════════════
+Simple Luxury. Retail Only. 💎
+
+We currently sell retail only.
+No wholesale / bulk pricing available.
+
+Individual pieces from ₹249/-.
+
+For updates on wholesale:
+📧 care.kaapav@gmail.com
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["wholesale","bulk order","bulk rate","reseller","distributor","dealer","wholesale rate","bulk price","resell","bulk quantity","wholesale karte","bulk mein","reseller","stockist","wholesale available"],
+  },
+  {
+    shortcut: 'faq_custom',
+    title: 'Custom order possible?',
+    message: `═══════════════════════════
+🎨 *Custom Orders*
+═══════════════════════════
+Simple Luxury. 250+ Designs. 💎
+
+Custom orders not available currently.
+
+But with 250+ designs — we're sure
+you'll find your perfect piece!
+
+Browse our full collection:
+🌐 www.kaapav.com
+📱 wa.me/c/919148330016
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["custom","customise","customize","apna design","own design","personalize","custom order","bespoke","made to order","custom made","special design","name likh","monogram","custom piece","custom jewellery"],
+  },
+  {
+    shortcut: 'faq_repair',
+    title: 'Repair or warranty?',
+    message: `═══════════════════════════
+🔧 *Repair & Warranty*
+═══════════════════════════
+Simple Luxury. Quality Assured. 💎
+
+We do thorough quality check
+before every shipment.
+
+If issue within 7 days of delivery:
+✅ Full return/exchange
+✅ Email: care.kaapav@gmail.com
+✅ Order ID + unboxing video
+
+Repair service not available.
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["repair","warranty","guarantee","fix","toot gaya","broken after","clasp broke","chain toot","hook broke","repair karo","fix karo","warranty hai","guarantee hai","kharab ho gaya","after use broke"],
+  },
+  {
+    shortcut: 'faq_certificate',
+    title: 'Any certificate?',
+    message: `═══════════════════════════
+📜 *Certificate*
+═══════════════════════════
+Simple Luxury. Transparent Always. 💎
+
+KAAPAV is premium *fashion jewellery*.
+
+No hallmark certificate —
+it's not real gold/silver.
+
+What we guarantee:
+✅ Premium alloy quality
+✅ Anti-tarnish finish
+✅ Honest pricing
+
+Same luxury look. Honest price. 💎
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    keywords: ["certificate","hallmark","certify","certified","BIS","hallmarked","kya certificate","certification","authenticity","genuine certificate","quality certificate","gold certificate","original certificate","proof"],
+  },
+];
+
+// ── FAQ Scoring Engine ────────────────────────────────
+function scoreFAQ(input, keywords) {
+  let score = 0;
+  const normalizedInput = input.toLowerCase().trim();
+
+  for (const keyword of keywords) {
+    const kw = keyword.toLowerCase().trim();
+    if (normalizedInput.includes(kw)) {
+      // phrase match (2+ words) = higher weight
+      const wordCount = kw.split(' ').length;
+      score += wordCount >= 2 ? 3 : 1;
+    }
+  }
+
+  // bonus: short focused message with a match
+  const inputWordCount = normalizedInput.split(' ').length;
+  if (inputWordCount <= 4 && score > 0) score += 1;
+
+  return score;
+}
+
+function findBestFAQ(input) {
+  let best = null;
+  let bestScore = 0;
+
+  for (const faq of FAQ_DATA) {
+    const score = scoreFAQ(input, faq.keywords);
+    if (score > bestScore) {
+      bestScore = score;
+      best = faq;
+    }
+  }
+
+  // threshold: score >= 2 to auto-reply
+  return bestScore >= 2 ? best : null;
+}
+
+// ── Intent Detector ───────────────────────────────────
+function detectIntent(input) {
+  const i = input.toLowerCase().trim();
+
+  // greeting
+  if (/^(hi|hello|hey|hii|helo|hiii|hai|hy|hye|namaste|namaskar|ram ram|jai|good morning|good evening|good afternoon|gm|ge|sup|what'?s up)/.test(i))
+    return 'GREETING';
+
+  // order intent — check BEFORE FAQ so we capture it
+  if (/(order karna|buy karna|purchase karna|lena hai|kharidna hai|want to buy|want to order|mujhe chahiye|place order|order please|order dena|mujhe lena|le leti|le leta|kharid|buy now|shop now)/i.test(i))
+    return 'ORDER_INTENT';
+
+  // track order
+  if (/(track|tracking|order status|kahan hai|where is|AWB|shipment status|out for delivery|in transit|parcel kahan)/i.test(i))
+    return 'TRACK_ORDER';
+
+  // return / refund
+  if (/(return|refund|wapas|exchange|damaged|broken|wrong item|tuta|defective)/i.test(i))
+    return 'RETURN_INTENT';
+
+  // compliment
+  if (/(beautiful|lovely|amazing|gorgeous|nice|love it|bahut sundar|sundar hai|achi hai|achha|wow|superb|fantastic|gorgeous|pretty)/i.test(i))
+    return 'COMPLIMENT';
+
+  // menu / navigation
+  if (/^(menu|start|back|home|main menu|restart|reset)$/i.test(i))
+    return 'MENU';
+
+  return 'UNKNOWN';
+}
+
+// ═══════════════════ AUTORESPONDER ═════════════════════
+class AutoResponder {
+  constructor(env) {
+    this.env = env;
+  }
+
+  // ── Main Entry ──────────────────────────────────────
+  async process({ phone, name, text, messageType, buttonId, messageId }) {
+    // 1. Dedup
+    const dedupeKey = `dedup:${messageId}`;
+    const already = await this.env.KV.get(dedupeKey);
+    if (already) return;
+    await this.env.KV.put(dedupeKey, '1', { expirationTtl: 86400 });
+
+    const input = (buttonId || text || '').trim();
+    if (!input) return;
+
+    // 2. Check if customer is in an active order flow
+    const state = await getConversationState(this.env, phone);
+    if (state) {
+      await this.handleOrderFlow(phone, name, input, state);
+      return;
+    }
+
+    // 3. Button reply → menu navigation
+    if (buttonId) {
+      await this.handleButtonReply(phone, buttonId);
+      return;
+    }
+
+    // 4. Intent detection
+    const intent = detectIntent(input);
+
+    if (intent === 'GREETING') {
+      await this.sendMainMenu(phone, name, true);
+      return;
+    }
+
+    if (intent === 'MENU') {
+      await this.sendMainMenu(phone, name, false);
+      return;
+    }
+
+    if (intent === 'ORDER_INTENT') {
+      await this.startOrderFlow(phone, name);
+      return;
+    }
+
+    if (intent === 'TRACK_ORDER') {
+      await this.handleTrackOrder(phone, input);
+      return;
+    }
+
+    if (intent === 'RETURN_INTENT') {
+      await this.handleReturnIntent(phone);
+      return;
+    }
+
+    if (intent === 'COMPLIMENT') {
+      await this.handleCompliment(phone, name);
+      return;
+    }
+
+    // 5. FAQ matching
+    const faq = findBestFAQ(input);
+    if (faq) {
+      await sendWhatsAppText(this.env, phone, faq.message);
+      await saveOutgoingMessage(this.env, phone, faq.message, 'text', {
+        matchedFaq: faq.shortcut,
+      });
+      // update use_count in DB
+      await this.env.DB.prepare(
+        `UPDATE quick_replies SET use_count = use_count + 1 WHERE shortcut = ?`
+      ).bind(faq.shortcut).run().catch(() => {});
+      return;
+    }
+
+    // 6. Nothing matched → fallback
+    await this.handleFallback(phone, name, input);
+  }
+
+  // ── Greeting / Main Menu ────────────────────────────
+  async sendMainMenu(phone, name, isGreeting) {
+    const firstName = name?.split(' ')[0] || 'there';
+    const greeting = isGreeting
+      ? `Hey ${firstName}! 👋 Welcome to KAAPAV! ✨\n\n`
+      : '';
+
+    const text =
+      `${greeting}` +
+      `═══════════════════════════\n` +
+      `   ✨ *KAAPAV Fashion Jewellery* ✨\n` +
+      ` ═══════════════════════════\n\n` +
+      `👑 *Simple Luxury. Crafted for You.*\n\n` +
+      `💎 Trendy fashion jewellery\n` +
+      `✨ Starting at just ₹249/-\n` +
+      `🔥 50% OFF — Limited time!\n` +
+      `🚚 Free shipping above ₹498/-\n\n` +
+      `How can I help you today? 👇`;
+
+    await sendWhatsAppButtons(
+      this.env, phone, text,
+      [
+        { id: 'jewellery_menu', title: '💎 Shop Jewellery' },
+        { id: 'offers_menu',   title: '🎁 Offers & Deals' },
+        { id: 'order_wa',      title: '🛒 Order on WhatsApp' },
+      ],
+      '💖 Simple Luxury. Honest Pricing.'
+    );
+    await saveOutgoingMessage(this.env, phone, 'Main Menu', 'buttons');
+  }
+
+  // ── Button Reply Handler ─────────────────────────────
+  async handleButtonReply(phone, buttonId) {
+    const env = this.env;
+
+    const menuMap = {
+      jewellery_menu: () => sendWhatsAppButtons(env, phone,
+        `═══════════════════════════\n` +
+        `   💎 *Our Collections* 💎\n` +
+        `═══════════════════════════\n\n` +
+        `👑 250+ handcrafted designs\n\n` +
+        `💍 Earrings & Rings → ₹249/-\n` +
+        `📿 Necklaces & Bracelets → ₹499/-\n` +
+        `✨ Full Sets → ₹699/-\n\n` +
+        `Where would you like to browse? 👇`,
+        [
+          { id: 'open_website',  title: '🌐 Website' },
+          { id: 'open_catalog',  title: '📱 WA Catalogue' },
+          { id: 'main_menu',     title: '🏠 Back' },
+        ],
+        '🌐 kaapav.com'
+      ),
+
+      offers_menu: () => sendWhatsAppButtons(env, phone,
+        `═══════════════════════════\n` +
+        `   🎁 *Exclusive Offers* 🎁\n` +
+        `═══════════════════════════\n\n` +
+        `👑 *Limited Time Only*\n\n` +
+        `🔥 Flat 50% OFF on all pieces\n` +
+        `🚚 Free shipping above ₹498/-\n` +
+        `⚡ Introductory prices — grab now!\n\n` +
+        `Shop now 👇`,
+        [
+          { id: 'open_website',     title: '🛍️ Shop Now' },
+          { id: 'open_bestsellers', title: '🔥 Bestsellers' },
+          { id: 'main_menu',        title: '🏠 Back' },
+        ],
+        `✨ Don't miss out!`
+      ),
+
+      order_wa: () => this.startOrderFlow(phone, null),
+
+      payment_menu: () => sendWhatsAppButtons(env, phone,
+        `═══════════════════════════\n` +
+        `   💳 *Payment Options* 💳\n` +
+        `═══════════════════════════\n\n` +
+        `👑 *100% Secure Payment*\n\n` +
+        `✅ UPI — GPay, PhonePe, Paytm\n` +
+        `✅ Credit / Debit Cards\n` +
+        `✅ Net Banking\n` +
+        `✅ Razorpay Payment Link\n\n` +
+        `⚠️ COD not available currently.\n\n` +
+        `Choose below 👇`,
+        [
+          { id: 'pay_now',    title: '💳 Pay Now' },
+          { id: 'track_order_btn', title: '📦 Track Order' },
+          { id: 'main_menu',  title: '🏠 Back' },
+        ],
+        '🔒 Bank-grade security'
+      ),
+
+      open_website: () => sendWhatsAppText(env, phone,
+        `═══════════════════════════\n` +
+        `🌐 *Visit Our Website*\n` +
+        `═══════════════════════════\n\n` +
+        `👑 Complete Collection\n\n` +
+        `💎 250+ designs\n` +
+        `🛍️ Easy checkout\n` +
+        `🔒 Secure payment\n\n` +
+        `👉 ${env.WEBSITE_URL}\n\n` +
+        `═══════════════════════════\n` +
+        `💎 KAAPAV Fashion Jewellery`
+      ),
+
+      open_catalog: () => sendWhatsAppText(env, phone,
+        `═══════════════════════════\n` +
+        `📱 *WhatsApp Catalogue*\n` +
+        `═══════════════════════════\n\n` +
+        `👑 Browse & Order Instantly\n\n` +
+        `👆 Tap to view all products\n` +
+        `💝 Easy selection\n` +
+        `🛒 Order right here!\n\n` +
+        `👉 ${env.CATALOG_URL}\n\n` +
+        `═══════════════════════════\n` +
+        `💎 KAAPAV Fashion Jewellery`
+      ),
+
+      open_bestsellers: () => sendWhatsAppText(env, phone,
+        `═══════════════════════════\n` +
+        `🛍️ *Bestselling Pieces*\n` +
+        `═══════════════════════════\n\n` +
+        `👑 Most Loved by Customers\n\n` +
+        `❤️ Trending designs\n` +
+        `🔥 Fast selling — limited stock!\n` +
+        `⚡ Grab yours now!\n\n` +
+        `👉 ${env.BESTSELLERS_URL}\n\n` +
+        `═══════════════════════════\n` +
+        `💎 KAAPAV Fashion Jewellery`
+      ),
+
+      track_order_btn: () => sendWhatsAppText(env, phone,
+        `═══════════════════════════\n` +
+        `📦 *Track Your Order*\n` +
+        `═══════════════════════════\n\n` +
+        `Share your Order ID (KP-XXXXX)\n` +
+        `and I'll get your status instantly!\n\n` +
+        `Or track directly:\n` +
+        `👉 www.shiprocket.in/shipment-tracking/\n\n` +
+        `═══════════════════════════\n` +
+        `💎 KAAPAV Fashion Jewellery`
+      ),
+
+      pay_now: () => sendWhatsAppText(env, phone,
+        `═══════════════════════════\n` +
+        `💳 *Secure Payment*\n` +
+        `═══════════════════════════\n\n` +
+        `To order & pay:\n` +
+        `👉 ${env.WEBSITE_URL}\n\n` +
+        `Or type *order karna hai* and\n` +
+        `I'll guide you through WhatsApp!\n\n` +
+        `═══════════════════════════\n` +
+        `💎 KAAPAV Fashion Jewellery`
+      ),
+
+      social_menu: () => sendWhatsAppButtons(env, phone,
+        `═══════════════════════════\n` +
+        `📱 *Follow KAAPAV* 📱\n` +
+        `═══════════════════════════\n\n` +
+        `👑 Stay Connected\n\n` +
+        `✨ New launches first\n` +
+        `🔥 Exclusive offers\n` +
+        `📸 Styling inspiration\n` +
+        `🎁 Giveaways & deals\n\n` +
+        `Follow us 👇`,
+        [
+          { id: 'open_facebook',  title: '👍 Facebook' },
+          { id: 'open_instagram', title: '📷 Instagram' },
+          { id: 'main_menu',      title: '🏠 Back' },
+        ],
+        '✨ Be part of KAAPAV'
+      ),
+
+      open_facebook: () => sendWhatsAppText(env, phone,
+        `═══════════════════════════\n` +
+        `👍 *Follow on Facebook*\n` +
+        `═══════════════════════════\n\n` +
+        `👉 ${env.FACEBOOK_URL}\n\n` +
+        `New launches, offers & more!\n\n` +
+        `═══════════════════════════\n` +
+        `💎 KAAPAV Fashion Jewellery`
+      ),
+
+      open_instagram: () => sendWhatsAppText(env, phone,
+        `═══════════════════════════\n` +
+        `📷 *Follow on Instagram*\n` +
+        `═══════════════════════════\n\n` +
+        `👉 ${env.INSTAGRAM_URL}\n\n` +
+        `Daily styling inspiration!\n\n` +
+        `═══════════════════════════\n` +
+        `💎 KAAPAV Fashion Jewellery`
+      ),
+
+      main_menu: () => this.sendMainMenu(phone, null, false),
+
+      // order confirm / cancel
+      confirm_order: () => this.processOrderConfirmation(phone),
+      cancel_order:  () => this.cancelOrder(phone),
+    };
+
+    const handler = menuMap[buttonId];
+    if (handler) {
+      await handler();
+      await saveOutgoingMessage(this.env, phone, `Button: ${buttonId}`, 'buttons');
+    }
+  }
+
+  // ── Order Flow State Machine ─────────────────────────
+
+  async startOrderFlow(phone, name) {
+    await setConversationState(this.env, phone, {
+      step: 'ORDER_PRODUCT',
+      data: {
+        product: null, sku: null, price: null, quantity: null,
+        name: null, address: null, landmark: null,
+        pincode: null, email: null, total: null,
+      },
+    });
+
+    await sendWhatsAppText(this.env, phone,
+      `═══════════════════════════\n` +
+      `🛒 *WhatsApp Order*\n` +
+      `═══════════════════════════\n` +
+      `Simple Luxury. Easy Ordering. 💎\n\n` +
+      `Which product would you like?\n\n` +
+      `You can:\n` +
+      `• Type the product name\n` +
+      `• Or browse: ${this.env.CATALOG_URL}\n\n` +
+      `💡 Type *cancel* anytime to stop.\n` +
+      `═══════════════════════════\n` +
+      `💎 KAAPAV Fashion Jewellery`
+    );
+    await saveOutgoingMessage(this.env, phone, 'Order flow started', 'text');
+  }
+
+  async handleOrderFlow(phone, name, input, state) {
+    // cancel anytime
+    if (/^(cancel|stop|nahi|no|back|quit|exit)$/i.test(input.trim())) {
+      await this.cancelOrder(phone);
+      return;
+    }
+
+    const { step, data } = state;
+
+    switch (step) {
+      case 'ORDER_PRODUCT':
+        await this.handleOrderProduct(phone, input, data);
+        break;
+      case 'ORDER_QUANTITY':
+        await this.handleOrderQuantity(phone, input, data);
+        break;
+      case 'ORDER_NAME':
+        await this.handleOrderName(phone, input, data);
+        break;
+      case 'ORDER_ADDRESS':
+        await this.handleOrderAddress(phone, input, data);
+        break;
+      case 'ORDER_LANDMARK':
+        await this.handleOrderLandmark(phone, input, data);
+        break;
+      case 'ORDER_PINCODE':
+        await this.handleOrderPincode(phone, input, data);
+        break;
+      case 'ORDER_EMAIL':
+        await this.handleOrderEmail(phone, input, data);
+        break;
+      case 'ORDER_CONFIRM':
+        // waiting for button reply — text input here = confusion
+        await sendWhatsAppText(this.env, phone,
+          `Please tap ✅ *Confirm Order* or ❌ *Cancel* above to proceed.`
+        );
+        break;
+      default:
+        await clearConversationState(this.env, phone);
+        await this.sendMainMenu(phone, name, false);
+    }
+  }
+
+  async handleOrderProduct(phone, input, data) {
+    // Search product in D1
+    const product = await this.env.DB.prepare(`
+      SELECT sku, name, price, stock, is_active
+      FROM products
+      WHERE is_active = 1
+        AND (
+          LOWER(name) LIKE ?
+          OR LOWER(sku) LIKE ?
+          OR LOWER(category) LIKE ?
+        )
+      LIMIT 1
+    `).bind(
+      `%${input.toLowerCase()}%`,
+      `%${input.toLowerCase()}%`,
+      `%${input.toLowerCase()}%`
+    ).first();
+
+    if (!product) {
+      await sendWhatsAppText(this.env, phone,
+        `═══════════════════════════\n` +
+        `🔍 *Product Not Found*\n` +
+        `═══════════════════════════\n\n` +
+        `Couldn't find "${input}" in our catalogue.\n\n` +
+        `Try:\n` +
+        `• A different name (e.g. "necklace", "earring")\n` +
+        `• Browse: ${this.env.CATALOG_URL}\n\n` +
+        `Or type *cancel* to go back.\n` +
+        `═══════════════════════════\n` +
+        `💎 KAAPAV Fashion Jewellery`
+      );
+      return;
+    }
+
+    if (product.stock <= 0) {
+      await sendWhatsAppText(this.env, phone,
+        `═══════════════════════════\n` +
+        `😟 *Out of Stock*\n` +
+        `═══════════════════════════\n\n` +
+        `*${product.name}* is currently out of stock.\n\n` +
+        `Browse other designs:\n` +
+        `👉 ${this.env.CATALOG_URL}\n\n` +
+        `Or type another product name!\n` +
+        `═══════════════════════════\n` +
+        `💎 KAAPAV Fashion Jewellery`
+      );
+      return;
+    }
+
+    data.product = product.name;
+    data.sku = product.sku;
+    data.price = product.price;
+
+    await setConversationState(this.env, phone, { step: 'ORDER_QUANTITY', data });
+
+    await sendWhatsAppText(this.env, phone,
+      `═══════════════════════════\n` +
+      `✅ *Found It!*\n` +
+      `═══════════════════════════\n\n` +
+      `*${product.name}*\n` +
+      `💰 Price: ₹${product.price}/-\n` +
+      `✅ In Stock\n\n` +
+      `How many pieces would you like?\n` +
+      `(Type a number, e.g. 1, 2, 3)\n` +
+      `═══════════════════════════\n` +
+      `💎 KAAPAV Fashion Jewellery`
+    );
+    await saveOutgoingMessage(this.env, phone, 'Product found, asking quantity', 'text');
+  }
+
+  async handleOrderQuantity(phone, input, data) {
+    const qty = parseInt(input.trim());
+    if (isNaN(qty) || qty < 1 || qty > 20) {
+      await sendWhatsAppText(this.env, phone,
+        `Please enter a valid quantity (1 to 20).\nExample: type *1* or *2*`
+      );
+      return;
+    }
+
+    data.quantity = qty;
+    data.total = data.price * qty;
+
+    // free shipping check
+    const shippingCost = data.total >= 498 ? 0 : 60;
+    data.shippingCost = shippingCost;
+    data.grandTotal = data.total + shippingCost;
+
+    await setConversationState(this.env, phone, { step: 'ORDER_NAME', data });
+
+    await sendWhatsAppText(this.env, phone,
+      `═══════════════════════════\n` +
+      `🛒 *Order Summary So Far*\n` +
+      `═══════════════════════════\n\n` +
+      `📦 ${data.product} × ${qty}\n` +
+      `💰 Subtotal: ₹${data.total}/-\n` +
+      `🚚 Shipping: ${shippingCost === 0 ? 'FREE 🎉' : `₹${shippingCost}/-`}\n` +
+      `💳 Total: ₹${data.grandTotal}/-\n\n` +
+      `Now let's get your delivery details.\n\n` +
+      `👤 Your *full name* please?\n` +
+      `═══════════════════════════\n` +
+      `💎 KAAPAV Fashion Jewellery`
+    );
+    await saveOutgoingMessage(this.env, phone, 'Quantity confirmed, asking name', 'text');
+  }
+
+  async handleOrderName(phone, input, data) {
+    if (input.trim().length < 2) {
+      await sendWhatsAppText(this.env, phone, `Please enter your full name.`);
+      return;
+    }
+
+    data.name = input.trim();
+    await setConversationState(this.env, phone, { step: 'ORDER_ADDRESS', data });
+
+    await sendWhatsAppText(this.env, phone,
+      `Thanks, *${data.name}*! 😊\n\n` +
+      `📍 Your *full delivery address*?\n` +
+      `(House/flat no., street, area, city)\n\n` +
+      `_Example: 42, MG Road, Indiranagar, Bangalore_`
+    );
+    await saveOutgoingMessage(this.env, phone, 'Name received, asking address', 'text');
+  }
+
+  async handleOrderAddress(phone, input, data) {
+    if (input.trim().length < 10) {
+      await sendWhatsAppText(this.env, phone,
+        `Please enter your complete address.\n` +
+        `(House no., street, area, city)`
+      );
+      return;
+    }
+
+    data.address = input.trim();
+    await setConversationState(this.env, phone, { step: 'ORDER_LANDMARK', data });
+
+    await sendWhatsAppText(this.env, phone,
+      `📍 Any *landmark* near your address?\n\n` +
+      `_This helps the courier find you easily!_\n\n` +
+      `_Example: "Near SBI Bank", "Opposite City Mall"_\n\n` +
+      `(Type *skip* if no landmark)`
+    );
+    await saveOutgoingMessage(this.env, phone, 'Address received, asking landmark', 'text');
+  }
+
+  async handleOrderLandmark(phone, input, data) {
+    data.landmark = /^skip$/i.test(input.trim()) ? '' : input.trim();
+    await setConversationState(this.env, phone, { step: 'ORDER_PINCODE', data });
+
+    await sendWhatsAppText(this.env, phone,
+      `📮 Your *6-digit pincode*?\n\n` +
+      `_Example: 560038_`
+    );
+    await saveOutgoingMessage(this.env, phone, 'Landmark received, asking pincode', 'text');
+  }
+
+  async handleOrderPincode(phone, input, data) {
+    const pincode = input.trim().replace(/\s/g, '');
+    if (!/^\d{6}$/.test(pincode)) {
+      await sendWhatsAppText(this.env, phone,
+        `Please enter a valid 6-digit pincode.\n_Example: 560038_`
+      );
+      return;
+    }
+
+    data.pincode = pincode;
+    await setConversationState(this.env, phone, { step: 'ORDER_EMAIL', data });
+
+    await sendWhatsAppText(this.env, phone,
+      `📧 Your *email address*?\n\n` +
+      `_For your payment receipt from Razorpay._\n\n` +
+      `(Type *skip* to continue without email)`
+    );
+    await saveOutgoingMessage(this.env, phone, 'Pincode received, asking email', 'text');
+  }
+
+  async handleOrderEmail(phone, input, data) {
+    const raw = input.trim();
+    if (!/^skip$/i.test(raw)) {
+      // basic email validation
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+        await sendWhatsAppText(this.env, phone,
+          `Please enter a valid email address.\n` +
+          `_Example: priya@gmail.com_\n\n` +
+          `Or type *skip* to continue without email.`
+        );
+        return;
+      }
+      data.email = raw;
+    } else {
+      data.email = '';
+    }
+
+    await setConversationState(this.env, phone, { step: 'ORDER_CONFIRM', data });
+    await this.showOrderSummary(phone, data);
+  }
+
+  async showOrderSummary(phone, data) {
+    const summary =
+      `═══════════════════════════\n` +
+      `📋 *Order Summary*\n` +
+      `═══════════════════════════\n\n` +
+      `📦 *Product:* ${data.product}\n` +
+      `🔢 *Qty:* ${data.quantity}\n` +
+      `💰 *Subtotal:* ₹${data.total}/-\n` +
+      `🚚 *Shipping:* ${data.shippingCost === 0 ? 'FREE 🎉' : `₹${data.shippingCost}/-`}\n` +
+      `💳 *Grand Total:* ₹${data.grandTotal}/-\n\n` +
+      `📍 *Delivery To:*\n` +
+      `${data.name}\n` +
+      `${data.address}\n` +
+      `${data.landmark ? `Near: ${data.landmark}\n` : ''}` +
+      `Pincode: ${data.pincode}\n` +
+      `${data.email ? `📧 ${data.email}` : ''}\n\n` +
+      `Please confirm your order 👇`;
+
+    await sendWhatsAppButtons(
+      this.env, phone, summary,
+      [
+        { id: 'confirm_order', title: '✅ Confirm Order' },
+        { id: 'cancel_order',  title: '❌ Cancel' },
+      ],
+      '🔒 Secure payment via Razorpay'
+    );
+    await saveOutgoingMessage(this.env, phone, 'Order summary shown', 'buttons');
+  }
+
+  async processOrderConfirmation(phone) {
+    const state = await getConversationState(this.env, phone);
+    if (!state || state.step !== 'ORDER_CONFIRM') {
+      await this.sendMainMenu(phone, null, false);
+      return;
+    }
+
+    const { data } = state;
+
+    // Generate order ID
+    const orderId = await generateOrderId();
+
+    // Save order to D1
+    await this.env.DB.prepare(`
+      INSERT INTO orders (
+        order_id, phone, customer_name,
+        items, item_count, subtotal,
+        shipping_cost, total,
+        shipping_name, shipping_address,
+        shipping_pincode,
+        status, payment_status, source,
+        created_at, updated_at
+      ) VALUES (
+        ?, ?, ?,
+        ?, ?, ?,
+        ?, ?,
+        ?, ?,
+        ?,
+        'pending', 'unpaid', 'whatsapp',
+        datetime('now'), datetime('now')
+      )
+    `).bind(
+      orderId, phone, data.name,
+      JSON.stringify([{ sku: data.sku, name: data.product, qty: data.quantity, price: data.price }]),
+      data.quantity,
+      data.total,
+      data.shippingCost,
+      data.grandTotal,
+      data.name,
+      `${data.address}${data.landmark ? ', Near: ' + data.landmark : ''}`,
+      data.pincode,
+    ).run();
+
+    // Update customer record
+    await this.env.DB.prepare(`
+      UPDATE customers SET
+        order_count = order_count + 1,
+        updated_at = datetime('now')
+      WHERE phone = ?
+    `).bind(phone).run();
+
+    // Create Razorpay payment link
+    let paymentLink = null;
+    let paymentLinkId = null;
+
+    try {
+      const rpResult = await createRazorpayLink(this.env, {
+        amount: data.grandTotal,
+        phone,
+        name: data.name,
+        email: data.email || undefined,
+        orderId,
+        description: `KAAPAV Order ${orderId} — ${data.product}`,
+      });
+
+      if (rpResult.short_url) {
+        paymentLink = rpResult.short_url;
+        paymentLinkId = rpResult.id;
+
+        // Save payment link to order
+        await this.env.DB.prepare(`
+          UPDATE orders SET
+            payment_link = ?,
+            payment_link_expires = datetime('now', '+30 minutes'),
+            updated_at = datetime('now')
+          WHERE order_id = ?
+        `).bind(paymentLink, orderId).run();
+
+        // Cache link in KV
+        await this.env.KV.put(
+          `razorpay_link:${phone}`,
+          JSON.stringify({ link: paymentLink, orderId, linkId: paymentLinkId }),
+          { expirationTtl: 1800 }
+        );
+      }
+    } catch (e) {
+      console.error('Razorpay error:', e);
+    }
+
+    // Clear order state
+    await clearConversationState(this.env, phone);
+
+    // Send confirmation + payment link
+    if (paymentLink) {
+      await sendWhatsAppText(this.env, phone,
+        `═══════════════════════════\n` +
+        `🎉 *Order Confirmed!*\n` +
+        `═══════════════════════════\n\n` +
+        `Order ID: *${orderId}*\n\n` +
+        `💳 *Complete your payment:*\n` +
+        `👉 ${paymentLink}\n\n` +
+        `⏰ Link valid for 30 minutes\n\n` +
+        `Once paid:\n` +
+        `✅ You'll get WhatsApp confirmation\n` +
+        `📦 We'll ship within 24 hours\n` +
+        `🚚 Tracking link on WhatsApp\n\n` +
+        `═══════════════════════════\n` +
+        `💎 KAAPAV Fashion Jewellery`
+      );
+    } else {
+      // Razorpay failed — send website link as fallback
+      await sendWhatsAppText(this.env, phone,
+        `═══════════════════════════\n` +
+        `🎉 *Order Received!*\n` +
+        `═══════════════════════════\n\n` +
+        `Order ID: *${orderId}*\n\n` +
+        `Please complete payment at:\n` +
+        `👉 ${this.env.WEBSITE_URL}\n\n` +
+        `Or reply and our team will\n` +
+        `send you a payment link shortly!\n\n` +
+        `═══════════════════════════\n` +
+        `💎 KAAPAV Fashion Jewellery`
+      );
+    }
+
+    await saveOutgoingMessage(this.env, phone, `Order confirmed: ${orderId}`, 'text');
+
+    // Alert you via FCM
+    await sendFCMAlert(
+      this.env,
+      `🛒 New Order! ${orderId}`,
+      `${data.name} — ${data.product} × ${data.quantity} — ₹${data.grandTotal}`,
+      'new_order',
+      { orderId, phone }
+    );
+  }
+
+  async cancelOrder(phone) {
+    await clearConversationState(this.env, phone);
+    await sendWhatsAppButtons(this.env, phone,
+      `═══════════════════════════\n` +
+      `❌ *Order Cancelled*\n` +
+      `═══════════════════════════\n\n` +
+      `No problem! Your order has been\n` +
+      `cancelled. Nothing was charged.\n\n` +
+      `Can I help you with anything else? 👇`,
+      [
+        { id: 'jewellery_menu', title: '💎 Browse Jewellery' },
+        { id: 'main_menu',      title: '🏠 Main Menu' },
+        { id: 'order_wa',       title: '🛒 Try Again' },
+      ],
+      '💎 KAAPAV Fashion Jewellery'
+    );
+    await saveOutgoingMessage(this.env, phone, 'Order cancelled', 'buttons');
+  }
+
+  // ── Track Order ─────────────────────────────────────
+  async handleTrackOrder(phone, input) {
+    // Check if order ID in message
+    const orderIdMatch = input.match(/KP-[A-Z0-9]+/i);
+
+    if (orderIdMatch) {
+      const orderId = orderIdMatch[0].toUpperCase();
+      const order = await this.env.DB.prepare(`
+        SELECT order_id, status, payment_status,
+               tracking_id, tracking_url, awb_number,
+               created_at, shipped_at, delivered_at
+        FROM orders WHERE order_id = ? AND phone = ?
+      `).bind(orderId, phone).first();
+
+      if (order) {
+        const statusEmoji = {
+          pending: '⏳', confirmed: '✅', processing: '📦',
+          shipped: '🚚', delivered: '🎉', cancelled: '❌',
+        };
+        const emoji = statusEmoji[order.status] || '📦';
+
+        await sendWhatsAppText(this.env, phone,
+          `═══════════════════════════\n` +
+          `📦 *Order Status*\n` +
+          `═══════════════════════════\n\n` +
+          `Order: *${order.order_id}*\n` +
+          `Status: ${emoji} *${order.status.toUpperCase()}*\n` +
+          `Payment: ${order.payment_status === 'paid' ? '✅ Paid' : '⏳ Pending'}\n` +
+          `${order.awb_number ? `\nAWB: ${order.awb_number}` : ''}\n` +
+          `${order.tracking_url
+            ? `\n🔗 Track: ${order.tracking_url}`
+            : '\nTracking link will be sent once shipped!'
+          }\n\n` +
+          `═══════════════════════════\n` +
+          `💎 KAAPAV Fashion Jewellery`
+        );
+      } else {
+        await sendWhatsAppText(this.env, phone,
+          `Couldn't find order *${orderId}* for your number.\n\n` +
+          `Please check your Order ID and try again.\n` +
+          `_Order IDs look like: KP-ABC123_`
+        );
+      }
+    } else {
+      // No order ID — ask for it
+      await sendWhatsAppText(this.env, phone,
+        `═══════════════════════════\n` +
+        `📦 *Track Your Order*\n` +
+        `═══════════════════════════\n\n` +
+        `Please share your *Order ID*\n` +
+        `_It looks like: KP-XXXXX_\n\n` +
+        `You received it via WhatsApp\n` +
+        `after placing your order.\n\n` +
+        `Or track directly:\n` +
+        `👉 www.shiprocket.in/shipment-tracking/\n\n` +
+        `═══════════════════════════\n` +
+        `💎 KAAPAV Fashion Jewellery`
+      );
+    }
+    await saveOutgoingMessage(this.env, phone, 'Track order response', 'text');
+  }
+
+  // ── Return Intent ────────────────────────────────────
+  async handleReturnIntent(phone) {
+    await sendWhatsAppText(this.env, phone,
+      `═══════════════════════════\n` +
+      `🔄 *Returns & Refunds*\n` +
+      `═══════════════════════════\n` +
+      `Simple Luxury. Hassle-free. 💎\n\n` +
+      `✅ *7-Day Return Policy*\n\n` +
+      `To initiate a return:\n` +
+      `1️⃣ Email us within 7 days\n` +
+      `2️⃣ 📧 care.kaapav@gmail.com\n` +
+      `3️⃣ Include:\n` +
+      `   • Order ID (KP-XXXXX)\n` +
+      `   • Reason for return\n` +
+      `   • Unboxing video (mandatory)\n\n` +
+      `📌 *Conditions:*\n` +
+      `• Item unworn & in original condition\n` +
+      `• ₹60/- reverse shipping deducted\n` +
+      `• Refund in 7 days after check\n\n` +
+      `Damaged item? → Full refund/replacement!\n\n` +
+      `═══════════════════════════\n` +
+      `💎 KAAPAV Fashion Jewellery`
+    );
+    await saveOutgoingMessage(this.env, phone, 'Return policy sent', 'text');
+  }
+
+  // ── Compliment Handler ───────────────────────────────
+  async handleCompliment(phone, name) {
+    const firstName = name?.split(' ')[0] || '';
+    await sendWhatsAppButtons(this.env, phone,
+      `Aww, thank you${firstName ? ` ${firstName}` : ''}! 🥰\n\n` +
+      `That means so much to us! 💎\n\n` +
+      `We put our heart into every piece.\n` +
+      `Glad you love it! ✨\n\n` +
+      `Want to explore more? 👇`,
+      [
+        { id: 'open_website',  title: '💎 Shop More' },
+        { id: 'open_catalog',  title: '📱 Catalogue' },
+        { id: 'main_menu',     title: '🏠 Menu' },
+      ],
+      '💖 KAAPAV Fashion Jewellery'
+    );
+    await saveOutgoingMessage(this.env, phone, 'Compliment response', 'buttons');
+  }
+
+  // ── Fallback ─────────────────────────────────────────
+  async handleFallback(phone, name, input) {
+    // Log unmatched message
+    await logUnmatchedMessage(this.env, phone, input);
+
+    // Alert you
+    await sendFCMAlert(
+      this.env,
+      `❓ Unmatched Message`,
+      `${name || phone}: "${input}"`,
+      'unmatched',
+      { phone }
+    );
+
+    await sendWhatsAppButtons(this.env, phone,
+      `═══════════════════════════\n` +
+      `💬 *Need Help?*\n` +
+      `═══════════════════════════\n` +
+      `Simple Luxury. Always Here. 💎\n\n` +
+      `I'm still learning! 😊\n\n` +
+      `For this query, please email us:\n` +
+      `📧 care.kaapav@gmail.com\n\n` +
+      `Or browse our collection:\n` +
+      `🌐 www.kaapav.com\n\n` +
+      `Meanwhile, I can help with: 👇`,
+      [
+        { id: 'jewellery_menu', title: '💎 Browse' },
+        { id: 'order_wa',       title: '🛒 Place Order' },
+        { id: 'main_menu',      title: '🏠 Menu' },
+      ],
+      '💎 KAAPAV Fashion Jewellery'
+    );
+    await saveOutgoingMessage(this.env, phone, 'Fallback response', 'buttons');
+  }
+}
+
+// ═══════════════════ WEBHOOK HANDLERS ══════════════════
+async function handleWebhookVerify(request, env) {
+  const url = new URL(request.url);
+  const mode      = url.searchParams.get('hub.mode');
+  const token     = url.searchParams.get('hub.verify_token');
+  const challenge = url.searchParams.get('hub.challenge');
+  if (mode === 'subscribe' && token === env.WEBHOOK_VERIFY_TOKEN) {
+    return new Response(challenge, { status: 200 });
+  }
+  return new Response('Forbidden', { status: 403 });
+}
+
+async function handleWebhookPost(request, env, ctx) {
+  try {
+    const body = await request.json();
+
+    // Log raw webhook
+    ctx.waitUntil(
+      env.DB.prepare(`
+        INSERT INTO webhook_log (source, event_type, payload, received_at)
+        VALUES ('whatsapp', 'message', ?, datetime('now'))
+      `).bind(JSON.stringify(body)).run().catch(() => {})
+    );
+
+    const entry   = body?.entry?.[0];
+    const changes = entry?.changes?.[0];
+    const value   = changes?.value;
+
+    // Handle message status updates (delivered/read)
+    if (value?.statuses?.[0]) {
+      const status = value.statuses[0];
+      const statusMap = { delivered: 'delivered', read: 'read', failed: 'failed' };
+      const newStatus = statusMap[status.status];
+      if (newStatus) {
+        await env.DB.prepare(`
+          UPDATE messages SET
+            status = ?,
+            ${newStatus === 'delivered' ? 'delivered_at' : newStatus === 'read' ? 'read_at' : 'status'} = datetime('now')
+          WHERE message_id = ?
+        `).bind(newStatus, status.id).run().catch(() => {});
+      }
+      return jsonResponse({ status: 'ok' });
+    }
+
+    if (!value?.messages?.[0]) return jsonResponse({ status: 'ok' });
+
+    const msg     = value.messages[0];
+    const phone   = msg.from;
+    const contact = value.contacts?.[0];
+    const name    = contact?.profile?.name || phone;
+
+    let text       = '';
+    let messageType = msg.type;
+    let buttonId   = null;
+    let buttonText = null;
+    let mediaId    = null;
+    let mediaUrl   = null;
+
+    if (msg.type === 'text') {
+      text = msg.text?.body || '';
+    } else if (msg.type === 'interactive') {
+      if (msg.interactive?.type === 'button_reply') {
+        buttonId   = msg.interactive.button_reply?.id;
+        buttonText = msg.interactive.button_reply?.title;
+        text       = buttonText || '';
+      } else if (msg.interactive?.type === 'list_reply') {
+        buttonId   = msg.interactive.list_reply?.id;
+        buttonText = msg.interactive.list_reply?.title;
+        text       = buttonText || '';
+      }
+    } else if (['image','video','audio','document','sticker'].includes(msg.type)) {
+      mediaId  = msg[msg.type]?.id;
+      mediaUrl = msg[msg.type]?.link;
+      text     = msg[msg.type]?.caption || `[${msg.type}]`;
+    }
+
+    const messageId = msg.id;
+    const timestamp = new Date(parseInt(msg.timestamp) * 1000).toISOString();
+
+    // Save incoming message
+    await env.DB.prepare(`
+      INSERT OR IGNORE INTO messages 
+        (message_id, phone, text, message_type, direction,
+         button_id, button_text, media_id, media_url,
+         status, timestamp, created_at)
+      VALUES (?, ?, ?, ?, 'incoming', ?, ?, ?, ?, 'delivered', ?, datetime('now'))
+    `).bind(
+      messageId, phone, text, messageType,
+      buttonId, buttonText, mediaId, mediaUrl,
+      timestamp
+    ).run();
+
+    // Upsert chat
+    await env.DB.prepare(`
+      INSERT INTO chats 
+        (phone, customer_name, last_message, last_message_type,
+         last_timestamp, last_direction, unread_count, total_messages, updated_at)
+      VALUES (?, ?, ?, ?, ?, 'incoming', 1, 1, datetime('now'))
+      ON CONFLICT(phone) DO UPDATE SET
+        customer_name   = excluded.customer_name,
+        last_message    = excluded.last_message,
+        last_message_type = excluded.last_message_type,
+        last_timestamp  = excluded.last_timestamp,
+        last_direction  = 'incoming',
+        unread_count    = unread_count + 1,
+        total_messages  = total_messages + 1,
+        updated_at      = datetime('now')
+    `).bind(phone, name, text || messageType, messageType, timestamp).run();
+
+    // Upsert customer
+    await env.DB.prepare(`
+      INSERT INTO customers 
+        (phone, name, message_count, first_seen, last_seen, updated_at)
+      VALUES (?, ?, 1, datetime('now'), datetime('now'), datetime('now'))
+      ON CONFLICT(phone) DO UPDATE SET
+        name          = excluded.name,
+        message_count = message_count + 1,
+        last_seen     = datetime('now'),
+        updated_at    = datetime('now')
+    `).bind(phone, name).run();
+
+    // FCM push to Flutter app
+    ctx.waitUntil(sendFCMNotification(env, phone, name, text, messageId));
+
+    // AutoResponder (text + interactive only)
+    if (['text','interactive'].includes(msg.type) || buttonId) {
+      ctx.waitUntil(
+        new AutoResponder(env)
+          .process({ phone, name, text, messageType, buttonId, messageId })
+          .catch(e => console.error('AutoResponder error:', e))
+      );
+    }
+
+    return jsonResponse({ status: 'ok' });
+  } catch (e) {
+    console.error('Webhook error:', e);
+    return jsonResponse({ status: 'ok' });
+  }
+}
+
+// ═══════════════════ RAZORPAY WEBHOOK ══════════════════
+async function handleRazorpayWebhook(request, env) {
+  try {
+    const body = await request.text();
+    const signature = request.headers.get('X-Razorpay-Signature');
+
+    // Verify signature
+    const key = await crypto.subtle.importKey(
+      'raw', new TextEncoder().encode(env.RAZORPAY_WEBHOOK_SECRET),
+      { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+    );
+    const expectedSig = await crypto.subtle.sign(
+      'HMAC', key, new TextEncoder().encode(body)
+    );
+    const expectedHex = Array.from(new Uint8Array(expectedSig))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+
+    if (expectedHex !== signature) {
+      console.error('Razorpay webhook: invalid signature');
+      return new Response('Invalid signature', { status: 400 });
+    }
+
+    const event = JSON.parse(body);
+
+    // Log webhook
+    await env.DB.prepare(`
+      INSERT INTO webhook_log (source, event_type, payload, received_at)
+      VALUES ('razorpay', ?, ?, datetime('now'))
+    `).bind(event.event, body).run().catch(() => {});
+
+    if (event.event === 'payment_link.paid') {
+      const notes    = event.payload?.payment_link?.entity?.notes || {};
+      const orderId  = notes.order_id;
+      const phone    = notes.phone;
+      const amount   = event.payload?.payment?.entity?.amount / 100;
+      const paymentId = event.payload?.payment?.entity?.id;
+      const method   = event.payload?.payment?.entity?.method;
+
+      if (orderId) {
+        // Update order
+        await env.DB.prepare(`
+          UPDATE orders SET
+            status = 'confirmed',
+            payment_status = 'paid',
+            payment_id = ?,
+            payment_method = ?,
+            paid_at = datetime('now'),
+            confirmed_at = datetime('now'),
+            confirmation_sent = 0,
+            updated_at = datetime('now')
+          WHERE order_id = ?
+        `).bind(paymentId, method, orderId).run();
+
+        // Save payment record
+        await env.DB.prepare(`
+          INSERT INTO payments 
+            (payment_id, order_id, phone, gateway, 
+             gateway_payment_id, amount, status, method, paid_at)
+          VALUES (?, ?, ?, 'razorpay', ?, ?, 'paid', ?, datetime('now'))
+        `).bind(
+          `pay_${Date.now()}`, orderId, phone,
+          paymentId, amount, method
+        ).run();
+
+        // Update customer total_spent
+        await env.DB.prepare(`
+          UPDATE customers SET
+            total_spent = total_spent + ?,
+            last_order_at = datetime('now'),
+            updated_at = datetime('now')
+          WHERE phone = ?
+        `).bind(amount, phone).run();
+
+        // WhatsApp payment confirmation to customer
+        if (phone) {
+          await sendWhatsAppText(env, phone,
+            `═══════════════════════════\n` +
+            `✅ *Payment Received!*\n` +
+            `═══════════════════════════\n` +
+            `Simple Luxury. Thank You! 💎\n\n` +
+            `💰 Amount: ₹${amount}/-\n` +
+            `📦 Order: *${orderId}*\n` +
+            `🆔 Payment ID: ${paymentId}\n\n` +
+            `*What happens next:*\n` +
+            `📦 We'll pack your order today\n` +
+            `🚚 Shipped within 24 hours\n` +
+            `📱 Tracking link on WhatsApp\n` +
+            `⏰ Delivered in 2-4 working days\n\n` +
+            `Thank you for choosing KAAPAV! 💎\n\n` +
+            `═══════════════════════════\n` +
+            `💎 KAAPAV Fashion Jewellery`
+          );
+
+          // Log notification
+          await env.DB.prepare(`
+            INSERT INTO notification_log 
+              (phone, type, order_id, message, status, sent_at)
+            VALUES (?, 'payment', ?, 'Payment confirmation sent', 'sent', datetime('now'))
+          `).bind(phone, orderId).run();
+
+          // Update confirmation_sent
+          await env.DB.prepare(`
+            UPDATE orders SET confirmation_sent = 1 WHERE order_id = ?
+          `).bind(orderId).run();
+        }
+
+        // Alert you via FCM
+        await sendFCMAlert(
+          env,
+          `💰 Payment Received! ${orderId}`,
+          `₹${amount}/- via ${method} — Ship now!`,
+          'payment_received',
+          { orderId, phone }
+        );
+      }
+    }
+
+    return jsonResponse({ status: 'ok' });
+  } catch (e) {
+    console.error('Razorpay webhook error:', e);
+    return new Response('Error', { status: 500 });
+  }
+}
+
+// ═══════════════════ API HANDLERS ══════════════════════
+async function handleLogin(request, env) {
+  const body = await request.json();
+  const { method, pin, email, password } = body;
+  if (method === 'pin' || method === 'biometric') {
+    if (pin !== env.APP_PIN) return errorResponse('Invalid PIN', 401);
+  } else if (method === 'password') {
+    if (email !== 'admin@kaapav.com') return errorResponse('Invalid credentials', 401);
+  } else {
+    return errorResponse('Invalid method', 400);
+  }
+  const payload = {
+    userId: 'admin', email: 'admin@kaapav.com', role: 'admin',
+    exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600,
+  };
+  const token = await generateJWT(payload, env.JWT_SECRET);
+  return jsonResponse({
+    success: true, token,
+    user: { id: 'admin', email: 'admin@kaapav.com', name: 'KAAPAV Admin', role: 'admin' },
+  });
+}
+
+async function handleGetChats(request, env) {
+  const url    = new URL(request.url);
+  const limit  = parseInt(url.searchParams.get('limit') || '50');
+  const offset = parseInt(url.searchParams.get('offset') || '0');
+  const status = url.searchParams.get('status');
+  const search = url.searchParams.get('search');
+
+  let query = `SELECT * FROM chats`;
+  const params = [];
+  const conditions = [];
+
+  if (status) { conditions.push(`status = ?`); params.push(status); }
+  if (search) {
+    conditions.push(`(customer_name LIKE ? OR phone LIKE ? OR last_message LIKE ?)`);
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+  }
+  if (conditions.length) query += ` WHERE ${conditions.join(' AND ')}`;
+  query += ` ORDER BY last_timestamp DESC LIMIT ? OFFSET ?`;
+  params.push(limit, offset);
+
+  const { results } = await env.DB.prepare(query).bind(...params).all();
+  return jsonResponse({ success: true, chats: results, total: results.length });
+}
+
+async function handleGetMessages(phone, request, env) {
+  const url    = new URL(request.url);
+  const limit  = parseInt(url.searchParams.get('limit') || '50');
+  const before = url.searchParams.get('before');
+
+  let query  = `SELECT * FROM messages WHERE phone = ? ORDER BY timestamp DESC LIMIT ?`;
+  const params = [phone, limit];
+  if (before) {
+    query  = `SELECT * FROM messages WHERE phone = ? AND timestamp < ? ORDER BY timestamp DESC LIMIT ?`;
+    params.splice(1, 0, before);
+  }
+  const { results } = await env.DB.prepare(query).bind(...params).all();
+  await env.DB.prepare(`UPDATE chats SET unread_count = 0 WHERE phone = ?`).bind(phone).run();
+  return jsonResponse({ success: true, messages: results.reverse(), total: results.length });
+}
+
+async function handleSendMessage(request, env) {
+  const body        = await request.json();
+  const phone       = body.phone || body.to;
+  const text        = body.text || body.message;
+  const type        = body.type || 'text';
+  const mediaUrl    = body.mediaUrl;
+  const mediaCaption = body.mediaCaption;
+  const filename    = body.filename;
+
+  if (!phone) return errorResponse('phone required');
+
+  let waResult;
+  let savedText = text || '';
+
+  try {
+    switch (type) {
+      case 'image':
+        if (!mediaUrl) return errorResponse('mediaUrl required');
+        waResult  = await sendWhatsAppImage(env, phone, mediaUrl, mediaCaption);
+        savedText = mediaCaption || '📷 Photo';
+        break;
+      case 'document':
+        if (!mediaUrl) return errorResponse('mediaUrl required');
+        waResult  = await sendWhatsAppDocument(env, phone, mediaUrl, filename, mediaCaption);
+        savedText = filename || mediaCaption || '📄 Document';
+        break;
+      case 'video':
+        if (!mediaUrl) return errorResponse('mediaUrl required');
+        waResult  = await sendWhatsAppVideo(env, phone, mediaUrl, mediaCaption);
+        savedText = mediaCaption || '🎬 Video';
+        break;
+      case 'buttons':
+        if (!text) return errorResponse('text required');
+        waResult  = await sendWhatsAppButtons(env, phone, text, body.buttons, body.footer);
+        break;
+      default:
+        if (!text) return errorResponse('text required');
+        waResult  = await sendWhatsAppText(env, phone, text);
+        break;
+    }
+
+    if (waResult?.error) {
+      return errorResponse(`WhatsApp error: ${waResult.error.message}`, 502);
+    }
+
+    const messageId = waResult?.messages?.[0]?.id || `manual_${Date.now()}`;
+    const timestamp = new Date().toISOString();
+
+    await env.DB.prepare(`
+      INSERT OR IGNORE INTO messages 
+        (message_id, phone, text, message_type, direction,
+         media_url, media_caption, status, timestamp, created_at)
+      VALUES (?, ?, ?, ?, 'outgoing', ?, ?, 'sent', ?, datetime('now'))
+    `).bind(messageId, phone, savedText, type, mediaUrl || null, mediaCaption || null, timestamp).run();
+
+    await env.DB.prepare(`
+      UPDATE chats SET
+        last_message      = ?,
+        last_message_type = ?,
+        last_timestamp    = ?,
+        last_direction    = 'outgoing',
+        updated_at        = datetime('now')
+      WHERE phone = ?
+    `).bind(savedText, type, timestamp, phone).run();
+
+    return jsonResponse({ success: true, messageId, timestamp });
+  } catch (e) {
+    return errorResponse('Failed to send: ' + e.message, 500);
+  }
+}
+
+async function handleGetOrders(request, env) {
+  const url    = new URL(request.url);
+  const limit  = parseInt(url.searchParams.get('limit') || '100');
+  const status = url.searchParams.get('status');
+  const phone  = url.searchParams.get('phone');
+
+  let query  = `SELECT * FROM orders`;
+  const params = [];
+  const conds  = [];
+
+  if (status) { conds.push(`status = ?`); params.push(status); }
+  if (phone)  { conds.push(`phone = ?`);  params.push(phone); }
+  if (conds.length) query += ` WHERE ${conds.join(' AND ')}`;
+  query += ` ORDER BY created_at DESC LIMIT ?`;
+  params.push(limit);
+
+  const { results } = await env.DB.prepare(query).bind(...params).all();
+  return jsonResponse({ success: true, orders: results, total: results.length });
+}
+
+async function handleGetProducts(request, env) {
+  const url      = new URL(request.url);
+  const limit    = parseInt(url.searchParams.get('limit') || '50');
+  const category = url.searchParams.get('category');
+  const search   = url.searchParams.get('search');
+
+  let query  = `SELECT * FROM products WHERE is_active = 1`;
+  const params = [];
+
+  if (category) { query += ` AND category = ?`;              params.push(category); }
+  if (search)   { query += ` AND (name LIKE ? OR sku LIKE ?)`; params.push(`%${search}%`, `%${search}%`); }
+  query += ` ORDER BY created_at DESC LIMIT ?`;
+  params.push(limit);
+
+  const { results } = await env.DB.prepare(query).bind(...params).all();
+  return jsonResponse({ success: true, products: results, total: results.length });
+}
+
+async function handleGetCustomers(request, env) {
+  const url    = new URL(request.url);
+  const limit  = parseInt(url.searchParams.get('limit') || '50');
+  const search = url.searchParams.get('search');
+
+  let query  = `SELECT * FROM customers`;
+  const params = [];
+  if (search) {
+    query += ` WHERE name LIKE ? OR phone LIKE ?`;
+    params.push(`%${search}%`, `%${search}%`);
+  }
+  query += ` ORDER BY last_seen DESC LIMIT ?`;
+  params.push(limit);
+
+  const { results } = await env.DB.prepare(query).bind(...params).all();
+  return jsonResponse({ success: true, customers: results, total: results.length });
+}
+
+async function handleGetStats(env) {
+  const [chats, orders, customers, products, revenue, unmatched, pendingPayment] =
+    await Promise.all([
+      env.DB.prepare(`SELECT COUNT(*) as count, SUM(unread_count) as unread FROM chats`).first(),
+      env.DB.prepare(`SELECT COUNT(*) as count, COUNT(CASE WHEN status='pending' THEN 1 END) as pending FROM orders`).first(),
+      env.DB.prepare(`SELECT COUNT(*) as count FROM customers`).first(),
+      env.DB.prepare(`SELECT COUNT(*) as count FROM products WHERE is_active=1`).first(),
+      env.DB.prepare(`SELECT SUM(total) as total FROM orders WHERE payment_status='paid'`).first(),
+      env.DB.prepare(`SELECT COUNT(*) as count FROM unmatched_messages WHERE added_to_faq=0`).first(),
+      env.DB.prepare(`SELECT COUNT(*) as count FROM orders WHERE payment_status='unpaid' AND status='pending'`).first(),
+    ]);
+
+  return jsonResponse({
+    success: true,
+    stats: {
+      totalChats:       chats?.count || 0,
+      unreadMessages:   chats?.unread || 0,
+      totalOrders:      orders?.count || 0,
+      pendingOrders:    orders?.pending || 0,
+      totalCustomers:   customers?.count || 0,
+      totalProducts:    products?.count || 0,
+      totalRevenue:     revenue?.total || 0,
+      unmatchedMessages: unmatched?.count || 0,
+      pendingPayments:  pendingPayment?.count || 0,
+    },
+  });
+}
+
+async function handleGetSettings(env) {
+  const { results } = await env.DB.prepare(`SELECT key, value FROM settings`).all();
+  const settings = {};
+  results.forEach(r => { settings[r.key] = r.value; });
+  return jsonResponse({ success: true, settings });
+}
+
+async function handleGetUnmatched(request, env) {
+  const url   = new URL(request.url);
+  const limit = parseInt(url.searchParams.get('limit') || '50');
+  const { results } = await env.DB.prepare(`
+    SELECT * FROM unmatched_messages
+    WHERE added_to_faq = 0
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).bind(limit).all();
+  return jsonResponse({ success: true, unmatched: results, total: results.length });
+}
+
+async function handleRegisterFCM(request, env) {
+  const body  = await request.json();
+  const { token } = body;
+  if (!token) return errorResponse('token required');
+  await env.KV.put('fcm_token:flutter', token);
+  return jsonResponse({ success: true });
+}
+
+// ═══════════════════ ROUTER ════════════════════════════
+export default {
+  async fetch(request, env, ctx) {
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: corsHeaders });
+    }
+
+    const url    = new URL(request.url);
+    const path   = url.pathname;
+    const method = request.method;
+
+    // Health
+    if (path === '/health') return new Response('OK', { status: 200 });
+
+    // WhatsApp webhook
+    if (path === '/webhook' || path === '/api/webhook') {
+      if (method === 'GET')  return handleWebhookVerify(request, env);
+      if (method === 'POST') return handleWebhookPost(request, env, ctx);
+    }
+
+    // Razorpay webhook (no auth — verified by signature)
+    if (path === '/api/razorpay/webhook' && method === 'POST') {
+      return handleRazorpayWebhook(request, env);
+    }
+
+    // Auth endpoints
+    if (path === '/api/auth/login' && method === 'POST') {
+      return handleLogin(request, env);
+    }
+    if (path === '/api/auth/me' && method === 'GET') {
+      const user = await authMiddleware(request, env);
+      if (!user) return errorResponse('Unauthorized', 401);
+      return jsonResponse({ success: true, user: { id: 'admin', email: 'admin@kaapav.com', name: 'KAAPAV Admin', role: 'admin' } });
+    }
+    if (path === '/api/auth/refresh' && method === 'POST') {
+      const payload = {
+        userId: 'admin', email: 'admin@kaapav.com', role: 'admin',
+        exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600,
+      };
+      const token = await generateJWT(payload, env.JWT_SECRET);
+      return jsonResponse({ success: true, token });
+    }
+
+    // Public — no auth
+    if (path === '/api/push/fcm-register' && method === 'POST') {
+      return handleRegisterFCM(request, env);
+    }
+
+    // Auth wall
+    const user = await authMiddleware(request, env);
+    if (!user) return errorResponse('Unauthorized', 401);
+
+    // Chats
+    if (path === '/api/chats' && method === 'GET') return handleGetChats(request, env);
+    const chatMsgMatch = path.match(/^\/api\/chats\/(.+)\/messages$/);
+    if (chatMsgMatch && method === 'GET') return handleGetMessages(chatMsgMatch[1], request, env);
+    const chatReadMatch = path.match(/^\/api\/chats\/(.+)\/read$/);
+    if (chatReadMatch && method === 'POST') {
+      await env.DB.prepare(`UPDATE chats SET unread_count = 0 WHERE phone = ?`).bind(chatReadMatch[1]).run();
+      return jsonResponse({ success: true });
+    }
+    const chatMatch = path.match(/^\/api\/chats\/(.+)$/);
+    if (chatMatch && method === 'GET') {
+      const chat = await env.DB.prepare(`SELECT * FROM chats WHERE phone = ?`).bind(chatMatch[1]).first();
+      return jsonResponse({ success: true, chat });
+    }
+
+    // Messages
+    if (path === '/api/messages/send' && method === 'POST') return handleSendMessage(request, env);
+
+    // Orders
+    if (path === '/api/orders' && method === 'GET') return handleGetOrders(request, env);
+    const orderMatch = path.match(/^\/api\/orders\/(.+)$/);
+    if (orderMatch && method === 'GET') {
+      const order = await env.DB.prepare(`SELECT * FROM orders WHERE order_id = ?`).bind(orderMatch[1]).first();
+      return jsonResponse({ success: true, order });
+    }
+    if (orderMatch && method === 'PATCH') {
+      const updates = await request.json();
+      const fields  = Object.keys(updates).map(k => `${k} = ?`).join(', ');
+      const vals    = [...Object.values(updates), orderMatch[1]];
+      await env.DB.prepare(
+        `UPDATE orders SET ${fields}, updated_at = datetime('now') WHERE order_id = ?`
+      ).bind(...vals).run();
+      return jsonResponse({ success: true });
+    }
+
+    // Products
+    if (path === '/api/products' && method === 'GET') return handleGetProducts(request, env);
+    if (path === '/api/products/categories' && method === 'GET') {
+      const { results } = await env.DB.prepare(
+        `SELECT DISTINCT category FROM products WHERE is_active=1 AND category IS NOT NULL`
+      ).all();
+      return jsonResponse({ success: true, categories: results.map(r => r.category) });
+    }
+
+    // Customers
+    if (path === '/api/customers' && method === 'GET') return handleGetCustomers(request, env);
+    const customerMatch = path.match(/^\/api\/customers\/(.+)$/);
+    if (customerMatch && method === 'GET') {
+      const customer = await env.DB.prepare(
+        `SELECT * FROM customers WHERE phone = ?`
+      ).bind(customerMatch[1]).first();
+      return jsonResponse({ success: true, customer });
+    }
+
+    // Stats & Analytics
+    if (path === '/api/stats'                && method === 'GET') return handleGetStats(env);
+    if (path === '/api/analytics/unmatched'  && method === 'GET') return handleGetUnmatched(request, env);
+    if (path === '/api/analytics/activities' && method === 'GET') {
+      const { results } = await env.DB.prepare(
+        `SELECT phone, text, direction, timestamp FROM messages ORDER BY created_at DESC LIMIT 20`
+      ).all();
+      return jsonResponse({ success: true, activities: results });
+    }
+
+    // Settings
+    if (path === '/api/settings' && method === 'GET') return handleGetSettings(env);
+    if (path === '/api/settings' && method === 'PUT') {
+      const body = await request.json();
+      for (const [key, value] of Object.entries(body)) {
+        await env.DB.prepare(
+          `INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))`
+        ).bind(key, String(value)).run();
+      }
+      return jsonResponse({ success: true });
+    }
+
+    // Quick replies & Labels & Templates
+    if (path === '/api/quick-replies' && method === 'GET') {
+      const { results } = await env.DB.prepare(
+        `SELECT * FROM quick_replies WHERE is_active=1 ORDER BY use_count DESC`
+      ).all();
+      return jsonResponse({ success: true, quickReplies: results });
+    }
+    if (path === '/api/labels' && method === 'GET') {
+      const { results } = await env.DB.prepare(`SELECT * FROM labels WHERE is_active=1`).all();
+      return jsonResponse({ success: true, labels: results });
+    }
+    if (path === '/api/templates' && method === 'GET') {
+      const { results } = await env.DB.prepare(
+        `SELECT * FROM templates ORDER BY created_at DESC`
+      ).all();
+      return jsonResponse({ success: true, templates: results });
+    }
+
+    // Sync
+    if (path === '/api/sync/check' && method === 'GET') {
+      const [chats, messages] = await Promise.all([
+        env.DB.prepare(`SELECT COUNT(*) as count FROM chats`).first(),
+        env.DB.prepare(`SELECT COUNT(*) as count FROM messages`).first(),
+      ]);
+      return jsonResponse({
+        success: true,
+        sync: { chats: chats?.count || 0, messages: messages?.count || 0, timestamp: new Date().toISOString() },
+      });
+    }
+
+    // Media upload
+    if (path === '/api/media/upload' && method === 'POST') {
+      try {
+        const formData = await request.formData();
+        const file     = formData.get('file');
+        if (!file) return errorResponse('file required', 400);
+        const fileName    = `${Date.now()}_${file.name || 'upload'}`;
+        const arrayBuffer = await file.arrayBuffer();
+        await env.MEDIA.put(fileName, arrayBuffer, {
+          httpMetadata: { contentType: file.type || 'application/octet-stream' },
+        });
+        const mediaUrl = `https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/${fileName}`;
+        return jsonResponse({ success: true, url: mediaUrl, mediaUrl, fileName });
+      } catch (e) {
+        return errorResponse('Upload failed: ' + e.message, 500);
+      }
+    }
+
+    // Test WhatsApp
+    if (path === '/api/settings/test-whatsapp' && method === 'POST') {
+      const result = await sendWhatsAppText(env, env.WA_PHONE_ID, 'Test ✅ KAAPAV Worker running');
+      return jsonResponse({ success: true, result });
+    }
+
+    return errorResponse('Not found', 404);
+  },
+
+  // Cron job — runs on schedule (set in wrangler.toml)
+  async scheduled(event, env, ctx) {
+    console.log('KAAPAV cron:', new Date().toISOString());
+    // Future: daily snapshots, cart recovery nudges, churn detection
+  },
+};
