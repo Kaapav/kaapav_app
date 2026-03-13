@@ -10,7 +10,8 @@ import 'dart:ui';
 import 'app.dart';
 import 'services/notification_service.dart';
 import 'utils/logger.dart';
-
+import 'dart:convert';  // For jsonEncode
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 // ═══════════════════════════════════════════════════════════════
 // BACKGROUND HANDLER — MUST BE TOP-LEVEL (Outside any class!)
 // This runs in a SEPARATE ISOLATE when app is killed/background

@@ -1192,3 +1192,7 @@ UPDATE quick_replies SET group_name = 'returns'    WHERE shortcut IN ('faq_retur
 UPDATE quick_replies SET group_name = 'care'       WHERE shortcut IN ('faq_care','faq_perfume','faq_sleep');
 UPDATE quick_replies SET group_name = 'gifting'    WHERE shortcut IN ('faq_gifting','faq_gift_pack','faq_multiple');
 UPDATE quick_replies SET group_name = 'brand'      WHERE shortcut IN ('faq_about','faq_social','faq_contact');
+
+ALTER TABLE products ADD COLUMN website_link TEXT;
+ALTER TABLE products ADD COLUMN material TEXT;
+ALTER TABLE products ADD COLUMN tags TEXT DEFAULT '[]';

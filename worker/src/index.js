@@ -144,6 +144,8 @@ async function sendFCMNotification(env, phone, name, text, messageId) {
   } catch (e) { console.error('FCM error:', e); }
 }
 
+
+
 // ═══════════════════ WHATSAPP ═══════════════════
 async function sendWhatsAppText(env, phone, text) {
   const res = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`, {
@@ -237,6 +239,116 @@ async function sendWhatsAppVideo(env, phone, mediaUrl, caption) {
     }),
   });
   return res.json();
+}
+
+// ── CONVERSATION STATE ─────────────────────────────────────────
+async function getConvState(phone, env) {
+  try {
+    const row = await env.DB.prepare(
+      `SELECT state, data FROM conversation_state WHERE phone = ?`
+    ).bind(phone).first();
+    if (!row) return null;
+    return { state: row.state, data: JSON.parse(row.data || '{}') };
+  } catch { return null; }
+}
+
+async function setConvState(phone, state, data, env) {
+  await env.DB.prepare(`
+    INSERT INTO conversation_state (phone, state, data, updated_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(phone) DO UPDATE SET
+      state = excluded.state,
+      data  = excluded.data,
+      updated_at = excluded.updated_at
+  `).bind(phone, state, JSON.stringify(data)).run();
+}
+
+async function clearConvState(phone, env) {
+  await env.DB.prepare(`DELETE FROM conversation_state WHERE phone = ?`).bind(phone).run();
+}
+
+// ── RAZORPAY — create payment link ────────────────────────────
+async function createRazorpayLink(env, { amount, name, phone, orderId, description }) {
+  const auth = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`);
+  const expiry = Math.floor(Date.now() / 1000) + 86400; // 24 hours
+  const res = await fetch('https://api.razorpay.com/v1/payment_links', {
+    method: 'POST',
+    headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      amount: Math.round(amount * 100), // paise
+      currency: 'INR',
+      description,
+      customer: { name, contact: `+91${phone.replace(/\D/g,'')}` },
+      notify: { sms: true, whatsapp: false },
+      reminder_enable: true,
+      expire_by: expiry,
+      reference_id: orderId,
+      callback_url: `https://wa.kaapav.com/api/payment/callback`,
+      callback_method: 'get',
+    })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.description || 'Razorpay error');
+  return data.short_url;
+}
+
+// ── SHIPROCKET — auth + create order ──────────────────────────
+async function shiprocketToken(env) {
+  const res = await fetch('https://apiv2.shiprocket.in/v1/external/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: env.SHIPROCKET_EMAIL, password: env.SHIPROCKET_PASSWORD })
+  });
+  const data = await res.json();
+  if (!data.token) throw new Error('Shiprocket auth failed');
+  return data.token;
+}
+
+async function createShiprocketOrder(env, { order, customer, items }) {
+  const token = await shiprocketToken(env);
+  const orderDate = new Date().toISOString().slice(0, 10);
+
+  const orderItems = items.map(i => ({
+    name: i.name,
+    sku: i.sku,
+    units: i.qty,
+    selling_price: i.price,
+    discount: 0,
+    tax: 0,
+  }));
+
+  const res = await fetch('https://apiv2.shiprocket.in/v1/external/orders/create/adhoc', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      order_id: order.orderNumber,
+      order_date: orderDate,
+      pickup_location: 'Primary', // set this in Shiprocket dashboard
+      channel_id: '',
+      comment: 'WhatsApp Order',
+      billing_customer_name: customer.name.split(' ')[0],
+      billing_last_name: customer.name.split(' ').slice(1).join(' ') || '.',
+      billing_address: customer.address,
+      billing_address_2: '',
+      billing_city: customer.city || 'Delhi',
+      billing_pincode: customer.pincode || '110001',
+      billing_state: customer.state || 'Delhi',
+      billing_country: 'India',
+      billing_email: `orders@kaapav.com`,
+      billing_phone: customer.phone.replace(/\D/g, '').slice(-10),
+      shipping_is_billing: true,
+      order_items: orderItems,
+      payment_method: 'Prepaid',
+      shipping_charges: 0,
+      giftwrap_charges: 0,
+      transaction_charges: 0,
+      total_discount: 0,
+      sub_total: order.total,
+      length: 10, breadth: 10, height: 5, weight: 0.3,
+    })
+  });
+  const data = await res.json();
+  return data;
 }
 
 // ═══════════════════ WEBHOOK HANDLERS ═══════════════════
@@ -452,13 +564,95 @@ async function handleGetOrders(request, env) {
 
 async function handleGetProducts(request, env) {
   const url = new URL(request.url);
-  const limit = parseInt(url.searchParams.get('limit') || '50');
+  const limit = parseInt(url.searchParams.get('limit') || '500');
   const category = url.searchParams.get('category');
-  let query = `SELECT * FROM products WHERE is_active = 1 ORDER BY created_at DESC LIMIT ?`;
+  // Admin app gets ALL products (no is_active filter)
+  let query = `SELECT * FROM products ORDER BY name ASC LIMIT ?`;
   const params = [limit];
-  if (category) { query = `SELECT * FROM products WHERE is_active = 1 AND category = ? ORDER BY created_at DESC LIMIT ?`; params.unshift(category); }
+  if (category) { query = `SELECT * FROM products WHERE category = ? ORDER BY name ASC LIMIT ?`; params.unshift(category); }
   const { results } = await env.DB.prepare(query).bind(...params).all();
   return jsonResponse({ success: true, products: results, total: results.length });
+}
+
+async function handleSendProduct(request, env) {
+  const body = await request.json();
+  const { sku, phone } = body;
+  if (!sku || !phone) return errorResponse('sku and phone required');
+  const product = await env.DB.prepare(`SELECT * FROM products WHERE sku = ?`).bind(sku).first();
+  if (!product) return errorResponse('product not found', 404);
+
+  const discount = product.compare_price > product.price
+    ? Math.round((product.compare_price - product.price) / product.compare_price * 100) : 0;
+  const priceStr = discount > 0
+    ? `₹${product.price}/₹${product.compare_price} (${discount}% Off)`
+    : `₹${product.price}`;
+  const caption =
+    `💎 *${product.name}*\n` +
+    `💰 ${priceStr}\n` +
+    (product.website_link ? `🛍️ ${product.website_link}` : '');
+
+  let waResult;
+  if (product.image_url) {
+    waResult = await sendWhatsAppImage(env, phone, product.image_url, caption);
+  } else {
+    waResult = await sendWhatsAppText(env, phone, caption);
+  }
+
+  if (waResult?.error) return errorResponse(waResult.error.message, 502);
+
+  const msgId = waResult?.messages?.[0]?.id || `local_${Date.now()}`;
+  const timestamp = new Date().toISOString();
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO messages (message_id, phone, text, message_type, direction, media_url, media_caption, status, timestamp, created_at)
+    VALUES (?, ?, ?, ?, 'outgoing', ?, ?, 'sent', ?, datetime('now'))
+  `).bind(msgId, phone, product.name, 'image', product.image_url, caption, timestamp).run();
+  await env.DB.prepare(`
+    UPDATE chats SET last_message = ?, last_message_type = 'image', last_timestamp = ?, last_direction = 'outgoing', updated_at = datetime('now') WHERE phone = ?
+  `).bind(product.name, timestamp, phone).run();
+
+  return jsonResponse({ success: true });
+}
+
+async function handleCreateProduct(request, env) {
+  const body = await request.json();
+  const { sku, name, category, price, compare_price, description, stock, image_url, is_active, is_featured, tags, website_link, material } = body;
+  if (!sku || !name || !price) return errorResponse('sku, name, price required');
+  await env.DB.prepare(`
+    INSERT OR REPLACE INTO products (sku, name, category, price, compare_price, description, stock, image_url, is_active, is_featured, tags, website_link, material, updated_at, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+  `).bind(sku, name, category || 'bracelet', price, compare_price || 0, description || '', stock || 0, image_url || '', is_active ?? 1, is_featured ?? 0, JSON.stringify(tags || []), website_link || '', material || '').run();
+  return jsonResponse({ success: true });
+}
+
+async function handleUpdateProduct(sku, request, env) {
+  const body = await request.json();
+  const fields = [];
+  const values = [];
+  const allowed = ['name','category','price','compare_price','description','stock','image_url','is_active','is_featured','tags','website_link','material'];
+  for (const key of allowed) {
+    if (body[key] !== undefined) {
+      fields.push(`${key} = ?`);
+      values.push(key === 'tags' ? JSON.stringify(body[key]) : body[key]);
+    }
+  }
+  if (fields.length === 0) return errorResponse('nothing to update');
+  fields.push(`updated_at = datetime('now')`);
+  values.push(sku);
+  await env.DB.prepare(`UPDATE products SET ${fields.join(', ')} WHERE sku = ?`).bind(...values).run();
+  return jsonResponse({ success: true });
+}
+
+async function handleDeleteProduct(sku, env) {
+  await env.DB.prepare(`DELETE FROM products WHERE sku = ?`).bind(sku).run();
+  return jsonResponse({ success: true });
+}
+
+async function handleUpdateStock(sku, request, env) {
+  const body = await request.json();
+  const stock = parseInt(body.stock);
+  if (isNaN(stock)) return errorResponse('stock required');
+  await env.DB.prepare(`UPDATE products SET stock = ?, updated_at = datetime('now') WHERE sku = ?`).bind(stock, sku).run();
+  return jsonResponse({ success: true });
 }
 
 async function handleGetCustomers(request, env) {
@@ -771,7 +965,15 @@ class AutoResponder {
     if (/order\s*karn[ae]|order\s*dena|order\s*chahiye|mujhe\s*order|place\s*order|i\s*want\s*to\s*order|buy\s*karna|kharidna\s*hai/.test(inputLower)) {
       return 'ORDER_FLOW';
     }
-    // No other text triggers — all navigation via buttons
+      // Category browsing
+    if (/bracelet|bangle|kada|kara|bangles/.test(inputLower)) return 'CAT_BRACELET';
+    if (/necklace|haar|chain|mala|necklac/.test(inputLower)) return 'CAT_NECKLACE';
+    if (/earring|jhumka|bali|stud|tops|jhumke/.test(inputLower)) return 'CAT_EARRINGS';
+    if (/pendant\s*set|jewellery\s*set|full\s*set|set\s*chahiye/.test(inputLower)) return 'CAT_PENDANT_SETS';
+    if (/pendant|locket|mangalsutra/.test(inputLower)) return 'CAT_PENDANT';
+    if (/ring|anguthi|angoothi|band/.test(inputLower)) return 'CAT_RINGS';
+    if (/catalogue|catalog|collection|sab\s*dikhao|all\s*products|poora/.test(inputLower)) return 'OPEN_CATALOG';
+    // No other text triggers
     return null;
   }
 
@@ -1080,6 +1282,114 @@ Or track here:
 
 ═══════════════════════════
 💎 KAAPAV Fashion Jewellery`
+        );
+        break;
+      
+      case 'CAT_BRACELET':
+        await sendText(
+`═══════════════════════════
+📿 *KAAPAV Bracelets*
+═══════════════════════════
+
+💎 Our Bracelet Collection
+
+✨ Anti-tarnish artificial gold
+💰 Starting ₹499/- only
+🚚 Free shipping above ₹498/-
+
+👉 https://www.kaapav.com/shop/category/all-jewellery-bracelets-13
+
+💬 Message us to order!`
+        );
+        break;
+
+      case 'CAT_NECKLACE':
+        await sendText(
+`═══════════════════════════
+✨ *KAAPAV Necklaces*
+═══════════════════════════
+
+💎 Our Necklace Collection
+
+✨ Elegant & timeless designs
+💰 Starting ₹499/- only
+🚚 Free shipping above ₹498/-
+
+👉 https://www.kaapav.com/shop/category/all-jewellery-necklaces-14
+
+💬 Message us to order!`
+        );
+        break;
+
+      case 'CAT_EARRINGS':
+        await sendText(
+`═══════════════════════════
+👂 *KAAPAV Earrings*
+═══════════════════════════
+
+💎 Our Earring Collection
+
+✨ Lightweight & comfortable
+💰 Starting ₹249/- only
+🚚 Free shipping above ₹498/-
+
+👉 https://www.kaapav.com/shop/category/all-jewellery-earrings-15
+
+💬 Message us to order!`
+        );
+        break;
+
+      case 'CAT_RINGS':
+        await sendText(
+`═══════════════════════════
+💍 *KAAPAV Rings*
+═══════════════════════════
+
+💎 Our Ring Collection
+
+✨ Free size & adjustable
+💰 Starting ₹249/- only
+🚚 Free shipping above ₹498/-
+
+👉 https://www.kaapav.com/shop/category/all-jewellery-rings-16
+
+💬 Message us to order!`
+        );
+        break;
+
+      case 'CAT_PENDANT':
+        await sendText(
+`═══════════════════════════
+💎 *KAAPAV Pendants*
+═══════════════════════════
+
+💎 Our Pendant Collection
+
+✨ Stunning designs
+💰 Starting ₹499/- only
+🚚 Free shipping above ₹498/-
+
+👉 https://www.kaapav.com/shop/category/all-jewellery-pendants-17
+
+💬 Message us to order!`
+        );
+        break;
+
+      case 'CAT_PENDANT_SETS':
+        await sendText(
+`═══════════════════════════
+🎁 *KAAPAV Pendant Sets*
+═══════════════════════════
+
+💎 Our Jewellery Sets
+
+✨ Matching pendant + earring sets
+💰 Starting ₹699/- only
+🚚 Free shipping above ₹498/-
+
+👉 https://www.kaapav.com/shop/category/all-jewellery-pendant-sets-18
+
+💬 Message us to order!`
         );
         break;
 
@@ -1436,6 +1746,20 @@ export default {
     if (path === '/api/messages/send' && method === 'POST') return handleSendMessage(request, env);
     if (path === '/api/orders' && method === 'GET') return handleGetOrders(request, env);
     if (path === '/api/products' && method === 'GET') return handleGetProducts(request, env);
+    if (path === '/api/products/send' && method === 'POST') return handleSendProduct(request, env);
+    if (path === '/api/products' && method === 'POST') return handleCreateProduct(request, env);
+    if (path.match(/^\/api\/products\/(.+)\/stock$/) && (method === 'PATCH' || method === 'POST')) {
+      const sku = path.match(/^\/api\/products\/(.+)\/stock$/)[1];
+      return handleUpdateStock(sku, request, env);
+    }
+    if (path.match(/^\/api\/products\/(.+)$/) && method === 'PUT') {
+      const sku = path.match(/^\/api\/products\/(.+)$/)[1];
+      return handleUpdateProduct(sku, request, env);
+    }
+    if (path.match(/^\/api\/products\/(.+)$/) && method === 'DELETE') {
+      const sku = path.match(/^\/api\/products\/(.+)$/)[1];
+      return handleDeleteProduct(sku, env);
+    }
     if (path === '/api/products/categories' && method === 'GET') {
       const { results } = await env.DB.prepare(`SELECT DISTINCT category FROM products WHERE is_active=1 AND category IS NOT NULL`).all();
       return jsonResponse({ success: true, categories: results.map(r => r.category) });

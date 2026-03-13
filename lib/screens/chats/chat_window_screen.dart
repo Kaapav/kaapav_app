@@ -1,6 +1,6 @@
 // lib/screens/chats/chat_window_screen.dart
 // ---------------------------------------------------------------
-// CHAT WINDOW SCREEN � Full chat with polling
+// CHAT WINDOW SCREEN   Full chat with polling
 // Aligned with: Providers, Message model, KaapavTheme
 // ---------------------------------------------------------------
 
@@ -26,6 +26,9 @@ import 'media_gallery_screen.dart';
 import '../../widgets/full_screen_image.dart';
 import 'contact_info_screen.dart';
 import 'starred_messages_screen.dart';
+import '../../services/api/api_client.dart';
+import '../../models/product.dart';
+import '../../services/api/product_api.dart';
 
 class ChatWindowScreen extends ConsumerStatefulWidget {
   final String phone;
@@ -215,9 +218,30 @@ class _ChatWindowScreenState extends ConsumerState<ChatWindowScreen>
                   _handleVideo();
                 },
               ),
+              _AttachOption(
+                icon: Icons.diamond_outlined,
+                label: 'Send Product',
+                color: KaapavTheme.gold,
+                onTap: () {
+                  Navigator.pop(context);
+                  _showProductPicker();
+                },
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showProductPicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ChatProductPicker(
+        phone: widget.phone,
+        isDark: Theme.of(context).brightness == Brightness.dark,
       ),
     );
   }
@@ -431,7 +455,7 @@ class _ChatWindowScreenState extends ConsumerState<ChatWindowScreen>
     final chat = ref.read(currentChatProvider);
     final name = chat?.customerName ?? widget.phone;
     final buffer = StringBuffer();
-    buffer.writeln('KAAPAV Chat Export � $name');
+    buffer.writeln('KAAPAV Chat Export   $name');
     buffer.writeln('Exported: ${DateTime.now()}');
     buffer.writeln('${'-' * 40}\n');
 
@@ -1039,6 +1063,213 @@ class _AttachOption extends StatelessWidget {
       ),
       title: Text(label),
       onTap: onTap,
+    );
+  }
+}
+class _ChatProductPicker extends StatefulWidget {
+  final String phone;
+  final bool isDark;
+  const _ChatProductPicker({required this.phone, required this.isDark});
+
+  @override
+  State<_ChatProductPicker> createState() => _ChatProductPickerState();
+}
+
+class _ChatProductPickerState extends State<_ChatProductPicker> {
+  final _searchCtrl = TextEditingController();
+  final _productApi = ProductApi();
+  List<Product> _all = [];
+  List<Product> _filtered = [];
+  String _cat = 'all';
+  bool _loading = true;
+  String? _sending;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _searchCtrl.addListener(() => _filter());
+  }
+
+  @override
+  void dispose() { _searchCtrl.dispose(); super.dispose(); }
+
+  Future<void> _load() async {
+    try {
+      final res = await _productApi.getProducts(limit: 500);
+      final raw = res.data is List ? res.data : (res.data['products'] ?? []);
+      final products = (raw as List).map((j) => Product.fromJson(j)).toList();
+      products.sort((a, b) => a.name.compareTo(b.name));
+      setState(() { _all = products; _filtered = products; _loading = false; });
+    } catch (_) { setState(() => _loading = false); }
+  }
+
+  void _filter() {
+    final q = _searchCtrl.text.toLowerCase();
+    setState(() {
+      _filtered = _all.where((p) {
+        final catOk = _cat == 'all' || p.category == _cat;
+        final searchOk = q.isEmpty || p.name.toLowerCase().contains(q) || p.sku.toLowerCase().contains(q);
+        return catOk && searchOk;
+      }).toList();
+    });
+  }
+
+  void _selectCat(String cat) { setState(() => _cat = cat); _filter(); }
+
+  Future<void> _send(Product p) async {
+    setState(() => _sending = p.sku);
+    try {
+      await ApiClient.instance.post('/api/products/send', data: {'sku': p.sku, 'phone': widget.phone});
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('✅ Sent ${p.name}'),
+          backgroundColor: const Color(0xFF10B981),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      setState(() => _sending = null);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('❌ Failed: $e'),
+        backgroundColor: const Color(0xFFEF4444),
+        behavior: SnackBarBehavior.floating,
+      )); 
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = widget.isDark ? const Color(0xFF0F0C07) : Colors.white;
+    final border = widget.isDark ? const Color(0xFF251D0A) : const Color(0xFFE5E7EB);
+    final cats = ['all', ..._all.map((p) => p.category ?? '').where((c) => c.isNotEmpty).toSet().toList()..sort()];
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.85, maxChildSize: 0.95, minChildSize: 0.5,
+      builder: (_, ctrl) => Container(
+        decoration: BoxDecoration(color: bg,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            border: Border(top: BorderSide(color: KaapavTheme.gold))),
+        child: Column(children: [
+          Center(child: Container(margin: const EdgeInsets.only(top: 10),
+              width: 36, height: 4,
+              decoration: BoxDecoration(color: border, borderRadius: BorderRadius.circular(2)))),
+          Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(children: [
+              Text('Send Product', style: TextStyle(fontSize: 16,
+                  fontWeight: FontWeight.w600, color: KaapavTheme.gold)),
+              const Spacer(),
+              IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+            ]),
+          ),
+          // Search
+          Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: TextField(
+              controller: _searchCtrl,
+              style: TextStyle(fontSize: 13, color: widget.isDark ? const Color(0xFFF2E8D0) : const Color(0xFF1A1A1A)),
+              decoration: InputDecoration(
+                hintText: 'Search products...',
+                hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
+                prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF9CA3AF)),
+                filled: true, fillColor: widget.isDark ? const Color(0xFF1A1208) : const Color(0xFFF9F6EF),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: border)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: border)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: KaapavTheme.gold)),
+              ),
+            ),
+          ),
+          // Category tabs
+          SizedBox(height: 36, child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: cats.length,
+            itemBuilder: (_, i) {
+              final c = cats[i];
+              final isOn = c == _cat;
+              final label = c == 'all' ? 'All' : c[0].toUpperCase() + c.substring(1);
+              return GestureDetector(
+                onTap: () => _selectCat(c),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  margin: const EdgeInsets.only(right: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isOn ? KaapavTheme.gold : Colors.transparent,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: isOn ? KaapavTheme.gold : border),
+                  ),
+                  child: Text(label, style: TextStyle(fontSize: 11,
+                      fontWeight: isOn ? FontWeight.w700 : FontWeight.w400,
+                      color: isOn ? Colors.white : const Color(0xFF9CA3AF))),
+                ),
+              );
+            },
+          )),
+          const SizedBox(height: 8),
+          // Products list
+          Expanded(child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _filtered.isEmpty
+                  ? const Center(child: Text('No products found'))
+                  : ListView.builder(
+                      controller: ctrl,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      itemCount: _filtered.length,
+                      itemBuilder: (_, i) {
+                        final p = _filtered[i];
+                        final isSending = _sending == p.sku;
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: widget.isDark ? const Color(0xFF1A1208) : const Color(0xFFF9F6EF),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: border),
+                          ),
+                          child: Row(children: [
+                            // Thumb
+                            Container(width: 44, height: 44,
+                              decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: border)),
+                              child: p.imageUrl != null && p.imageUrl!.isNotEmpty
+                                  ? ClipRRect(borderRadius: BorderRadius.circular(7),
+                                      child: Image.network(p.imageUrl!, fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => const Center(child: Text('💎'))))
+                                  : const Center(child: Text('💎', style: TextStyle(fontSize: 20))),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                                      color: widget.isDark ? const Color(0xFFF2E8D0) : const Color(0xFF1A1A1A))),
+                              const SizedBox(height: 2),
+                              Text('₹${p.price.toStringAsFixed(0)} · ${p.stock} in stock',
+                                  style: TextStyle(fontSize: 11, color: KaapavTheme.gold)),
+                            ])),
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: isSending ? null : () => _send(p),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                                decoration: BoxDecoration(
+                                  color: isSending ? const Color(0xFF9CA3AF) : KaapavTheme.gold,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: isSending
+                                    ? const SizedBox(width: 16, height: 16,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                    : const Text('Send', style: TextStyle(fontSize: 12,
+                                        fontWeight: FontWeight.w700, color: Colors.white)),
+                              ),
+                            ),
+                          ]),
+                        );
+                      },
+                    )),
+        ]),
+      ),
     );
   }
 }

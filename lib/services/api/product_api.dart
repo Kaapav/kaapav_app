@@ -25,7 +25,7 @@ class ProductApi {
     bool? featured,
     String sortBy = 'created_at',
     String sortOrder = 'desc',
-    int limit = 50,
+    int limit = 500,
     int offset = 0,
     CancelToken? cancelToken,
   }) {
@@ -127,19 +127,10 @@ class ProductApi {
   // Response: { success, newStock }
   // ═══════════════════════════════════════════════════════════
 
-  Future<Response> updateStock(
-    String sku, {
-    required String action,
-    required int quantity,
-    String? reason,
-  }) {
-    return _client.post(
+  Future<Response> updateStock(String sku, int stock) {
+    return _client.patch(
       ApiEndpoints.productStock(sku),
-      data: {
-        'action': action,
-        'quantity': quantity,
-        if (reason != null) 'reason': reason,
-      },
+      data: {'stock': stock},
     );
   }
 
@@ -170,7 +161,7 @@ class ProductApi {
     });
 
     return _client.dio.post(
-      '/api/products/upload-image',
+      '/api/media/upload',
       data: formData,
       options: Options(
         headers: {

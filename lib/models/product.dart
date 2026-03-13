@@ -23,6 +23,8 @@ class Product {
   final bool isFeatured;
   final String? createdAt;
   final String? updatedAt;
+  final String? websiteLink;
+  final String? material;
 
   const Product({
     this.id,
@@ -49,7 +51,10 @@ class Product {
     this.isFeatured = false,
     this.createdAt,
     this.updatedAt,
+    this.websiteLink,
+    this.material,
   });
+  
 
   factory Product.fromJson(Map<String, dynamic> json) {
     return Product(
@@ -86,6 +91,8 @@ class Product {
           json['is_featured'] == 1 || json['is_featured'] == true,
       createdAt: json['created_at'] as String?,
       updatedAt: json['updated_at'] as String?,
+      websiteLink: json['website_link'] as String?,
+      material: json['material'] as String?,
     );
   }
 
@@ -114,6 +121,8 @@ class Product {
         'is_featured': isFeatured ? 1 : 0,
         'created_at': createdAt,
         'updated_at': updatedAt,
+        'website_link': websiteLink,
+        'material': material,
       };
 
   Product copyWith({
@@ -141,6 +150,8 @@ class Product {
     bool? isFeatured,
     String? createdAt,
     String? updatedAt,
+    String? websiteLink,
+    String? material,
   }) {
     return Product(
       id: id ?? this.id,
@@ -167,6 +178,8 @@ class Product {
       isFeatured: isFeatured ?? this.isFeatured,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      websiteLink: websiteLink ?? this.websiteLink,
+      material: material ?? this.material,
     );
   }
 

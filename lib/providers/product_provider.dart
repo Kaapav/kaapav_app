@@ -151,7 +151,7 @@ class ProductNotifier extends StateNotifier<ProductListState> {
 
   Future<bool> updateStock(String sku, int stock) async {
     try {
-      await _productApi.updateStock(sku, action: 'set', quantity: stock);
+      await _productApi.updateStock(sku, stock);
       final updated = state.products.map((p) {
         if (p.sku == sku) return p.copyWith(stock: stock);
         return p;
