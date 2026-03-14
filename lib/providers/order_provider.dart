@@ -3,6 +3,7 @@
 // ORDER STATE MANAGEMENT
 // ═══════════════════════════════════════════════════════════
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/order.dart';
 import '../services/api/order_api.dart';
@@ -55,8 +56,10 @@ class OrderState {
       isLoading: isLoading ?? this.isLoading,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
       error: clearError ? null : (error ?? this.error),
-      statusFilter: clearStatusFilter ? null : (statusFilter ?? this.statusFilter),
-      searchQuery: clearSearchQuery ? null : (searchQuery ?? this.searchQuery),
+      statusFilter:
+          clearStatusFilter ? null : (statusFilter ?? this.statusFilter),
+      searchQuery:
+          clearSearchQuery ? null : (searchQuery ?? this.searchQuery),
       stats: stats ?? this.stats,
     );
   }
@@ -74,24 +77,18 @@ class OrderNotifier extends StateNotifier<OrderState> {
 
   OrderNotifier() : super(const OrderState());
 
-  // ═══════════════════════════════════════════════════════════
-  // LOAD ORDERS
-  // ═══════════════════════════════════════════════════════════
-
+  // ── Load orders ─────────────────────────────────────────────
   Future<void> loadOrders({bool silent = false}) async {
     if (!silent) state = state.copyWith(isLoading: true, clearError: true);
-
     try {
       final response = await _api.getOrders(
         status: state.statusFilter,
         search: state.searchQuery,
       );
-
       final data = response.data as Map<String, dynamic>;
       final orderList = (data['orders'] as List? ?? [])
           .map((json) => Order.fromJson(json as Map<String, dynamic>))
           .toList();
-
       state = state.copyWith(
         orders: orderList,
         totalOrders: data['total'] ?? orderList.length,
@@ -104,26 +101,20 @@ class OrderNotifier extends StateNotifier<OrderState> {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // LOAD MORE
-  // ═══════════════════════════════════════════════════════════
-
+  // ── Load more ────────────────────────────────────────────────
   Future<void> loadMore() async {
     if (state.isLoadingMore || state.orders.length >= state.totalOrders) return;
     state = state.copyWith(isLoadingMore: true);
-
     try {
       final response = await _api.getOrders(
         status: state.statusFilter,
         search: state.searchQuery,
         offset: state.orders.length,
       );
-
       final data = response.data as Map<String, dynamic>;
       final newOrders = (data['orders'] as List? ?? [])
           .map((json) => Order.fromJson(json as Map<String, dynamic>))
           .toList();
-
       state = state.copyWith(
         orders: [...state.orders, ...newOrders],
         isLoadingMore: false,
@@ -133,10 +124,7 @@ class OrderNotifier extends StateNotifier<OrderState> {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // LOAD STATS
-  // ═══════════════════════════════════════════════════════════
-
+  // ── Load stats ───────────────────────────────────────────────
   Future<void> loadStats({String period = 'today'}) async {
     try {
       final response = await _api.getOrderStats(period: period);
@@ -146,10 +134,7 @@ class OrderNotifier extends StateNotifier<OrderState> {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // FILTERS
-  // ═══════════════════════════════════════════════════════════
-
+  // ── Filters ──────────────────────────────────────────────────
   Future<void> setStatusFilter(String? status) async {
     state = state.copyWith(
       statusFilter: status,
@@ -166,10 +151,7 @@ class OrderNotifier extends StateNotifier<OrderState> {
     await loadOrders();
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // ORDER ACTIONS
-  // ═══════════════════════════════════════════════════════════
-
+  // ── Confirm ──────────────────────────────────────────────────
   Future<bool> confirmOrder(String orderId) async {
     try {
       await _api.confirmOrder(orderId);
@@ -181,6 +163,7 @@ class OrderNotifier extends StateNotifier<OrderState> {
     }
   }
 
+  // ── Ship ─────────────────────────────────────────────────────
   Future<bool> shipOrder(String orderId, Map<String, dynamic> data) async {
     try {
       await _api.shipOrder(orderId, data);
@@ -192,6 +175,7 @@ class OrderNotifier extends StateNotifier<OrderState> {
     }
   }
 
+  // ── Cancel ───────────────────────────────────────────────────
   Future<bool> cancelOrder(String orderId, {String? reason}) async {
     try {
       await _api.cancelOrder(orderId, reason: reason);
@@ -203,6 +187,32 @@ class OrderNotifier extends StateNotifier<OrderState> {
     }
   }
 
+  // ── Update status (manual, any → any) ───────────────────────
+  // Called by the status picker in OrderDetailScreen
+  Future<bool> updateOrderStatus(String orderId, String newStatus) async {
+    try {
+      // Optimistic update first — feels instant
+      _updateOrderLocal(orderId, (o) => o.copyWith(status: newStatus));
+
+      final response = await _api.updateOrderStatus(orderId, newStatus);
+      final data = response.data as Map<String, dynamic>;
+
+      if (data['success'] == true) return true;
+
+      // Rollback on failure — reload from server
+      await loadOrders(silent: true);
+      return false;
+    } on ApiError catch (e) {
+      await loadOrders(silent: true); // rollback
+      state = state.copyWith(error: e.displayMessage);
+      return false;
+    } catch (e) {
+      await loadOrders(silent: true);
+      return false;
+    }
+  }
+
+  // ── Generate payment link ────────────────────────────────────
   Future<String?> generatePaymentLink(String orderId) async {
     try {
       final response = await _api.generatePaymentLink(orderId);
@@ -217,6 +227,7 @@ class OrderNotifier extends StateNotifier<OrderState> {
     }
   }
 
+  // ── Send notification ────────────────────────────────────────
   Future<bool> sendNotification(String orderId, String type) async {
     try {
       await _api.sendNotification(orderId, type);
@@ -226,10 +237,47 @@ class OrderNotifier extends StateNotifier<OrderState> {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // HELPERS
-  // ═══════════════════════════════════════════════════════════
+  // ── Create manual order (from Flutter app) ───────────────────
+  Future<String?> createManualOrder({
+    required String name,
+    required String phone,
+    required double total,
+    String address = '',
+    String city = '',
+    String state_ = '',
+    String pincode = '',
+    String notes = '',
+    List<Map<String, dynamic>> items = const [],
+  }) async {
+    try {
+      final response = await _api.createManualOrder(
+        name: name,
+        phone: phone,
+        total: total,
+        address: address,
+        city: city,
+        state: state_,
+        pincode: pincode,
+        notes: notes,
+        items: items,
+      );
+      final data = response.data as Map<String, dynamic>;
+      if (data['success'] == true) {
+        final orderId = data['orderId'] as String?;
+        await loadOrders(silent: true); // refresh list quietly
+        return orderId;
+      }
+      return null;
+    } on ApiError catch (e) {
+      state = state.copyWith(error: e.displayMessage);
+      return null;
+    } catch (e) {
+      debugPrint('createManualOrder error: $e');
+      return null;
+    }
+  }
 
+  // ── Helpers ──────────────────────────────────────────────────
   void _updateOrderLocal(String orderId, Order Function(Order) updater) {
     state = state.copyWith(
       orders: state.orders.map((o) {

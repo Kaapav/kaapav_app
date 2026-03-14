@@ -1,126 +1,129 @@
 // lib/providers/analytics_provider.dart
 
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/analytics_model.dart';
 import '../services/api/dashboard_api.dart';
 import '../services/api/api_client.dart';
 
-// Provider for ApiClient using singleton instance
 final apiClientProvider = Provider<ApiClient>((ref) {
   return ApiClient.instance;
 });
 
-// Provider for DashboardApi
 final dashboardApiProvider = Provider<DashboardApi>((ref) {
-  final apiClient = ref.watch(apiClientProvider);
-  return DashboardApi(apiClient);
+  return DashboardApi(ref.watch(apiClientProvider));
 });
 
-// Analytics State
+// ── State ─────────────────────────────────────────────────────────────────────
+
 class AnalyticsState {
   final bool isLoading;
-  final PendingActions? pending;
   final DashboardStats? stats;
   final List<Activity> activities;
+  final PendingActions? pending;
   final String? error;
 
-  AnalyticsState({
-    this.isLoading = false,
-    this.pending,
+  const AnalyticsState({
+    this.isLoading  = false,
     this.stats,
     this.activities = const [],
+    this.pending,
     this.error,
   });
 
   AnalyticsState copyWith({
     bool? isLoading,
-    PendingActions? pending,
     DashboardStats? stats,
     List<Activity>? activities,
+    PendingActions? pending,
     String? error,
   }) {
     return AnalyticsState(
-      isLoading: isLoading ?? this.isLoading,
-      pending: pending ?? this.pending,
-      stats: stats ?? this.stats,
+      isLoading:  isLoading  ?? this.isLoading,
+      stats:      stats      ?? this.stats,
       activities: activities ?? this.activities,
-      error: error ?? this.error,
+      pending:    pending    ?? this.pending,
+      error:      error      ?? this.error,
     );
   }
 }
 
-// Analytics Notifier
+// ── Notifier ──────────────────────────────────────────────────────────────────
+
 class AnalyticsNotifier extends StateNotifier<AnalyticsState> {
-  final DashboardApi _dashboardApi;
+  final DashboardApi _api;
+  Timer? _syncTimer;
 
-  AnalyticsNotifier(this._dashboardApi) : super(AnalyticsState());
+  AnalyticsNotifier(this._api) : super(const AnalyticsState());
 
-  // Load complete dashboard data
+  @override
+  void dispose() {
+    _syncTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> loadDashboard() async {
     state = state.copyWith(isLoading: true, error: null);
-    
     try {
-      final stats = await _dashboardApi.getStats();
-      final activities = await _dashboardApi.getActivities();
-      final pending = await _dashboardApi.getPending();
-      
+      final results = await Future.wait([
+        _api.getStats(),
+        _api.getActivities(),
+        _api.getPending(),
+      ]);
       state = state.copyWith(
-        isLoading: false,
-        stats: stats,
-        activities: activities,
-        pending: pending,
+        isLoading:  false,
+        stats:      results[0] as DashboardStats,
+        activities: results[1] as List<Activity>,
+        pending:    results[2] as PendingActions,
       );
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
-        error: e.toString(),
+        error:     e.toString(),
       );
     }
   }
 
-  // Refresh stats only
   Future<void> refreshStats() async {
     try {
-      final stats = await _dashboardApi.getStats();
+      final stats = await _api.getStats();
       state = state.copyWith(stats: stats);
-    } catch (e) {
-      // Silent fail for refresh
-    }
+    } catch (_) {}
   }
 
-  // Refresh pending actions
   Future<void> refreshPending() async {
     try {
-      final pending = await _dashboardApi.getPending();
+      final pending = await _api.getPending();
       state = state.copyWith(pending: pending);
-    } catch (e) {
-      // Silent fail for refresh
-    }
+    } catch (_) {}
   }
 
-  // Refresh activities
   Future<void> refreshActivities() async {
     try {
-      final activities = await _dashboardApi.getActivities();
+      final activities = await _api.getActivities();
       state = state.copyWith(activities: activities);
-    } catch (e) {
-      // Silent fail for refresh
-    }
+    } catch (_) {}
   }
 
-  // Start periodic sync
+  /// Called by home_screen.dart — starts periodic background sync
   void startSync() {
-    // TODO: Implement periodic refresh if needed
+    _syncTimer?.cancel();
+    _syncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      refreshStats();
+      refreshPending();
+    });
   }
 
-  // Stop periodic sync
+  /// Called by home_screen.dart — stops periodic background sync
   void stopSync() {
-    // TODO: Implement stopping periodic refresh if needed
+    _syncTimer?.cancel();
+    _syncTimer = null;
   }
 }
 
-// Analytics Provider
-final analyticsProvider = StateNotifierProvider<AnalyticsNotifier, AnalyticsState>((ref) {
-  final dashboardApi = ref.watch(dashboardApiProvider);
-  return AnalyticsNotifier(dashboardApi);
+// ── Provider ──────────────────────────────────────────────────────────────────
+
+final analyticsProvider =
+    StateNotifierProvider<AnalyticsNotifier, AnalyticsState>((ref) {
+  return AnalyticsNotifier(ref.watch(dashboardApiProvider));
 });

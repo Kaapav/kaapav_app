@@ -3,6 +3,7 @@ class Order {
   final String orderId;
   final String phone;
   final String? customerName;
+  final String? customerEmail; 
   final List<dynamic> items;
   final int itemCount;
   final double subtotal;
@@ -49,6 +50,7 @@ class Order {
     this.orderId = '',
     this.phone = '',
     this.customerName,
+    this.customerEmail,
     this.items = const [],
     this.itemCount = 0,
     this.subtotal = 0.0,
@@ -97,6 +99,7 @@ class Order {
       orderId: json['order_id'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
       customerName: json['customer_name'] as String?,
+      customerEmail:json['customer_email']       as String?,
       items: _parseDynamicList(json['items']),
       itemCount: _toInt(json['item_count']),
       subtotal: _toDouble(json['subtotal']),
@@ -149,6 +152,7 @@ class Order {
         'order_id': orderId,
         'phone': phone,
         'customer_name': customerName,
+	'customer_email': customerEmail,
         'items': items,
         'item_count': itemCount,
         'subtotal': subtotal,
@@ -196,6 +200,7 @@ class Order {
     String? orderId,
     String? phone,
     String? customerName,
+    String? customerEmail,
     List<dynamic>? items,
     int? itemCount,
     double? subtotal,
@@ -242,6 +247,7 @@ class Order {
       orderId: orderId ?? this.orderId,
       phone: phone ?? this.phone,
       customerName: customerName ?? this.customerName,
+      customerEmail:      customerEmail      ?? this.customerEmail,
       items: items ?? this.items,
       itemCount: itemCount ?? this.itemCount,
       subtotal: subtotal ?? this.subtotal,

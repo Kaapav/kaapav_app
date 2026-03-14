@@ -11,12 +11,7 @@ import 'api_client.dart';
 class OrderApi {
   final ApiClient _client = ApiClient.instance;
 
-  // ═══════════════════════════════════════════════════════════
-  // LIST ORDERS
-  // GET /api/orders?status=&payment_status=&phone=&search=&start_date=&end_date=&limit=&offset=
-  // Response: { orders[], total, limit, offset }
-  // ═══════════════════════════════════════════════════════════
-
+  // ── List orders ──────────────────────────────────────────────
   Future<Response> getOrders({
     String? status,
     String? paymentStatus,
@@ -47,12 +42,7 @@ class OrderApi {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // ORDER STATS
-  // GET /api/orders/stats?period=today|week|month|year
-  // Response: { stats: { totalOrders, totalRevenue, avgOrderValue, byStatus{}, paid, unpaid }, daily[] }
-  // ═══════════════════════════════════════════════════════════
-
+  // ── Order stats ──────────────────────────────────────────────
   Future<Response> getOrderStats({String period = 'today'}) {
     return _client.get(
       ApiEndpoints.orderStats,
@@ -61,12 +51,7 @@ class OrderApi {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // GET SINGLE ORDER (with payments)
-  // GET /api/orders/:orderId
-  // Response: { order: {}, payments[] }
-  // ═══════════════════════════════════════════════════════════
-
+  // ── Single order ─────────────────────────────────────────────
   Future<Response> getOrder(String orderId) {
     return _client.get(
       ApiEndpoints.order(orderId),
@@ -74,55 +59,38 @@ class OrderApi {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // CREATE ORDER
-  // POST /api/orders
-  // Body: { phone, items[{sku, quantity}], shippingAddress{}, paymentMethod, discountCode, customerNotes }
-  // Response: { success, orderId, total, paymentLink? }
-  // ═══════════════════════════════════════════════════════════
-
+  // ── Create order (from chat / WA flow) ───────────────────────
   Future<Response> createOrder(Map<String, dynamic> data) {
     return _client.post(ApiEndpoints.orders, data: data);
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // UPDATE ORDER
-  // PUT /api/orders/:orderId
-  // Body: { status, payment_status, tracking_id, tracking_url, courier, internal_notes, shipping_* }
-  // ═══════════════════════════════════════════════════════════
-
+  // ── Update order (generic fields) ────────────────────────────
   Future<Response> updateOrder(String orderId, Map<String, dynamic> data) {
     return _client.put(ApiEndpoints.order(orderId), data: data);
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // CONFIRM ORDER
-  // POST /api/orders/:orderId/confirm
-  // Sends WhatsApp confirmation + updates customer stats
-  // ═══════════════════════════════════════════════════════════
+  // ── Update status only (manual picker in detail screen) ──────
+  // PATCH /api/orders/:orderId/status
+  // Body: { status }
+  // Auto-sends WhatsApp on confirmed/shipped/delivered/cancelled
+  Future<Response> updateOrderStatus(String orderId, String status) {
+    return _client.put(
+      '/api/orders/$orderId/status',
+      data: {'status': status},
+    );
+  }
 
+  // ── Confirm order ─────────────────────────────────────────────
   Future<Response> confirmOrder(String orderId) {
     return _client.post(ApiEndpoints.orderConfirm(orderId));
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // SHIP ORDER
-  // POST /api/orders/:orderId/ship
-  // Body: { courier, trackingId, trackingUrl, useShiprocket? }
-  // Sends WhatsApp shipping notification
-  // ═══════════════════════════════════════════════════════════
-
+  // ── Ship order ────────────────────────────────────────────────
   Future<Response> shipOrder(String orderId, Map<String, dynamic> data) {
     return _client.post(ApiEndpoints.orderShip(orderId), data: data);
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // CANCEL ORDER
-  // POST /api/orders/:orderId/cancel
-  // Body: { reason }
-  // Restores inventory + notifies customer
-  // ═══════════════════════════════════════════════════════════
-
+  // ── Cancel order ─────────────────────────────────────────────
   Future<Response> cancelOrder(String orderId, {String? reason}) {
     return _client.post(
       ApiEndpoints.orderCancel(orderId),
@@ -130,27 +98,48 @@ class OrderApi {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // GENERATE PAYMENT LINK (Razorpay)
-  // POST /api/orders/:orderId/payment-link
-  // Sends payment link to customer via WhatsApp
-  // Response: { success, paymentLink }
-  // ═══════════════════════════════════════════════════════════
-
+  // ── Generate Razorpay payment link ───────────────────────────
   Future<Response> generatePaymentLink(String orderId) {
     return _client.post(ApiEndpoints.orderPaymentLink(orderId));
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // SEND ORDER NOTIFICATION
-  // POST /api/orders/:orderId/send-notification
-  // Body: { type: "confirmation"|"shipped"|"delivered"|"payment_reminder" }
-  // ═══════════════════════════════════════════════════════════
-
+  // ── Send WA notification ─────────────────────────────────────
   Future<Response> sendNotification(String orderId, String type) {
     return _client.post(
       '/api/orders/$orderId/send-notification',
       data: {'type': type},
+    );
+  }
+
+  // ── Create manual order (from Flutter admin app) ─────────────
+  // POST /api/orders/manual
+  // Body: { name, phone, total, address, city, state, pincode, notes, items[] }
+  // Response: { success, orderId }
+  Future<Response> createManualOrder({
+    required String name,
+    required String phone,
+    required double total,
+    String address = '',
+    String city = '',
+    String state = '',
+    String pincode = '',
+    String notes = '',
+    List<Map<String, dynamic>> items = const [],
+  }) {
+    return _client.post(
+      '/api/orders/manual',
+      data: {
+        'name': name,
+        'phone': phone,
+        'address': address,
+        'city': city,
+        'state': state,
+        'pincode': pincode,
+        'total': total,
+        'notes': notes,
+        'items': items,
+        'source': 'manual',
+      },
     );
   }
 }

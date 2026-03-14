@@ -37,7 +37,7 @@ class OrderCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // -- Header: Order ID + Status --
+            // ── Header: Order ID + Status ──
             Row(
               children: [
                 Text(
@@ -55,7 +55,7 @@ class OrderCard extends StatelessWidget {
 
             const SizedBox(height: 10),
 
-            // -- Customer info --
+            // ── Customer info ──
             Row(
               children: [
                 const Icon(Icons.person_outline, size: 16, color: Color(0xFF9CA3AF)),
@@ -76,7 +76,7 @@ class OrderCard extends StatelessWidget {
 
             const SizedBox(height: 6),
 
-            // -- Items count + Total --
+            // ── Items count + Total ──
             Row(
               children: [
                 const Icon(Icons.shopping_bag_outlined,
@@ -90,8 +90,9 @@ class OrderCard extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
+                // ₹ via unicode escape — encoding-safe
                 Text(
-                  '?${order.total.toStringAsFixed(0)}',
+                  '\u20B9${order.total.toStringAsFixed(0)}',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -103,7 +104,7 @@ class OrderCard extends StatelessWidget {
 
             const SizedBox(height: 10),
 
-            // -- Payment + Date row --
+            // ── Payment + Date row ──
             Row(
               children: [
                 _PaymentChip(status: order.paymentStatus),
@@ -118,7 +119,7 @@ class OrderCard extends StatelessWidget {
               ],
             ),
 
-            // -- Tracking info --
+            // ── Tracking info ──
             if (order.hasTracking) ...[
               const SizedBox(height: 8),
               Container(
@@ -154,7 +155,7 @@ class OrderCard extends StatelessWidget {
   String _formatDate(String? date) {
     if (date == null) return '';
     try {
-      final dt = DateTime.parse(date);
+      final dt  = DateTime.parse(date);
       final now = DateTime.now();
       final diff = now.difference(dt);
       if (diff.inDays == 0) return 'Today';
@@ -166,29 +167,30 @@ class OrderCard extends StatelessWidget {
   }
 }
 
+// ── Status chip — icons only, no emoji ──────────────────────────────────────
 class _StatusChip extends StatelessWidget {
   final String status;
   const _StatusChip({required this.status});
 
   @override
   Widget build(BuildContext context) {
-    final config = _getConfig();
+    final cfg = _config();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: config.$1,
+        color: cfg.bg,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(config.$3, style: const TextStyle(fontSize: 11)),
-          const SizedBox(width: 3),
+          Icon(cfg.icon, size: 11, color: cfg.fg),
+          const SizedBox(width: 4),
           Text(
             status[0].toUpperCase() + status.substring(1),
             style: TextStyle(
               fontSize: 11,
-              color: config.$2,
+              color: cfg.fg,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -197,58 +199,94 @@ class _StatusChip extends StatelessWidget {
     );
   }
 
-  (Color, Color, String) _getConfig() {
+  _ChipCfg _config() {
     switch (status) {
       case 'pending':
-        return (const Color(0xFFFEF3C7), const Color(0xFFD97706), '?');
+        return _ChipCfg(const Color(0xFFFEF3C7), const Color(0xFFD97706),
+            Icons.hourglass_empty_rounded);
       case 'confirmed':
-        return (const Color(0xFFDBEAFE), const Color(0xFF2563EB), '?');
+        return _ChipCfg(const Color(0xFFDBEAFE), const Color(0xFF2563EB),
+            Icons.check_circle_outline_rounded);
       case 'processing':
-        return (const Color(0xFFEDE9FE), const Color(0xFF7C3AED), '??');
+        return _ChipCfg(const Color(0xFFEDE9FE), const Color(0xFF7C3AED),
+            Icons.settings_outlined);
       case 'shipped':
-        return (const Color(0xFFCFFAFE), const Color(0xFF0891B2), '??');
+        return _ChipCfg(const Color(0xFFCFFAFE), const Color(0xFF0891B2),
+            Icons.local_shipping_outlined);
       case 'delivered':
-        return (const Color(0xFFD1FAE5), const Color(0xFF059669), '??');
+        return _ChipCfg(const Color(0xFFD1FAE5), const Color(0xFF059669),
+            Icons.done_all_rounded);
       case 'cancelled':
-        return (const Color(0xFFFEE2E2), const Color(0xFFDC2626), '?');
+        return _ChipCfg(const Color(0xFFFEE2E2), const Color(0xFFDC2626),
+            Icons.cancel_outlined);
       case 'returned':
-        return (const Color(0xFFFEE2E2), const Color(0xFFDC2626), '??');
+        return _ChipCfg(const Color(0xFFFEE2E2), const Color(0xFFDC2626),
+            Icons.keyboard_return_rounded);
       default:
-        return (const Color(0xFFF3F4F6), const Color(0xFF6B7280), '??');
+        return _ChipCfg(const Color(0xFFF3F4F6), const Color(0xFF6B7280),
+            Icons.help_outline_rounded);
     }
   }
 }
 
+class _ChipCfg {
+  final Color bg, fg;
+  final IconData icon;
+  const _ChipCfg(this.bg, this.fg, this.icon);
+}
+
+// ── Payment chip — icons only, no emoji ─────────────────────────────────────
 class _PaymentChip extends StatelessWidget {
   final String status;
   const _PaymentChip({required this.status});
 
   @override
   Widget build(BuildContext context) {
-    final isPaid = status == 'paid';
+    final isPaid     = status == 'paid';
     final isRefunded = status == 'refunded';
+
+    final Color bg;
+    final Color fg;
+    final IconData icon;
+    final String label;
+
+    if (isPaid) {
+      bg    = const Color(0xFFD1FAE5);
+      fg    = const Color(0xFF059669);
+      icon  = Icons.check_circle_outline_rounded;
+      label = 'Paid';
+    } else if (isRefunded) {
+      bg    = const Color(0xFFFEF3C7);
+      fg    = const Color(0xFFD97706);
+      icon  = Icons.replay_rounded;
+      label = 'Refunded';
+    } else {
+      bg    = const Color(0xFFFEE2E2);
+      fg    = const Color(0xFFDC2626);
+      icon  = Icons.cancel_outlined;
+      label = 'Unpaid';
+    }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: isPaid
-            ? const Color(0xFFD1FAE5)
-            : isRefunded
-                ? const Color(0xFFFEF3C7)
-                : const Color(0xFFFEE2E2),
+        color: bg,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(
-        isPaid ? '?? Paid' : isRefunded ? '?? Refunded' : '? Unpaid',
-        style: TextStyle(
-          fontSize: 11,
-          color: isPaid
-              ? const Color(0xFF059669)
-              : isRefunded
-                  ? const Color(0xFFD97706)
-                  : const Color(0xFFDC2626),
-          fontWeight: FontWeight.w600,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: fg),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: fg,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
