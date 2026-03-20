@@ -1,9 +1,12 @@
+// lib/models/order.dart
+import 'dart:convert';
+
 class Order {
   final int? id;
   final String orderId;
   final String phone;
   final String? customerName;
-  final String? customerEmail; 
+  final String? customerEmail;
   final List<dynamic> items;
   final int itemCount;
   final double subtotal;
@@ -12,12 +15,14 @@ class Order {
   final double shippingCost;
   final double tax;
   final double total;
+
   final String? shippingName;
   final String? shippingPhone;
   final String? shippingAddress;
   final String? shippingCity;
   final String? shippingState;
   final String? shippingPincode;
+
   final String status;
   final String paymentStatus;
   final String? paymentMethod;
@@ -25,23 +30,30 @@ class Order {
   final String? paymentLink;
   final String? paymentLinkExpires;
   final String? paidAt;
+
   final String? courier;
   final String? trackingId;
   final String? trackingUrl;
   final String? shipmentId;
   final String? awbNumber;
+  final String? shiprocketOrderId;
+
   final String? confirmedAt;
   final String? shippedAt;
   final String? deliveredAt;
   final String? cancelledAt;
+
   final String? customerNotes;
   final String? internalNotes;
   final String? cancellationReason;
+
   final String source;
+
   final bool confirmationSent;
   final bool shippingSent;
   final bool deliverySent;
   final bool reviewSent;
+
   final String? createdAt;
   final String? updatedAt;
 
@@ -77,6 +89,7 @@ class Order {
     this.trackingUrl,
     this.shipmentId,
     this.awbNumber,
+    this.shiprocketOrderId,
     this.confirmedAt,
     this.shippedAt,
     this.deliveredAt,
@@ -99,7 +112,7 @@ class Order {
       orderId: json['order_id'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
       customerName: json['customer_name'] as String?,
-      customerEmail:json['customer_email']       as String?,
+      customerEmail: json['customer_email'] as String?,
       items: _parseDynamicList(json['items']),
       itemCount: _toInt(json['item_count']),
       subtotal: _toDouble(json['subtotal']),
@@ -126,6 +139,7 @@ class Order {
       trackingUrl: json['tracking_url'] as String?,
       shipmentId: json['shipment_id'] as String?,
       awbNumber: json['awb_number'] as String?,
+      shiprocketOrderId: json['shiprocket_order_id'] as String?,
       confirmedAt: json['confirmed_at'] as String?,
       shippedAt: json['shipped_at'] as String?,
       deliveredAt: json['delivered_at'] as String?,
@@ -134,8 +148,8 @@ class Order {
       internalNotes: json['internal_notes'] as String?,
       cancellationReason: json['cancellation_reason'] as String?,
       source: json['source'] as String? ?? 'whatsapp',
-      confirmationSent: json['confirmation_sent'] == 1 ||
-          json['confirmation_sent'] == true,
+      confirmationSent:
+          json['confirmation_sent'] == 1 || json['confirmation_sent'] == true,
       shippingSent:
           json['shipping_sent'] == 1 || json['shipping_sent'] == true,
       deliverySent:
@@ -152,7 +166,7 @@ class Order {
         'order_id': orderId,
         'phone': phone,
         'customer_name': customerName,
-	'customer_email': customerEmail,
+        'customer_email': customerEmail,
         'items': items,
         'item_count': itemCount,
         'subtotal': subtotal,
@@ -179,6 +193,7 @@ class Order {
         'tracking_url': trackingUrl,
         'shipment_id': shipmentId,
         'awb_number': awbNumber,
+        'shiprocket_order_id': shiprocketOrderId,
         'confirmed_at': confirmedAt,
         'shipped_at': shippedAt,
         'delivered_at': deliveredAt,
@@ -227,6 +242,7 @@ class Order {
     String? trackingUrl,
     String? shipmentId,
     String? awbNumber,
+    String? shiprocketOrderId,
     String? confirmedAt,
     String? shippedAt,
     String? deliveredAt,
@@ -247,7 +263,7 @@ class Order {
       orderId: orderId ?? this.orderId,
       phone: phone ?? this.phone,
       customerName: customerName ?? this.customerName,
-      customerEmail:      customerEmail      ?? this.customerEmail,
+      customerEmail: customerEmail ?? this.customerEmail,
       items: items ?? this.items,
       itemCount: itemCount ?? this.itemCount,
       subtotal: subtotal ?? this.subtotal,
@@ -274,6 +290,7 @@ class Order {
       trackingUrl: trackingUrl ?? this.trackingUrl,
       shipmentId: shipmentId ?? this.shipmentId,
       awbNumber: awbNumber ?? this.awbNumber,
+      shiprocketOrderId: shiprocketOrderId ?? this.shiprocketOrderId,
       confirmedAt: confirmedAt ?? this.confirmedAt,
       shippedAt: shippedAt ?? this.shippedAt,
       deliveredAt: deliveredAt ?? this.deliveredAt,
@@ -291,16 +308,18 @@ class Order {
     );
   }
 
-  // ── Convenience getters ──
+  // ── Convenience getters ──────────────────────────────────────
   bool get isPending => status == 'pending';
   bool get isConfirmed => status == 'confirmed';
   bool get isProcessing => status == 'processing';
   bool get isShipped => status == 'shipped';
   bool get isDelivered => status == 'delivered';
   bool get isCancelled => status == 'cancelled';
+
   bool get isPaid => paymentStatus == 'paid';
   bool get isUnpaid => paymentStatus == 'unpaid';
   bool get isRefunded => paymentStatus == 'refunded';
+
   bool get canCancel => status == 'pending' || status == 'confirmed';
   bool get canShip => status == 'confirmed' || status == 'processing';
   bool get hasTracking => awbNumber != null && awbNumber!.isNotEmpty;
@@ -328,10 +347,18 @@ class Order {
 
   String get fullShippingAddress {
     final parts = <String>[];
-    if (shippingAddress != null) parts.add(shippingAddress!);
-    if (shippingCity != null) parts.add(shippingCity!);
-    if (shippingState != null) parts.add(shippingState!);
-    if (shippingPincode != null) parts.add(shippingPincode!);
+    if (shippingAddress != null && shippingAddress!.trim().isNotEmpty) {
+      parts.add(shippingAddress!);
+    }
+    if (shippingCity != null && shippingCity!.trim().isNotEmpty) {
+      parts.add(shippingCity!);
+    }
+    if (shippingState != null && shippingState!.trim().isNotEmpty) {
+      parts.add(shippingState!);
+    }
+    if (shippingPincode != null && shippingPincode!.trim().isNotEmpty) {
+      parts.add(shippingPincode!);
+    }
     return parts.join(', ');
   }
 
@@ -350,8 +377,16 @@ class Order {
   }
 
   static List<dynamic> _parseDynamicList(dynamic val) {
-    if (val == null) return [];
-    if (val is List) return val;
-    return [];
+  if (val == null) return [];
+  if (val is List) return val;
+
+  if (val is String && val.isNotEmpty) {
+    try {
+      final decoded = jsonDecode(val);
+      if (decoded is List) return decoded;
+    } catch (_) {}
   }
+  return [];
+}
+
 }

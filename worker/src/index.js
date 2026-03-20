@@ -15,6 +15,24 @@ function errorResponse(message, status = 400) {
   return jsonResponse({ success: false, error: message }, status);
 }
 
+async function logOrderEvent(env, orderId, eventType, message, meta = {}, source = 'system') {
+  try {
+    await env.DB.prepare(`
+      INSERT INTO order_events (
+        order_id, event_type, event_source, message, meta_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, datetime('now'))
+    `).bind(
+      orderId,
+      eventType,
+      source,
+      message || '',
+      JSON.stringify(meta || {})
+    ).run();
+  } catch (e) {
+    console.error('logOrderEvent error:', e);
+  }
+}
+
 // ═══════════════════ JWT ═══════════════════
 async function generateJWT(payload, secret) {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
@@ -156,6 +174,28 @@ async function sendWhatsAppText(env, phone, text) {
   return res.json();
 }
 
+async function sendWhatsAppTextOnce(env, dedupeKey, phone, text, ttl = 86400 * 30) {
+  const already = await env.KV.get(dedupeKey);
+  if (already) return { success: true, skipped: true };
+
+  const result = await sendWhatsAppText(env, phone, text);
+  if (!result?.error) {
+    await env.KV.put(dedupeKey, '1', { expirationTtl: ttl });
+  }
+  return result;
+}
+
+async function notifyOwnerFailure(env, title, lines = []) {
+  try {
+    await sendWhatsAppText(
+      env,
+      env.OWNER_PHONE,
+      `⚠️ *${title}*\n\n` + lines.join('\n')
+    );
+  } catch (e) {
+    console.error('notifyOwnerFailure error:', e);
+  }
+}
 async function sendWhatsAppButtons(env, phone, text, buttons, footer = null) {
   const interactive = {
     type: 'button',
@@ -270,15 +310,36 @@ async function clearConvState(phone, env) {
 // ── RAZORPAY — create payment link ────────────────────────────
 async function createRazorpayLink(env, { amount, name, phone, orderId, description }) {
   const auth = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`);
-  const expiry = Math.floor(Date.now() / 1000) + 86400; // 24 hours
+  const expiry = Math.floor(Date.now() / 1000) + 86400;
+
+  const cleanPhone = String(phone || '').replace(/\D/g, '').slice(-10);
+  const finalAmount = Math.round(Number(amount || 0) * 100);
+
+  console.log('RAZORPAY DEBUG', JSON.stringify({
+    orderId,
+    amount,
+    finalAmount,
+    name,
+    phone,
+    cleanPhone,
+    hasKeyId: !!env.RAZORPAY_KEY_ID,
+    hasKeySecret: !!env.RAZORPAY_KEY_SECRET,
+  }));
+
   const res = await fetch('https://api.razorpay.com/v1/payment_links', {
     method: 'POST',
-    headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/json' },
+    headers: {
+      'Authorization': `Basic ${auth}`,
+      'Content-Type': 'application/json'
+    },
     body: JSON.stringify({
-      amount: Math.round(amount * 100), // paise
+      amount: finalAmount,
       currency: 'INR',
       description,
-      customer: { name, contact: `+91${phone.replace(/\D/g,'')}` },
+      customer: {
+        name,
+        contact: `+91${cleanPhone}`
+      },
       notify: { sms: true, whatsapp: false },
       reminder_enable: true,
       expire_by: expiry,
@@ -287,8 +348,14 @@ async function createRazorpayLink(env, { amount, name, phone, orderId, descripti
       callback_method: 'get',
     })
   });
+
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.description || 'Razorpay error');
+  console.log('RAZORPAY RESPONSE', JSON.stringify(data));
+
+  if (!res.ok) {
+    throw new Error(data.error?.description || data.error?.message || 'Razorpay error');
+  }
+
   return data.short_url;
 }
 
@@ -422,42 +489,42 @@ async function handleWebhookPost(request, env, ctx) {
     const name = contact?.profile?.name || phone;
 
     let text = '';
-let messageType = msg.type;
-let buttonId = null;
-let buttonText = null;
-let mediaUrl = null;
-let mediaCaption = null;
-let mediaId = null;
+    let messageType = msg.type;
+    let buttonId = null;
+    let buttonText = null;
+    let mediaUrl = null;
+    let mediaCaption = null;
+    let mediaId = null;
 
-if (msg.type === 'text') text = msg.text?.body || '';
-else if (msg.type === 'image') {
-  mediaId = msg.image?.id;
-  mediaCaption = msg.image?.caption || '';
-  text = mediaCaption || '📷 Photo';
-  // Resolve R2 URL in background
-  if (mediaId) {
-    try { mediaUrl = await resolveMediaToR2(mediaId, env); } catch(e) { console.error('Media resolve error:', e); }
-  }
-} else if (msg.type === 'video') {
-  mediaId = msg.video?.id;
-  text = '🎥 Video';
-  if (mediaId) {
-    try { mediaUrl = await resolveMediaToR2(mediaId, env); } catch(e) {}
-  }
-} else if (msg.type === 'audio' || msg.type === 'voice') {
-  mediaId = msg.audio?.id || msg.voice?.id;
-  text = '🎵 Audio';
-  if (mediaId) {
-    try { mediaUrl = await resolveMediaToR2(mediaId, env); } catch(e) {}
-  }
-} else if (msg.type === 'document') {
-  mediaId = msg.document?.id;
-  mediaCaption = msg.document?.filename || '';
-  text = mediaCaption || '📄 Document';
-  if (mediaId) {
-    try { mediaUrl = await resolveMediaToR2(mediaId, env); } catch(e) {}
-  }
-} else if (msg.type === 'interactive') {
+    if (msg.type === 'text') {
+      text = msg.text?.body || '';
+    } else if (msg.type === 'image') {
+      mediaId = msg.image?.id;
+      mediaCaption = msg.image?.caption || '';
+      text = mediaCaption || '[Photo]';
+      if (mediaId) {
+        try { mediaUrl = await resolveMediaToR2(mediaId, env); } catch(e) { console.error('Media resolve error:', e); }
+      }
+    } else if (msg.type === 'video') {
+      mediaId = msg.video?.id;
+      text = '[Video]';
+      if (mediaId) {
+        try { mediaUrl = await resolveMediaToR2(mediaId, env); } catch(e) {}
+      }
+    } else if (msg.type === 'audio' || msg.type === 'voice') {
+      mediaId = msg.audio?.id || msg.voice?.id;
+      text = '[Audio]';
+      if (mediaId) {
+        try { mediaUrl = await resolveMediaToR2(mediaId, env); } catch(e) {}
+      }
+    } else if (msg.type === 'document') {
+      mediaId = msg.document?.id;
+      mediaCaption = msg.document?.filename || '';
+      text = mediaCaption || '[Document]';
+      if (mediaId) {
+        try { mediaUrl = await resolveMediaToR2(mediaId, env); } catch(e) {}
+      }
+    } else if (msg.type === 'interactive') {
       if (msg.interactive?.type === 'button_reply') {
         buttonId = msg.interactive.button_reply?.id;
         buttonText = msg.interactive.button_reply?.title;
@@ -472,50 +539,62 @@ else if (msg.type === 'image') {
     const messageId = msg.id;
     const timestamp = new Date(parseInt(msg.timestamp) * 1000).toISOString();
 
+    // Save incoming message to D1
     await env.DB.prepare(`
-  INSERT OR IGNORE INTO messages (message_id, phone, text, message_type, direction, button_id, button_text, media_url, media_caption, status, timestamp, created_at)
-  VALUES (?, ?, ?, ?, 'incoming', ?, ?, ?, ?, 'delivered', ?, datetime('now'))
-`).bind(messageId, phone, text, messageType, buttonId, buttonText, mediaUrl, mediaCaption, timestamp).run();
+      INSERT OR IGNORE INTO messages (
+        message_id, phone, text, message_type, direction,
+        button_id, button_text, media_url, media_caption,
+        status, timestamp, created_at
+      ) VALUES (?, ?, ?, ?, 'incoming', ?, ?, ?, ?, 'delivered', ?, datetime('now'))
+    `).bind(
+      messageId, phone, text, messageType,
+      buttonId, buttonText, mediaUrl, mediaCaption, timestamp
+    ).run();
 
+    // Upsert chat
     await env.DB.prepare(`
-      INSERT INTO chats (phone, customer_name, last_message, last_message_type, last_timestamp, last_direction, unread_count, total_messages, updated_at)
-      VALUES (?, ?, ?, ?, ?, 'incoming', 1, 1, datetime('now'))
+      INSERT INTO chats (
+        phone, customer_name, last_message, last_message_type,
+        last_timestamp, last_direction, unread_count, total_messages, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 'incoming', 1, 1, datetime('now'))
       ON CONFLICT(phone) DO UPDATE SET
-        customer_name = excluded.customer_name,
-        last_message = excluded.last_message,
+        customer_name   = excluded.customer_name,
+        last_message    = excluded.last_message,
         last_message_type = excluded.last_message_type,
-        last_timestamp = excluded.last_timestamp,
-        last_direction = 'incoming',
-        unread_count = unread_count + 1,
-        total_messages = total_messages + 1,
-        updated_at = datetime('now')
+        last_timestamp  = excluded.last_timestamp,
+        last_direction  = 'incoming',
+        unread_count    = unread_count + 1,
+        total_messages  = total_messages + 1,
+        updated_at      = datetime('now')
     `).bind(phone, name, text || messageType, messageType, timestamp).run();
 
+    // Upsert customer
     await env.DB.prepare(`
       INSERT INTO customers (phone, name, message_count, first_seen, last_seen, updated_at)
       VALUES (?, ?, 1, datetime('now'), datetime('now'), datetime('now'))
       ON CONFLICT(phone) DO UPDATE SET
-        name = excluded.name,
+        name          = excluded.name,
         message_count = message_count + 1,
-        last_seen = datetime('now'),
-        updated_at = datetime('now')
+        last_seen     = datetime('now'),
+        updated_at    = datetime('now')
     `).bind(phone, name).run();
 
-    console.log('Calling FCM with messageId:', messageId);
+    // FCM push — fires in parallel, does not block autoresponder
     ctx.waitUntil(sendFCMNotification(env, phone, name, text, messageId));
 
+    // AutoResponder
     try {
       const autoResponder = new AutoResponder(env);
       await autoResponder.process({ phone, name, text, messageType, buttonId, messageId });
-    } catch (e) { console.error('Autoresponder error:', e); }
+    } catch(e) { console.error('Autoresponder error:', e); }
 
     return jsonResponse({ status: 'ok' });
-  } catch (e) {
+
+  } catch(e) {
     console.error('Webhook error:', e);
     return jsonResponse({ status: 'ok' });
   }
 }
-
 async function handleLogin(request, env) {
   const body = await request.json();
   const { method, pin, email, password } = body;
@@ -688,34 +767,51 @@ async function handleSendProduct(request, env) {
   return jsonResponse({ success: true });
 }
 
-async function handleCreateProduct(request, env) {
-  const body = await request.json();
-  const { sku, name, category, price, compare_price, description, stock, image_url, is_active, is_featured, tags, website_link, material } = body;
-  if (!sku || !name || !price) return errorResponse('sku, name, price required');
-  await env.DB.prepare(`
-    INSERT OR REPLACE INTO products (sku, name, category, price, compare_price, description, stock, image_url, is_active, is_featured, tags, website_link, material, updated_at, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-  `).bind(sku, name, category || 'bracelet', price, compare_price || 0, description || '', stock || 0, image_url || '', is_active ?? 1, is_featured ?? 0, JSON.stringify(tags || []), website_link || '', material || '').run();
-  return jsonResponse({ success: true });
-}
-
 async function handleUpdateProduct(sku, request, env) {
   const body = await request.json();
   const fields = [];
   const values = [];
-  const allowed = ['name','category','price','compare_price','description','stock','image_url','is_active','is_featured','tags','website_link','material'];
+
+  const allowed = [
+    'name',
+    'category',
+    'price',
+    'compare_price',
+    'description',
+    'stock',
+    'image_url',
+    'images',
+    'is_active',
+    'is_featured',
+    'tags',
+    'website_link',
+    'material'
+  ];
+
   for (const key of allowed) {
     if (body[key] !== undefined) {
       fields.push(`${key} = ?`);
-      values.push(key === 'tags' ? JSON.stringify(body[key]) : body[key]);
+
+      if (key === 'tags' || key === 'images') {
+        values.push(JSON.stringify(body[key] || []));
+      } else {
+        values.push(body[key]);
+      }
     }
   }
+
   if (fields.length === 0) return errorResponse('nothing to update');
+
   fields.push(`updated_at = datetime('now')`);
   values.push(sku);
-  await env.DB.prepare(`UPDATE products SET ${fields.join(', ')} WHERE sku = ?`).bind(...values).run();
+
+  await env.DB.prepare(
+    `UPDATE products SET ${fields.join(', ')} WHERE sku = ?`
+  ).bind(...values).run();
+
   return jsonResponse({ success: true });
 }
+
 
 async function handleDeleteProduct(sku, env) {
   await env.DB.prepare(`DELETE FROM products WHERE sku = ?`).bind(sku).run();
@@ -986,10 +1082,18 @@ class AutoResponder {
     }
 
     // ── 7. Greeting → always show Main Menu ──────────────────────
-    if (/^(hi|hello|hey|helo|hii|hiii|namaste|namaskar|jai|ram|shri|good\s*(morning|evening|afternoon|night))/.test(inputLower)) {
-      await this.executeAction(phone, 'MAIN_MENU');
-      return;
-    }
+    const greetRegex = new RegExp(
+  '^(hi|hello|hey|helo|hii|hiii|namaste|namaskar|jai|ram|shri|' +
+  'good (morning|evening|afternoon|night)|' +
+  'vanakkam|vannakkam|sugam|hai|enna|start|begin|menu|' +
+  '\u0bb5\u0ba3\u0b95\u0bcd\u0b95\u0bae\u0bcd|' +  // Tamil: வணக்கம்
+  '\u0c28\u0c2e\u0c38\u0c4d\u0c15\u0c3e\u0c30\u0c02\u0c32\u0c41|' + // Telugu: నమస్కారంలు
+  '\u0ca8\u0cae\u0cb8\u0ccd\u0c95\u0cbe\u0cb0)'     // Kannada: ನಮಸ್ಕಾರ
+);
+if (greetRegex.test(inputLower)) {
+  await this.executeAction(phone, 'MAIN_MENU');
+  return;
+}
 
     // ── 8. No match → show Help prompt ───────────────────────────
     await this.sendHelpPrompt(phone);
@@ -1043,21 +1147,82 @@ class AutoResponder {
 
   // ── TEXT TRIGGER → ACTION MAP ──────────────────────────────────
   resolveTextTrigger(inputLower) {
-    // ORDER FLOW — text trigger only (as per spec)
-    if (/order\s*karn[ae]|order\s*dena|order\s*chahiye|mujhe\s*order|place\s*order|i\s*want\s*to\s*order|buy\s*karna|kharidna\s*hai/.test(inputLower)) {
-      return 'ORDER_FLOW';
-    }
-      // Category browsing
-    if (/bracelet|bangle|kada|kara|bangles/.test(inputLower)) return 'CAT_BRACELET';
-    if (/necklace|haar|chain|mala|necklac/.test(inputLower)) return 'CAT_NECKLACE';
-    if (/earring|jhumka|bali|stud|tops|jhumke/.test(inputLower)) return 'CAT_EARRINGS';
-    if (/pendant\s*set|jewellery\s*set|full\s*set|set\s*chahiye/.test(inputLower)) return 'CAT_PENDANT_SETS';
-    if (/pendant|locket|mangalsutra/.test(inputLower)) return 'CAT_PENDANT';
-    if (/ring|anguthi|angoothi|band/.test(inputLower)) return 'CAT_RINGS';
-    if (/catalogue|catalog|collection|sab\s*dikhao|all\s*products|poora/.test(inputLower)) return 'OPEN_CATALOG';
-    // No other text triggers
-    return null;
-  }
+
+  // ── ORDER FLOW ─────────────────────────────────────────────
+  const orderRegex = new RegExp(
+    'i want to (buy|order|purchase)|how to (buy|order)|want to buy|can i order|place an? order|' +
+    'order karn[ae]|order dena|order chahiye|mujhe order|buy karna|kharidna hai|' +
+    'order pannanum|vanganum|vaanganam|' +
+    'order cheyali|kaavali|order cheyyandi|' +
+    'order maadabeku|kharidi maadabeku'
+  );
+  if (orderRegex.test(inputLower)) return 'ORDER_FLOW';
+
+  // ── BRACELET ───────────────────────────────────────────────
+  const braceletRegex = new RegExp(
+    'bracelet|bangle|bangles|kada|kara|' +
+    '\u0bb5\u0bb3\u0bc8\u0baf\u0bb2\u0bcd|' +  // Tamil: வளையல்
+    '\u0c17\u0c3e\u0c1c\u0c41\u0c32\u0c41|' +  // Telugu: గాజులు
+    '\u0c2c\u0cb3\u0cc6'                         // Kannada: ಬಳೆ
+  );
+  if (braceletRegex.test(inputLower)) return 'CAT_BRACELET';
+
+  // ── NECKLACE ───────────────────────────────────────────────
+  const necklaceRegex = new RegExp(
+    'necklace|haar|chain|mala|' +
+    '\u0bae\u0bbe\u0bb2\u0bc8|' +              // Tamil: மாலை
+    '\u0c28\u0c46\u0c15\u0c4d\u0c32\u0c46\u0c38\u0c4d|' + // Telugu: నెక్లెస్
+    '\u0cb9\u0cbe\u0cb0'                         // Kannada: ಹಾರ
+  );
+  if (necklaceRegex.test(inputLower)) return 'CAT_NECKLACE';
+
+  // ── EARRINGS ───────────────────────────────────────────────
+  const earringRegex = new RegExp(
+    'earring|jhumka|bali|stud|tops|jhumke|' +
+    '\u0b95\u0bbe\u0ba4\u0ba3\u0bbf|' +        // Tamil: காதணி
+    '\u0c1a\u0c46\u0c35\u0c3f\u0c2a\u0c4b\u0c17\u0c41\u0c32\u0c41|' + // Telugu: చెవిపోగులు
+    '\u0c95\u0cbf\u0cb5\u0cbf\u0caf\u0ccb\u0cb2\u0cc6'  // Kannada: ಕಿವಿಯೋಲೆ
+  );
+  if (earringRegex.test(inputLower)) return 'CAT_EARRINGS';
+
+  // ── PENDANT SETS ───────────────────────────────────────────
+  const pendantSetRegex = new RegExp(
+    'pendant set|jewellery set|full set|set chahiye|' +
+    '\u0ba8\u0b95\u0bc8 \u0b9a\u0bc6\u0b9f\u0bcd|' +    // Tamil: நகை செட்
+    '\u0c1c\u0c4d\u0c2f\u0c41\u0c2f\u0c46\u0c32\u0c30\u0c40 \u0c38\u0c46\u0c1f\u0c4d|' + // Telugu: జ్యుయెలరీ సెట్
+    '\u0c92\u0ca1\u0cb5\u0cc6 \u0c38\u0cc6\u0c9f\u0ccd'  // Kannada: ಒಡವೆ ಸೆಟ್
+  );
+  if (pendantSetRegex.test(inputLower)) return 'CAT_PENDANT_SETS';
+
+  // ── PENDANT ────────────────────────────────────────────────
+  const pendantRegex = new RegExp(
+    'pendant|locket|mangalsutra|' +
+    '\u0bb2\u0bbe\u0b95\u0bcd\u0b95\u0bc6\u0b9f\u0bcd|' + // Tamil: லாக்கெட்
+    '\u0c32\u0c3e\u0c15\u0c46\u0c1f\u0c4d|' +             // Telugu: లాకెట్
+    '\u0cb2\u0cbe\u0c95\u0cc6\u0c9f\u0ccd'                 // Kannada: ಲಾಕೆಟ್
+  );
+  if (pendantRegex.test(inputLower)) return 'CAT_PENDANT';
+
+  // ── RINGS ──────────────────────────────────────────────────
+  const ringRegex = new RegExp(
+    '\\bring\\b|anguthi|angoothi|' +
+    '\u0bae\u0bcb\u0ba4\u0bbf\u0bb0\u0bae\u0bcd|' +  // Tamil: மோதிரம்
+    '\u0c09\u0c02\u0c17\u0c30\u0c02|' +               // Telugu: ఉంగరం
+    '\u0c89\u0c02\u0c17\u0cb0'                         // Kannada: ಉಂಗರ
+  );
+  if (ringRegex.test(inputLower)) return 'CAT_RINGS';
+
+  // ── CATALOGUE ──────────────────────────────────────────────
+  const catalogRegex = new RegExp(
+    'catalogue|catalog|collection|sab dikhao|all products|poora|' +
+    '\u0b95\u0bbe\u0b9f\u0bcd\u0b9f\u0bc1|' +  // Tamil: காட்டு
+    '\u0c1a\u0c42\u0c2a\u0c3f\u0c02\u0c1a\u0c41|' + // Telugu: చూపించు
+    '\u0ca4\u0ccb\u0cb0\u0cbf\u0cb8\u0cc1'      // Kannada: ತೋರಿಸು
+  );
+  if (catalogRegex.test(inputLower)) return 'OPEN_CATALOG';
+
+  return null;
+}
 
   // ── EXECUTE ACTION ─────────────────────────────────────────────
   async executeAction(phone, action) {
@@ -1677,46 +1842,105 @@ Confirm order? 👇`,
       );
       break;
 
-    case 'order_confirm':
-      if (input === 'order_yes' || /yes|confirm|haan|ha/.test(lower)) {
-        const cart = data.cart || [];
-        const total = cart.reduce((s, i) => s + (i.price * (i.qty || 1)), 0);
-        const shipping = total >= 498 ? 0 : 60;
-        const grand = total + shipping;
-        const orderId = await generateOrderId(env);
-        const items = cart.map(i => ({ name: i.name, sku: i.sku, qty: i.qty || 1, price: i.price }));
+   case 'order_confirm':
+  if (input === 'order_yes' || /yes|confirm|haan|ha/.test(lower)) {
+    const cart = data.cart || [];
+    const total = cart.reduce((s, i) => s + (i.price * (i.qty || 1)), 0);
+    const shipping = total >= 498 ? 0 : 60;
+    const grand = total + shipping;
+    const orderId = await generateOrderId(env);
+    const items = cart.map(i => ({
+      name: i.name, sku: i.sku, qty: i.qty || 1, price: i.price
+    }));
 
-        await env.DB.prepare(`
-          INSERT INTO orders (order_id, phone, customer_name, items, item_count, subtotal, shipping_cost, total,
-            shipping_name, shipping_address, shipping_pincode,
-            status, payment_status, source, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unpaid', 'whatsapp', datetime('now'), datetime('now'))
-        `).bind(orderId, phone, data.name, JSON.stringify(items), items.length,
-          total, shipping, grand, data.name, data.address, data.pincode).run();
+    // Save order to D1
+    await env.DB.prepare(`
+      INSERT INTO orders (
+        order_id, phone, customer_name, items, item_count,
+        subtotal, shipping_cost, total,
+        shipping_name, shipping_address, shipping_pincode,
+        status, payment_status, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unpaid', 'whatsapp', datetime('now'), datetime('now'))
+    `).bind(
+      orderId, phone, data.name,
+      JSON.stringify(items), items.length,
+      total, shipping, grand,
+      data.name, data.address, data.pincode
+    ).run();
+ 
+    await logOrderEvent(env, orderId, 'order_created', 'WhatsApp order created', {
+  phone,
+  customerName: data.name,
+  total: grand,
+  itemCount: items.length,
+}, 'whatsapp_bot');
 
-        await clearConvState(phone, env);
+    await clearConvState(phone, env);
 
-        try {
-          const payLink = await createRazorpayLink(env, {
-            amount: grand, name: data.name, phone, orderId,
-            description: `KAAPAV Order ${orderId}`
-          });
-          await env.DB.prepare(`UPDATE orders SET payment_link = ? WHERE order_id = ?`).bind(payLink, orderId).run();
-          await sendWhatsAppText(env, phone,
-            `✅ *Order Placed!*\n\nOrder ID: *${orderId}*\n\n` +
-            `💳 *Pay here (valid 24 hrs):*\n${payLink}\n\n` +
-            `_Payment confirms your order & triggers shipment automatically_ 🚚`
-          );
-        } catch(e) {
-          await sendWhatsAppText(env, phone,
-            `✅ *Order Placed!*\n\nOrder ID: *${orderId}*\n\nWe'll send your payment link shortly! 💳`
-          );
-        }
-      } else {
-        await clearConvState(phone, env);
-        await sendWhatsAppText(env, phone, '❌ Order cancelled. Type *order karna hai* to start again! 💎');
-      }
-      break;
+    // Build item lines for owner message
+    const itemLines = items
+      .map(i => `• ${i.name} x${i.qty} — \u20B9${i.price * i.qty}`)
+      .join('\n');
+
+    // Owner WA — new order alert (before payment, so they know it's coming)
+    await sendWhatsAppText(env, env.OWNER_PHONE,
+      `🛒 *New Order Placed!*\n\n` +
+      `Order ID: *${orderId}*\n` +
+      `Customer: ${data.name} (${phone})\n` +
+      `Address: ${data.address}\n` +
+      `PIN: ${data.pincode}\n\n` +
+      `🛍️ *Items:*\n${itemLines}\n\n` +
+      `📦 Subtotal: \u20B9${total}\n` +
+      `🚚 Shipping: ${shipping === 0 ? 'FREE' : '\u20B9' + shipping}\n` +
+      `💰 *Total: \u20B9${grand}*\n\n` +
+      `⏳ Payment link sent. Awaiting payment...`
+    );
+
+    // Generate Razorpay payment link and send to customer
+    try {
+      const payLink = await createRazorpayLink(env, {
+        amount: grand,
+        name: data.name,
+        phone,
+        orderId,
+        description: `KAAPAV Order ${orderId}`
+      });
+
+      await env.DB.prepare(
+        `UPDATE orders SET payment_link = ? WHERE order_id = ?`
+      ).bind(payLink, orderId).run();
+
+      // Customer WA — order confirmed + payment link
+      await sendWhatsAppText(env, phone,
+        `💎 *Order Placed Successfully!*\n\n` +
+        `Order ID: *${orderId}*\n\n` +
+        `🛍️ *Items:*\n${itemLines}\n\n` +
+        `📦 Subtotal: \u20B9${total}\n` +
+        `🚚 Shipping: ${shipping === 0 ? 'FREE 🎉' : '\u20B9' + shipping}\n` +
+        `💰 *Total: \u20B9${grand}*\n\n` +
+        `💳 *Complete payment here (valid 24 hrs):*\n${payLink}\n\n` +
+        `_Your order ships once payment is confirmed_ 🚚\n\n` +
+        `💎 KAAPAV Fashion Jewellery`
+      );
+
+    } catch(e) {
+      console.error('Razorpay error:', e);
+      // Fallback — order saved, tell customer we'll send link
+      await sendWhatsAppText(env, phone,
+        `✅ *Order Placed!*\n\n` +
+        `Order ID: *${orderId}*\n\n` +
+        `We'll send your payment link shortly! 💳\n\n` +
+        `💎 KAAPAV Fashion Jewellery`
+      );
+    }
+
+  } else {
+    await clearConvState(phone, env);
+    await sendWhatsAppText(env, phone,
+      `❌ Order cancelled.\n\nType *order karna hai* anytime to start again! 💎`
+    );
+  }
+  break;
 
     default:
       await clearConvState(phone, env);
@@ -1928,173 +2152,192 @@ if (path === '/api/catalogue' && method === 'GET') {
 if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && method === 'POST') {
   const rawBody = await request.text();
   const sig = request.headers.get('x-razorpay-signature');
-  
-  // Verify signature
+
+  // Verify HMAC signature
   try {
     const key = await crypto.subtle.importKey(
       'raw', new TextEncoder().encode(env.RAZORPAY_KEY_SECRET),
       { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
     );
     const expectedSig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody));
-    const expectedHex = Array.from(new Uint8Array(expectedSig)).map(b => b.toString(16).padStart(2,'0')).join('');
+    const expectedHex = Array.from(new Uint8Array(expectedSig))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
     if (sig !== expectedHex) return new Response('Invalid signature', { status: 400 });
   } catch(e) { return new Response('Sig error', { status: 400 }); }
 
   const event = JSON.parse(rawBody);
   const eventType = event.event;
 
-  // Payment link paid
+  // ── payment_link.paid ─────────────────────────────────────────
+  // Fires when customer pays via WhatsApp bot or Catalogue payment link
   if (eventType === 'payment_link.paid') {
     const pl = event.payload.payment_link.entity;
     const orderId = pl.reference_id;
     const paymentId = event.payload.payment.entity.id;
     const amount = pl.amount / 100;
 
-    // Update order
     const order = await env.DB.prepare(
       `SELECT * FROM orders WHERE order_id = ?`
     ).bind(orderId).first();
-    
+
     if (!order) return jsonResponse({ status: 'ok' });
 
+    // Idempotent — skip if already paid
+    if (order.payment_status === 'paid') return jsonResponse({ status: 'ok' });
+
+    // Update order status
     await env.DB.prepare(`
       UPDATE orders SET
         payment_status = 'paid',
-        status = 'confirmed',
-        payment_id = ?,
-        updated_at = datetime('now')
+        status         = 'confirmed',
+        payment_id     = ?,
+        paid_at        = datetime('now'),
+        updated_at     = datetime('now')
       WHERE order_id = ?
     `).bind(paymentId, orderId).run();
+
+    await logOrderEvent(env, orderId, 'payment_confirmed', 'Payment confirmed via payment_link.paid webhook', {
+  paymentId,
+  amount,
+  source: order.source || 'whatsapp',
+}, 'razorpay_webhook');
 
     const phone = order.phone;
     const customerName = order.customer_name || 'Customer';
 
-    // Send WA confirmation
-    await sendWhatsAppText(env, phone,
-      `✅ *Payment Confirmed!*\n\n` +
-      `Order ID: *${orderId}*\n` +
-      `Amount Paid: ₹${amount}\n` +
-      `Payment ID: ${paymentId}\n\n` +
-      `📦 Your order is confirmed and will be shipped within 24 hours!\n\n` +
-      `We'll send your tracking details on WhatsApp once shipped. 🚚\n\n` +
-      `💎 Thank you for shopping with KAAPAV!`
-    );
-
-    // Auto-book Shiprocket
+    // Parse items for owner message
+    let itemLines = '';
     try {
       const items = JSON.parse(order.items || '[]');
-      const srData = await createShiprocketOrder(env, {
-        order: { orderNumber: orderId, total: order.total },
-        customer: {
-          name: customerName,
-          phone: phone,
-          address: order.shipping_address || '',
-          city: order.shipping_city || 'Delhi',
-          state: order.shipping_state || 'Delhi',
-          pincode: order.shipping_pincode || '110001',
-        },
-        items: items.map(i => ({ name: i.name, sku: i.sku, qty: i.qty, price: i.price }))
-      });
+      itemLines = items.length > 0
+        ? items.map(i => `• ${i.name} x${i.qty || 1} — \u20B9${i.price * (i.qty || 1)}`).join('\n')
+        : '• (items not available)';
+    } catch(e) { itemLines = '• (items not available)'; }
 
-      if (srData.order_id) {
-        await env.DB.prepare(`
-          UPDATE orders SET
-            shiprocket_order_id = ?,
-            status = 'processing',
-            updated_at = datetime('now')
-          WHERE order_id = ?
-        `).bind(String(srData.order_id), orderId).run();
+    // Customer WA — payment confirmed
+    await sendWhatsAppText(env, phone,
+      `✅ *Payment Confirmed!*\n\n` +
+      `Hi ${customerName.split(' ')[0]}! 🎉\n\n` +
+      `Order ID: *${orderId}*\n` +
+      `Amount Paid: \u20B9${amount}\n` +
+      `Payment ID: ${paymentId}\n\n` +
+      `📦 Your order is confirmed!\n` +
+      `We will pack & ship within *24 hours*.\n` +
+      `You will get your tracking details here on WhatsApp once shipped. 🚚\n\n` +
+      `Questions? Just message us here anytime 😊\n` +
+      `💎 KAAPAV Fashion Jewellery`
+    );
 
-        await sendWhatsAppText(env, phone,
-          `📦 *Order is being packed!*\n\n` +
-          `Order ID: *${orderId}*\n\n` +
-          `🚚 Estimated delivery: 2–4 working days\n` +
-          `We'll send tracking details once shipped!\n\n` +
-          `💎 KAAPAV Fashion Jewellery`
-        );
-      }
-    } catch(e) { console.error('Shiprocket error:', e); }
+    // Owner WA — payment received alert
+    await sendWhatsAppText(env, env.OWNER_PHONE,
+      `💰 *Payment Received!*\n\n` +
+      `Order: *${orderId}*\n` +
+      `Customer: ${customerName} (${phone})\n` +
+      `Amount: \u20B9${amount}\n` +
+      `Payment ID: ${paymentId}\n` +
+      `Source: ${order.source || 'whatsapp'}\n\n` +
+      `🛍️ *Items:*\n${itemLines}\n\n` +
+      `📦 Total: \u20B9${order.total}\n\n` +
+      `✅ Open app → Orders → Book Shiprocket.`
+    );
 
-    // Notify admin via FCM
+   
+    // FCM push to Flutter app
     ctx.waitUntil(sendFCMNotification(
       env, phone, customerName,
-      `💰 Payment received! Order ${orderId} — ₹${amount}`, 
+      `💰 Payment received! Order ${orderId} — \u20B9${amount}`,
       `pay_${paymentId}`
     ));
   }
 
-  // Direct payment paid (from Razorpay checkout on catalogue)
-if (eventType === 'payment.captured') {
-  const payment = event.payload.payment.entity;
-  const orderId = payment.description?.match(/KP-[A-Z0-9]+/)?.[0];
-  if (orderId) {
+  // ── payment.captured ──────────────────────────────────────────
+  // Fires when customer pays via Odoo website Razorpay checkout
+  if (eventType === 'payment.captured') {
+    const payment = event.payload.payment.entity;
+    const orderId = payment.notes?.order_id
+      || payment.description?.match(/KFJW-[0-9A-Z]+/)?.[0];
+
+    if (!orderId) return jsonResponse({ status: 'ok' });
+
     const order = await env.DB.prepare(
       `SELECT * FROM orders WHERE order_id = ?`
     ).bind(orderId).first();
 
+    if (!order) return jsonResponse({ status: 'ok' });
+
+    // Idempotent — skip if already paid
+    if (order.payment_status === 'paid') return jsonResponse({ status: 'ok' });
+
+    const amount = payment.amount / 100;
+
+    // Update order status
     await env.DB.prepare(`
-      UPDATE orders SET payment_status = 'paid', status = 'confirmed',
-        payment_id = ?, updated_at = datetime('now')
+      UPDATE orders SET
+        payment_status = 'paid',
+        status         = 'confirmed',
+        payment_id     = ?,
+        paid_at        = datetime('now'),
+        updated_at     = datetime('now')
       WHERE order_id = ?
     `).bind(payment.id, orderId).run();
+    
+    await logOrderEvent(env, orderId, 'payment_confirmed', 'Payment confirmed via payment.captured webhook', {
+  paymentId: payment.id,
+  amount,
+  source: order.source || 'website',
+}, 'razorpay_webhook');
 
-    if (order) {
-      const phone = order.phone;
-      const customerName = order.customer_name || 'Customer';
-      const amount = payment.amount / 100;
+    const phone = order.phone;
+    const customerName = order.customer_name || 'Customer';
 
-      // WA confirmation
-      await sendWhatsAppText(env, phone,
-        `✅ *Payment Confirmed!*\n\n` +
-        `Order ID: *${orderId}*\n` +
-        `Amount Paid: ₹${amount}\n\n` +
-        `📦 Your order is confirmed and will be shipped within 24 hours!\n` +
-        `We'll send tracking details on WhatsApp once shipped. 🚚\n\n` +
-        `💎 Thank you for shopping with KAAPAV!`
-      );
+    // Parse items for owner message
+    let itemLines = '';
+    try {
+      const items = JSON.parse(order.items || '[]');
+      itemLines = items.length > 0
+        ? items.map(i => `• ${i.name} x${i.qty || 1} — \u20B9${i.price * (i.qty || 1)}`).join('\n')
+        : '• (items not available)';
+    } catch(e) { itemLines = '• (items not available)'; }
 
-      // Auto-book Shiprocket
-      try {
-        const items = JSON.parse(order.items || '[]');
-        const srData = await createShiprocketOrder(env, {
-          order: { orderNumber: orderId, total: order.total },
-          customer: {
-            name: customerName,
-            phone: phone,
-            address: order.shipping_address || '',
-            city: order.shipping_city || 'Delhi',
-            state: order.shipping_state || 'Delhi',
-            pincode: order.shipping_pincode || '110001',
-          },
-          items: items.map(i => ({ name: i.name, sku: i.sku, qty: i.qty, price: i.price }))
-        });
-        if (srData.order_id) {
-          await env.DB.prepare(`
-            UPDATE orders SET shiprocket_order_id = ?, status = 'processing',
-              updated_at = datetime('now') WHERE order_id = ?
-          `).bind(String(srData.order_id), orderId).run();
-          await sendWhatsAppText(env, phone,
-            `📦 *Order is being packed!*\n\nOrder ID: *${orderId}*\n\n` +
-            `🚚 Estimated delivery: 2–4 working days\n` +
-            `Tracking details coming soon!\n\n💎 KAAPAV Fashion Jewellery`
-          );
-        }
-      } catch(e) { console.error('Shiprocket error:', e); }
+    // Customer WA — payment confirmed
+    await sendWhatsAppText(env, phone,
+      `✅ *Payment Confirmed!*\n\n` +
+      `Hi ${customerName.split(' ')[0]}! 🎉\n\n` +
+      `Order ID: *${orderId}*\n` +
+      `Amount Paid: \u20B9${amount}\n\n` +
+      `📦 Your order is confirmed!\n` +
+      `We will pack & ship within *24 hours*.\n` +
+      `You will get your tracking details here on WhatsApp once shipped. 🚚\n\n` +
+      `Questions? Just message us here anytime 😊\n` +
+      `💎 KAAPAV Fashion Jewellery`
+    );
 
-      // FCM push to admin
-      ctx.waitUntil(sendFCMNotification(
-        env, phone, customerName,
-        `💰 Payment received! Order ${orderId} — ₹${amount}`,
-        `pay_${payment.id}`
-      ));
-    }
+    // Owner WA — payment received alert
+    await sendWhatsAppText(env, env.OWNER_PHONE,
+      `💰 *Payment Received!*\n\n` +
+      `Order: *${orderId}*\n` +
+      `Customer: ${customerName} (${phone})\n` +
+      `Amount: \u20B9${amount}\n` +
+      `Payment ID: ${payment.id}\n` +
+      `Source: ${order.source || 'website'}\n\n` +
+      `🛍️ *Items:*\n${itemLines}\n\n` +
+      `📦 Total: \u20B9${order.total}\n\n` +
+      `✅ Open app → Orders → Book Shiprocket.`
+    );
+
+    // FCM push to Flutter app
+    ctx.waitUntil(sendFCMNotification(
+      env, phone, customerName,
+      `💰 Payment received! Order ${orderId} — \u20B9${amount}`,
+      `pay_${payment.id}`
+    ));
   }
-}
 
   return jsonResponse({ status: 'ok' });
 }
 
-    if (path === '/api/orders/catalogue' && method === 'POST') {
+ 
+  if (path === '/api/orders/catalogue' && method === 'POST') {
   const body = await request.json();
   const { name, phone, address, city, state, pincode, items, total } = body;
   if (!phone || !items?.length) return errorResponse('phone and items required');
@@ -2110,12 +2353,42 @@ if (eventType === 'payment.captured') {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unpaid', 'catalogue', datetime('now'), datetime('now'))
   `).bind(orderId, phone, name || phone, itemsJson, itemCount, total, shipping, grandTotal,
     name || '', address || '', city || '', state || '', pincode || '').run();
+
+  await logOrderEvent(env, orderId, 'order_created', 'Catalogue order created', {
+  phone,
+  customerName: name || phone,
+  total: grandTotal,
+  itemCount,
+}, 'catalogue');
+
   const itemsText = items.map(i => `• ${i.name} x${i.qty} — ₹${i.price * i.qty}`).join('\n');
+  
+  await logOrderEvent(env, orderId, 'order_created', 'Catalogue order created', {
+  phone,
+  customerName: name || phone,
+  total: grandTotal,
+  itemCount,
+}, 'catalogue');
+
   await sendWhatsAppText(env, phone,
-    `✅ *Order Received!*\n\nOrder ID: *${orderId}*\n\n${itemsText}\n\n` +
+    `💎 *KAAPAV Order Summary*\n\nOrder ID: *${orderId}*\n\n${itemsText}\n\n` +
     `Subtotal: ₹${total}\nShipping: ₹${shipping}\n*Total: ₹${grandTotal}*\n\n` +
-    `We'll send your payment link shortly! 💳`
+    `⏳ Complete payment to confirm your order.`
   );
+
+  // Owner WA — new catalogue order
+await sendWhatsAppText(env, env.OWNER_PHONE,
+  `🛒 *New Catalogue Order!*\n\n` +
+  `Order ID: *${orderId}*\n` +
+  `Customer: ${name || 'Customer'} (${phone})\n` +
+  `Address: ${address || '-'}, ${pincode || '-'}\n\n` +
+  `🛍️ *Items:*\n${itemsText}\n\n` +
+  `📦 Subtotal: \u20B9${total}\n` +
+  `🚚 Shipping: ${shipping === 0 ? 'FREE' : '\u20B9' + shipping}\n` +
+  `💰 *Total: \u20B9${grandTotal}*\n\n` +
+  `⏳ Payment link sent. Awaiting payment...`
+); 
+
   try {
     const payLink = await createRazorpayLink(env, {
       amount: grandTotal, name: name || 'Customer',
@@ -2127,6 +2400,39 @@ if (eventType === 'payment.captured') {
   return jsonResponse({ success: true, orderId, total: grandTotal });
 } 
 
+ 
+  if (path.match(/^\/api\/orders\/[^/]+\/events$/) && method === 'GET') {
+  try {
+    const orderId = decodeURIComponent(path.split('/')[3]);
+
+    const order = await env.DB.prepare(
+      `SELECT order_id FROM orders WHERE order_id = ?`
+    ).bind(orderId).first();
+
+    if (!order) return errorResponse('Order not found', 404);
+
+    let results = [];
+    try {
+      const query = await env.DB.prepare(`
+        SELECT order_id, event_type, event_source, message, meta_json, created_at
+        FROM order_events
+        WHERE order_id = ?
+        ORDER BY created_at DESC
+      `).bind(orderId).all();
+
+      results = query.results || [];
+    } catch (dbErr) {
+      console.error('Order events query error:', dbErr);
+      return jsonResponse({ success: true, events: [] });
+    }
+
+    return jsonResponse({ success: true, events: results });
+  } catch (e) {
+    console.error('Get order events error:', e);
+    return jsonResponse({ success: true, events: [] });
+  }
+}
+    
     if (path === '/api/orders/confirm' && method === 'POST') {
   const body = await request.json();
   const { orderId, paymentId, phone } = body;
@@ -2145,10 +2451,16 @@ if (eventType === 'payment.captured') {
       payment_id = ?, updated_at = datetime('now')
     WHERE order_id = ?
   `).bind(paymentId, orderId).run();
+   
+   await logOrderEvent(env, orderId, 'payment_confirmed', 'Payment confirmed manually from admin/app', {
+  paymentId,
+  amount: order.total,
+}, 'admin_manual');
 
   const customerName = order.customer_name || 'Customer';
   const amount = order.total;
 
+  
   // WA confirmation to customer
   await sendWhatsAppText(env, order.phone,
     `✅ *Payment Confirmed!*\n\n` +
@@ -2162,44 +2474,26 @@ if (eventType === 'payment.captured') {
     `Questions? Just message us here anytime.`
   );
 
+    // Owner WA — manual payment confirmation
+  await sendWhatsAppTextOnce(
+    env,
+    `owner_paid_manual:${orderId}`,
+    env.OWNER_PHONE,
+    `💰 *Payment Confirmed (Manual)*\n\n` +
+    `Order: *${orderId}*\n` +
+    `Customer: ${customerName} (${order.phone})\n` +
+    `Amount: ₹${amount}\n` +
+    `Payment ID: ${paymentId}\n\n` +
+    `✅ Order confirmed manually.\n` +
+    `➡️ Next: Press Shiprocket button in app.`
+  );
+
   // FCM push to admin Flutter app
   ctx.waitUntil(sendFCMNotification(
     env, order.phone, customerName,
     `💰 Payment done! Order ${orderId} — ₹${amount}`,
     `confirm_${paymentId}`
   ));
-
-  // Auto-book Shiprocket
-  ctx.waitUntil((async () => {
-    try {
-      const items = JSON.parse(order.items || '[]');
-      const srData = await createShiprocketOrder(env, {
-        order: { orderNumber: orderId, total: order.total },
-        customer: {
-          name: customerName,
-          phone: order.phone,
-          address: order.shipping_address || '',
-          city: order.shipping_city || 'Delhi',
-          state: order.shipping_state || 'Delhi',
-          pincode: order.shipping_pincode || '110001',
-        },
-        items: items.map(i => ({ name: i.name, sku: i.sku, qty: i.qty, price: i.price }))
-      });
-      if (srData.order_id) {
-        await env.DB.prepare(`
-          UPDATE orders SET shiprocket_order_id = ?, status = 'processing',
-            updated_at = datetime('now') WHERE order_id = ?
-        `).bind(String(srData.order_id), orderId).run();
-        await sendWhatsAppText(env, order.phone,
-          `📦 *Order is Being Packed!*\n\n` +
-          `Order ID: *${orderId}*\n\n` +
-          `🚚 Estimated delivery: *2–4 working days*\n` +
-          `We'll send your tracking link once shipped!\n\n` +
-          `💎 KAAPAV Fashion Jewellery`
-        );
-      }
-    } catch(e) { console.error('Shiprocket error:', e); }
-  })());
 
   return jsonResponse({ success: true, orderId, amount });
 }
@@ -2216,20 +2510,7 @@ if (eventType === 'payment.captured') {
       return jsonResponse({ success: true, token });
     }
 
-     // PUT /api/orders/:id/status
-if (method === 'PUT' && /^\/api\/orders\/[^/]+\/status$/.test(path)) {
-  const orderId = path.split('/')[3];
-  const { status } = body;
-  const allowed = ['pending','confirmed','processing','shipped','delivered','cancelled'];
-  if (!allowed.includes(status)) {
-    return json({ error: 'Invalid status' }, { status: 400 });
-  }
-  await env.DB.prepare(
-    `UPDATE orders SET status = ?, updated_at = datetime('now') WHERE order_id = ?`
-  ).bind(status, orderId).run();
-  return json({ success: true, orderId, status });
-}
-
+  
     // PUBLIC — no auth needed, must be BEFORE auth wall
     if (path === '/api/push/fcm-register' && method === 'POST') return handleRegisterFCM(request, env);
 
@@ -2254,6 +2535,657 @@ if (method === 'PUT' && /^\/api\/orders\/[^/]+\/status$/.test(path)) {
 
     if (path === '/api/messages/send' && method === 'POST') return handleSendMessage(request, env);
     if (path === '/api/orders' && method === 'GET') return handleGetOrders(request, env);
+     
+    // GET single order
+if (path.match(/^\/api\/orders\/[^/]+$/) && method === 'GET') {
+  const orderId = decodeURIComponent(path.split('/')[3]);
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+  if (!order) return errorResponse('Order not found', 404);
+  // Parse JSON fields
+  try { order.items = JSON.parse(order.items || '[]'); } catch {}
+  return jsonResponse({ success: true, order });
+}
+
+ // ── PATCH /api/orders/:id/details — admin edit customer/shipping details ──
+if (path.match(/^\/api\/orders\/[^/]+\/details$/) && method === 'PATCH') {
+  const orderId = path.split('/')[3];
+  const body = await request.json();
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) return errorResponse('Order not found', 404);
+
+  const customerName    = body.customerName ?? order.customer_name ?? '';
+  const phone           = body.phone ?? order.phone ?? '';
+  const shippingName    = body.shippingName ?? order.shipping_name ?? customerName;
+  const shippingAddress = body.shippingAddress ?? order.shipping_address ?? '';
+  const shippingCity    = body.shippingCity ?? order.shipping_city ?? '';
+  const shippingState   = body.shippingState ?? order.shipping_state ?? '';
+  const shippingPincode = body.shippingPincode ?? order.shipping_pincode ?? '';
+
+  await env.DB.prepare(`
+    UPDATE orders SET
+      customer_name = ?,
+      phone = ?,
+      shipping_name = ?,
+      shipping_address = ?,
+      shipping_city = ?,
+      shipping_state = ?,
+      shipping_pincode = ?,
+      updated_at = datetime('now')
+    WHERE order_id = ?
+  `).bind(
+    customerName,
+    phone,
+    shippingName,
+    shippingAddress,
+    shippingCity,
+    shippingState,
+    shippingPincode,
+    orderId
+  ).run();
+
+  await logOrderEvent(
+    env,
+    orderId,
+    'details_updated',
+    'Order customer/shipping details updated by admin',
+    {
+      customerName,
+      phone,
+      shippingName,
+      shippingAddress,
+      shippingCity,
+      shippingState,
+      shippingPincode,
+    },
+    'admin'
+  );
+
+  return jsonResponse({
+    success: true,
+    orderId,
+    details: {
+      customerName,
+      phone,
+      shippingName,
+      shippingAddress,
+      shippingCity,
+      shippingState,
+      shippingPincode,
+    }
+  });
+}
+
+// ── PATCH /api/orders/:id/payment — admin edit payment info ──
+if (path.match(/^\/api\/orders\/[^/]+\/payment$/) && method === 'PATCH') {
+  const orderId = path.split('/')[3];
+  const body = await request.json();
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) return errorResponse('Order not found', 404);
+
+  const allowedPaymentStatuses = ['paid', 'unpaid', 'refunded'];
+  const paymentStatus = (body.paymentStatus ?? order.payment_status ?? 'unpaid').toLowerCase();
+  const paymentId = body.paymentId ?? order.payment_id ?? '';
+
+  if (!allowedPaymentStatuses.includes(paymentStatus)) {
+    return errorResponse('Invalid paymentStatus', 400);
+  }
+
+  let nextOrderStatus = order.status;
+
+  if (paymentStatus === 'paid' && (order.status === 'pending' || order.status === 'cancelled')) {
+    nextOrderStatus = 'confirmed';
+  }
+  if (paymentStatus === 'unpaid' && order.status === 'confirmed') {
+    nextOrderStatus = 'pending';
+  }
+
+  await env.DB.prepare(`
+    UPDATE orders SET
+      payment_status = ?,
+      payment_id = ?,
+      status = ?,
+      paid_at = CASE WHEN ? = 'paid' THEN COALESCE(paid_at, datetime('now')) ELSE paid_at END,
+      updated_at = datetime('now')
+    WHERE order_id = ?
+  `).bind(
+    paymentStatus,
+    paymentId,
+    nextOrderStatus,
+    paymentStatus,
+    orderId
+  ).run();
+
+  await logOrderEvent(
+    env,
+    orderId,
+    'payment_updated',
+    'Order payment details updated by admin',
+    {
+      paymentStatus,
+      paymentId,
+      orderStatus: nextOrderStatus,
+    },
+    'admin'
+  );
+
+  return jsonResponse({
+    success: true,
+    orderId,
+    paymentStatus,
+    paymentId,
+    status: nextOrderStatus,
+  });
+}
+
+// ── PATCH /api/orders/:id/cancel — admin cancel with reason ──
+if (path.match(/^\/api\/orders\/[^/]+\/cancel$/) && method === 'PATCH') {
+  const orderId = path.split('/')[3];
+  const body = await request.json();
+  const reason = body.reason || 'Cancelled by admin';
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) return errorResponse('Order not found', 404);
+
+  await env.DB.prepare(`
+    UPDATE orders SET
+      status = 'cancelled',
+      cancellation_reason = ?,
+      cancelled_at = datetime('now'),
+      updated_at = datetime('now')
+    WHERE order_id = ?
+  `).bind(reason, orderId).run();
+
+  await logOrderEvent(
+    env,
+    orderId,
+    'order_cancelled',
+    'Order cancelled by admin',
+    { reason },
+    'admin'
+  );
+
+  return jsonResponse({
+    success: true,
+    orderId,
+    status: 'cancelled',
+    reason,
+  });
+}
+
+
+
+// PUT order status (fixed — moved here after auth, uses proper body read)
+if (path.match(/^\/api\/orders\/[^/]+\/status$/) && method === 'PUT') {
+  const orderId = path.split('/')[3];
+  const bodyData = await request.json();
+  const { status } = bodyData;
+  const allowed = ['pending','confirmed','processing','shipped','delivered','cancelled'];
+  if (!allowed.includes(status)) return errorResponse('Invalid status', 400);
+  await env.DB.prepare(
+    `UPDATE orders SET status = ?, updated_at = datetime('now') WHERE order_id = ?`
+  ).bind(status, orderId).run();
+  return jsonResponse({ success: true, orderId, status });
+}
+
+// POST manual order (from Flutter admin app — Issue 4)
+if (path === '/api/orders/manual' && method === 'POST') {
+  const b = await request.json();
+  const { name, phone, address, city, state: st, pincode, notes, items, email, source } = b;
+  if (!phone || !name) return errorResponse('name and phone required');
+
+  const itemsArr = Array.isArray(items) && items.length > 0 ? items : [];
+  const subtotal = itemsArr.length > 0
+    ? itemsArr.reduce((s, i) => s + ((i.price || 0) * (i.qty || 1)), 0)
+    : (parseFloat(b.total) || 0);
+  const shipping = subtotal >= 498 ? 0 : 60;
+  const grandTotal = subtotal + shipping;
+  const orderId = await generateOrderId(env);
+
+  await env.DB.prepare(`
+    INSERT INTO orders (
+      order_id, phone, customer_name, items, item_count,
+      subtotal, shipping_cost, total,
+      shipping_name, shipping_address, shipping_city, shipping_state, shipping_pincode,
+      customer_notes, status, payment_status, source, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unpaid', ?, datetime('now'), datetime('now'))
+  `).bind(
+    orderId, phone, name,
+    JSON.stringify(itemsArr),
+    itemsArr.length || 1,
+    subtotal, shipping, grandTotal,
+    name, address || '', city || '', st || '', pincode || '',
+    notes || '',
+    source || 'manual'
+  ).run();
+
+  // Upsert customer
+  await env.DB.prepare(`
+    INSERT INTO customers (phone, name, first_seen, last_seen, updated_at)
+    VALUES (?, ?, datetime('now'), datetime('now'), datetime('now'))
+    ON CONFLICT(phone) DO UPDATE SET
+      name = excluded.name, last_seen = datetime('now'), updated_at = datetime('now')
+  `).bind(phone, name).run();
+
+  return jsonResponse({ success: true, orderId, total: grandTotal });
+}
+
+// POST order notify — send WA message for order/shipping/delivery
+if (path.match(/^\/api\/orders\/[^/]+\/send-notification$/) && method === 'POST') {
+  const orderId = path.split('/')[3];
+  const { type } = await request.json();
+  const order = await env.DB.prepare(`SELECT * FROM orders WHERE order_id = ?`).bind(orderId).first();
+  if (!order) return errorResponse('Order not found', 404);
+  const name = order.customer_name || 'Customer';
+  const msgs = {
+    confirmed: `✅ *Order Confirmed!*\n\nHi ${name}! Your order *${orderId}* is confirmed.\n\n📦 We'll pack & ship within 24 hours.\n💎 KAAPAV Fashion Jewellery`,
+    shipped:   `🚚 *Your Order is Shipped!*\n\nHi ${name}! Order *${orderId}* is on its way!\n\nTracking: ${order.tracking_id || 'Details coming soon'}\n\nDelivery in 2–4 working days. 💎`,
+    delivered: `📦 *Order Delivered!*\n\nHi ${name}! Hope you love your KAAPAV jewellery! ✨\n\nOrder: *${orderId}*\n\nPlease share your unboxing! 💎`,
+  };
+  const msg = msgs[type];
+  if (!msg) return errorResponse('Invalid type — use confirmed/shipped/delivered');
+  await sendWhatsAppText(env, order.phone, msg);
+  return jsonResponse({ success: true });
+}
+    // PATCH /api/orders/:id/notes
+if (path.match(/^\/api\/orders\/[^/]+\/notes$/) && method === 'PATCH') {
+  const orderId = path.split('/')[3];
+  const { notes } = await request.json();
+  await env.DB.prepare(
+    `UPDATE orders SET internal_notes = ?, updated_at = datetime('now') WHERE order_id = ?`
+  ).bind(notes || '', orderId).run();
+  return jsonResponse({ success: true });
+}
+
+// ── POST /api/orders/:id/ship — Book Shiprocket + notify customer + owner ──
+if (path.match(/^\/api\/orders\/[^/]+\/ship$/) && method === 'POST') {
+  const orderId = path.split('/')[3];
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) return errorResponse('Order not found', 404);
+
+  // Guard: only confirmed + paid orders can be shipped
+  if (order.payment_status !== 'paid') {
+    return errorResponse('Order is not paid yet', 400);
+  }
+  if (order.status === 'shipped' || order.status === 'delivered') {
+    return errorResponse('Order already shipped', 400);
+  }
+
+  // Parse items
+  let items = [];
+  try { items = JSON.parse(order.items || '[]'); } catch(e) {}
+
+  const customerName = order.customer_name || 'Customer';
+  const phone        = order.phone;
+
+  // Book Shiprocket
+  let srOrderId = null;
+  let srError   = null;
+
+  try {
+    const srData = await createShiprocketOrder(env, {
+      order: {
+        orderNumber: orderId,
+        total: order.total,
+      },
+      customer: {
+        name:    customerName,
+        phone:   phone,
+        address: order.shipping_address || '',
+        city:    order.shipping_city    || 'Delhi',
+        state:   order.shipping_state   || 'Delhi',
+        pincode: order.shipping_pincode || '110001',
+      },
+      items: items.map(i => ({
+        name:  i.name,
+        sku:   i.sku,
+        qty:   i.qty   || 1,
+        price: i.price || 0,
+      })),
+    });
+
+    if (srData.order_id) {
+      srOrderId = String(srData.order_id);
+
+      // Update order in D1
+      await env.DB.prepare(`
+        UPDATE orders SET
+          shiprocket_order_id = ?,
+          status              = 'processing',
+          updated_at          = datetime('now')
+        WHERE order_id = ?
+      `).bind(srOrderId, orderId).run();
+
+      await logOrderEvent(env, orderId, 'shiprocket_booked', 'Shiprocket booked successfully', {
+  shiprocketOrderId: srOrderId,
+}, 'admin');
+
+      // Build item lines for messages
+      const itemLines = items.length > 0
+        ? items.map(i =>
+            `\u2022 ${i.name} \u00d7${i.qty || 1} \u2014 \u20B9${(i.price || 0) * (i.qty || 1)}`
+          ).join('\n')
+        : '\u2022 (items not available)';
+
+      // Customer WA \u2014 order being packed
+      await sendWhatsAppText(env, phone,
+        `\ud83d\udce6 *Your Order is Being Packed!*\n\n` +
+        `Hi ${customerName.split(' ')[0]}! \ud83c\udf89\n\n` +
+        `Order ID: *${orderId}*\n\n` +
+        `\ud83d\udee0\ufe0f *Items being packed:*\n${itemLines}\n\n` +
+        `\u23f0 Shipping within *24 hours*\n` +
+        `\ud83de\ude9a Delivery in *2\u20134 working days*\n\n` +
+        `You will receive your tracking details here on WhatsApp once shipped! \ud83d\udccd\n\n` +
+        `\ud83d\udcac Questions? Just message us anytime \ud83d\ude0a\n` +
+        `\ud83d\udca0 KAAPAV Fashion Jewellery`
+      );
+
+      // Owner WA \u2014 Shiprocket booked confirmation
+      await sendWhatsAppText(env, env.OWNER_PHONE,
+        `\u2705 *Shiprocket Order Created!*\n\n` +
+        `Order: *${orderId}*\n` +
+        `Shiprocket ID: *${srOrderId}*\n` +
+        `Customer: ${customerName} (${phone})\n` +
+        `Amount: \u20B9${order.total}\n\n` +
+        `\ud83d\udce6 *Items:*\n${itemLines}\n\n` +
+        `\ud83d\udccd Address: ${order.shipping_address || '-'}, ${order.shipping_city || '-'} \u2014 ${order.shipping_pincode || '-'}\n\n` +
+        `\u27a1\ufe0f Next: Open Shiprocket dashboard \u2192 assign AWB \u2192 press AWB button in app.`
+      );
+
+      return jsonResponse({
+        success:       true,
+        shiprocketOrderId: srOrderId,
+        message:       'Shiprocket order created successfully',
+      });
+
+    } else {
+      // Shiprocket returned no order_id — log the error
+      srError = srData.message || srData.error || JSON.stringify(srData);
+console.error('Shiprocket no order_id:', srError);
+
+await notifyOwnerFailure(env, 'Shiprocket Booking Failed', [
+  `Order: *${orderId}*`,
+  `Customer: ${customerName} (${phone})`,
+  `Error: ${srError}`,
+]);
+
+return errorResponse(`Shiprocket booking failed: ${srError}`, 502);
+    }
+
+  } catch(e) {
+  console.error('Shiprocket ship error:', e);
+  
+
+  await notifyOwnerFailure(env, 'Shiprocket Error', [
+    `Order: *${orderId}*`,
+    `Customer: ${customerName} (${phone})`,
+    `Error: ${e.message}`,
+  ]);
+
+  return errorResponse(`Shiprocket error: ${e.message}`, 500);
+}
+}
+
+    // ── PUT /api/orders/:id/awb — save AWB + send tracking WA ──
+if (path.match(/^\/api\/orders\/[^/]+\/awb$/) && method === 'PUT') {
+  const orderId = path.split('/')[3];
+  const { awb, courier } = await request.json();
+  if (!awb) return errorResponse('awb required');
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+  if (!order) return errorResponse('Order not found', 404);
+
+  await env.DB.prepare(`
+    UPDATE orders SET
+      awb_number = ?, courier = ?,
+      tracking_url = ?,
+      status = 'shipped', shipped_at = datetime('now'),
+      updated_at = datetime('now')
+    WHERE order_id = ?
+  `).bind(
+    awb,
+    courier || 'Shiprocket',
+    `https://www.shiprocket.in/shipment-tracking/?id=${awb}`,
+    orderId
+  ).run();
+
+  await logOrderEvent(env, orderId, 'awb_assigned', 'AWB assigned and customer notified', {
+  awb,
+  courier: courier || 'Shiprocket',
+}, 'admin');
+
+  const name = order.customer_name || 'Customer';
+
+  // Customer WA with tracking
+  await sendWhatsAppText(env, order.phone,
+    `🚚 *Your Order is Shipped!*\n\n` +
+    `Hi ${name}! 🎉\n\n` +
+    `Order ID: *${orderId}*\n` +
+    `AWB: *${awb}*\n` +
+    `Courier: ${courier || 'Shiprocket'}\n\n` +
+    `📍 *Track your order:*\n` +
+    `https://www.shiprocket.in/shipment-tracking/?id=${awb}\n\n` +
+    `Estimated delivery: *2–4 working days*\n\n` +
+    `💎 KAAPAV Fashion Jewellery`
+  );
+
+  // Owner WA
+  await sendWhatsAppText(env, env.OWNER_PHONE,
+    `🚚 *AWB Updated*\n\n` +
+    `Order: *${orderId}*\n` +
+    `Customer: ${name} (${order.phone})\n` +
+    `AWB: *${awb}*\n\n` +
+    `✅ Customer notified on WhatsApp.`
+  );
+
+  return jsonResponse({ success: true });
+}
+
+
+// ── POST /api/orders/:id/payment-link — regenerate Razorpay link ──
+if (path.match(/^\/api\/orders\/[^/]+\/payment-link$/) && method === 'POST') {
+  const orderId = path.split('/')[3];
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) return errorResponse('Order not found', 404);
+
+  try {
+    const cleanPhone = String(order.phone || '').replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      return errorResponse('Invalid customer phone number', 400);
+    }
+
+    const amount = Number(order.total || 0);
+    if (!amount || amount <= 0) {
+      return errorResponse('Invalid order amount', 400);
+    }
+
+    const payLink = await createRazorpayLink(env, {
+      amount,
+      name: order.customer_name || 'Customer',
+      phone: cleanPhone,
+      orderId,
+      description: `KAAPAV Order ${orderId}`
+    });
+
+    await env.DB.prepare(`
+      UPDATE orders SET payment_link = ?, updated_at = datetime('now')
+      WHERE order_id = ?
+    `).bind(payLink, orderId).run();
+
+    await logOrderEvent(
+      env,
+      orderId,
+      'payment_link_generated',
+      'Payment link generated and sent to customer',
+      { paymentLink: payLink },
+      'admin'
+    );
+
+    // Send to customer
+    await sendWhatsAppText(env, order.phone,
+      `💳 *Payment Link*\n\n` +
+      `Hi ${order.customer_name || 'Customer'}!\n\n` +
+      `Order ID: *${orderId}*\n` +
+      `Amount: ₹${order.total}\n\n` +
+      `👉 Pay here (valid 24 hrs):\n${payLink}\n\n` +
+      `💎 KAAPAV Fashion Jewellery`
+    );
+
+    return jsonResponse({ success: true, paymentLink: payLink });
+
+  } catch (e) {
+    console.error('Payment link generation error:', e);
+
+    await notifyOwnerFailure(env, 'Payment Link Generation Failed', [
+      `Order: *${orderId}*`,
+      `Customer: ${order.customer_name || 'Customer'} (${order.phone || '-'})`,
+      `Amount: ₹${order.total || 0}`,
+      `Error: ${e.message}`,
+    ]);
+
+    return errorResponse('Failed to generate link: ' + e.message, 500);
+  }
+}
+
+// ── POST /api/orders/:id/return — mark return requested ──
+if (path.match(/^\/api\/orders\/[^/]+\/return$/) && method === 'POST') {
+  const orderId = path.split('/')[3];
+  const { reason } = await request.json();
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+  if (!order) return errorResponse('Order not found', 404);
+
+  await env.DB.prepare(`
+    UPDATE orders SET
+      return_requested = 1,
+      return_reason = ?,
+      return_requested_at = datetime('now'),
+      status = 'cancelled',
+      updated_at = datetime('now')
+    WHERE order_id = ?
+  `).bind(reason || 'Return requested', orderId).run();
+
+  await logOrderEvent(env, orderId, 'return_requested', 'Order-level return requested', {
+  reason: reason || 'Return requested',
+}, 'customer');
+
+  const name = order.customer_name || 'Customer';
+
+  // Customer WA
+  await sendWhatsAppText(env, order.phone,
+    `🔄 *Return Request Received*\n\n` +
+    `Hi ${name}!\n\n` +
+    `Order ID: *${orderId}*\n` +
+    `Reason: ${reason || 'Return requested'}\n\n` +
+    `📋 *Next steps:*\n` +
+    `1. Record unboxing video (mandatory)\n` +
+    `2. Keep item unused & in original packaging\n` +
+    `3. We'll arrange reverse pickup within 24 hrs\n\n` +
+    `⚠️ ₹60/- reverse shipping will be deducted\n` +
+    `💰 Refund in 5–7 working days after QC\n\n` +
+    `Questions? Just message us here 😊\n` +
+    `💎 KAAPAV Fashion Jewellery`
+  );
+
+  // Owner WA
+  await sendWhatsAppText(env, env.OWNER_PHONE,
+    `🔄 *Return Requested!*\n\n` +
+    `Order: *${orderId}*\n` +
+    `Customer: ${name} (${order.phone})\n` +
+    `Amount: ₹${order.total}\n` +
+    `Reason: ${reason || 'Not specified'}\n\n` +
+    `⚠️ Action needed: Arrange reverse pickup.`
+  );
+
+  return jsonResponse({ success: true });
+}
+
+
+if (path.match(/^\/api\/orders\/[^/]+\/item-return$/) && method === 'POST') {
+  const orderId = path.split('/')[3];
+  const { sku, reason } = await request.json();
+
+  if (!sku) return errorResponse('sku required');
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) return errorResponse('Order not found', 404);
+
+  let items = [];
+  try { items = JSON.parse(order.items || '[]'); } catch(e) {}
+
+  const item = items.find(i => i.sku === sku);
+  if (!item) return errorResponse('Item not found in order', 404);
+
+  await env.DB.prepare(`
+    INSERT INTO return_requests (
+      order_id, phone, sku, item_name, reason, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, 'requested', datetime('now'), datetime('now'))
+  `).bind(
+    orderId,
+    order.phone,
+    sku,
+    item.name || '',
+    reason || 'Item return requested'
+  ).run();
+
+  await sendWhatsAppText(env, order.phone,
+    `🔄 *Item Return Request Received*\n\n` +
+    `Order ID: *${orderId}*\n` +
+    `Item: *${item.name || sku}*\n` +
+    `Reason: ${reason || 'Not specified'}\n\n` +
+    `Our team will review and contact you shortly.\n\n` +
+    `💎 KAAPAV Fashion Jewellery`
+  );
+
+  await sendWhatsAppText(env, env.OWNER_PHONE,
+    `🔄 *Item Return Requested*\n\n` +
+    `Order: *${orderId}*\n` +
+    `Customer: ${order.customer_name || 'Customer'} (${order.phone})\n` +
+    `Item: *${item.name || sku}*\n` +
+    `Reason: ${reason || 'Not specified'}`
+  );
+
+  return jsonResponse({ success: true });
+}
+
+// ── GET /api/customers/:phone/orders — customer order history ──
+if (path.match(/^\/api\/customers\/[^/]+\/orders$/) && method === 'GET') {
+  const phone = decodeURIComponent(path.split('/')[3]);
+  const { results } = await env.DB.prepare(`
+    SELECT order_id, status, payment_status, total, items,
+           created_at, shipping_pincode
+    FROM orders WHERE phone = ?
+    ORDER BY created_at DESC LIMIT 20
+  `).bind(phone).all();
+  return jsonResponse({ success: true, orders: results });
+}
+
     if (path === '/api/products' && method === 'GET') return handleGetProducts(request, env);
     if (path === '/api/products/send' && method === 'POST') return handleSendProduct(request, env);
     if (path === '/api/products' && method === 'POST') return handleCreateProduct(request, env);
@@ -2338,6 +3270,124 @@ if (method === 'PUT' && /^\/api\/orders\/[^/]+\/status$/.test(path)) {
   },
 
   async scheduled(event, env, ctx) {
-    console.log('Cron running:', new Date().toISOString());
+  // ── Abandoned payment reminder (30 min after order, unpaid) ─
+try {
+  const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const fortyMinAgo = new Date(Date.now() - 40 * 60 * 1000).toISOString();
+
+  const { results: earlyUnpaidOrders } = await env.DB.prepare(`
+    SELECT * FROM orders
+    WHERE payment_status = 'unpaid'
+    AND status = 'pending'
+    AND payment_link IS NOT NULL
+    AND created_at BETWEEN ? AND ?
+    LIMIT 10
+  `).bind(fortyMinAgo, thirtyMinAgo).all();
+
+  for (const order of earlyUnpaidOrders) {
+    await sendWhatsAppText(env, order.phone,
+      `💎 *Complete Your KAAPAV Order*\n\n` +
+      `Hi ${order.customer_name || 'there'}! 😊\n\n` +
+      `Order ID: *${order.order_id}*\n` +
+      `Amount: ₹${order.total}\n\n` +
+      `💳 Payment link:\n${order.payment_link}\n\n` +
+      `Your jewellery is waiting for you ✨`
+    );
   }
+} catch(e) {
+  console.error('30-min payment reminder error:', e);
+}
+    console.log('Cron running:', new Date().toISOString());
+
+    const now = new Date();
+    const hourIST = (now.getUTCHours() + 5) % 24;
+    const minuteIST = (now.getUTCMinutes() + 30) % 60;
+
+    // ── Daily summary at 9pm IST ──────────────────────────────
+    if (hourIST === 21 && minuteIST < 5) {
+      try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayStr = today.toISOString().slice(0, 10);
+
+        const [todayOrders, pendingOrders, revenue, totalOrders] = await Promise.all([
+          env.DB.prepare(`SELECT COUNT(*) as count FROM orders WHERE date(created_at) = ?`).bind(todayStr).first(),
+          env.DB.prepare(`SELECT COUNT(*) as count FROM orders WHERE status = 'pending'`).first(),
+          env.DB.prepare(`SELECT SUM(total) as total FROM orders WHERE payment_status = 'paid' AND date(created_at) = ?`).bind(todayStr).first(),
+          env.DB.prepare(`SELECT COUNT(*) as count FROM orders`).first(),
+        ]);
+
+        await sendWhatsAppText(env, env.OWNER_PHONE,
+          `📊 *KAAPAV Daily Summary*\n` +
+          `📅 ${todayStr}\n\n` +
+          `🛍️ Today's Orders: *${todayOrders?.count || 0}*\n` +
+          `💰 Today's Revenue: *₹${revenue?.total || 0}*\n` +
+          `⏳ Pending Orders: *${pendingOrders?.count || 0}*\n` +
+          `📦 Total Orders Ever: *${totalOrders?.count || 0}*\n\n` +
+          `💎 KAAPAV Fashion Jewellery`
+        );
+      } catch(e) { console.error('Daily summary error:', e); }
+    }
+
+    // ── Post-delivery review request (3 days after delivered) ─
+    try {
+      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+      const oneDayAgo = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString();
+      const { results: deliveredOrders } = await env.DB.prepare(`
+        SELECT * FROM orders
+        WHERE status = 'delivered'
+        AND review_sent = 0
+        AND delivered_at BETWEEN ? AND ?
+        LIMIT 10
+      `).bind(oneDayAgo, threeDaysAgo).all();
+
+      for (const order of deliveredOrders) {
+        await sendWhatsAppText(env, order.phone,
+          `💎 *How was your KAAPAV order?*\n\n` +
+          `Hi ${order.customer_name || 'there'}! 😊\n\n` +
+          `We hope you love your jewellery! ✨\n\n` +
+          `🌟 *We'd love your feedback:*\n` +
+          `📸 Share your unboxing on Instagram\n` +
+          `🏷️ Tag us: @kaapavfashionjewellery\n\n` +
+          `⭐ Your review helps us grow!\n\n` +
+          `👉 ${env.INSTAGRAM_URL}\n\n` +
+          `💎 Thank you for choosing KAAPAV!`
+        );
+        await env.DB.prepare(
+          `UPDATE orders SET review_sent = 1, updated_at = datetime('now') WHERE order_id = ?`
+        ).bind(order.order_id).run();
+      }
+    } catch(e) { console.error('Review request error:', e); }
+
+    // ── Abandoned payment recovery (2 hrs after order, unpaid) ─
+    try {
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+      const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+      const { results: unpaidOrders } = await env.DB.prepare(`
+        SELECT * FROM orders
+        WHERE payment_status = 'unpaid'
+        AND status = 'pending'
+        AND payment_link IS NOT NULL
+        AND created_at BETWEEN ? AND ?
+        LIMIT 10
+      `).bind(threeHoursAgo, twoHoursAgo).all();
+
+      for (const order of unpaidOrders) {
+        // Check if link still valid (created < 22hrs ago)
+        await sendWhatsAppText(env, order.phone,
+          `⏰ *Complete your KAAPAV order!*\n\n` +
+          `Hi ${order.customer_name || 'there'}! 😊\n\n` +
+          `You left something behind! 💎\n\n` +
+          `Order ID: *${order.order_id}*\n` +
+          `Amount: ₹${order.total}\n\n` +
+          `💳 *Complete payment here:*\n` +
+          `${order.payment_link}\n\n` +
+          `⚠️ Link expires in a few hours!\n\n` +
+          `Questions? Just reply here 😊\n` +
+          `💎 KAAPAV Fashion Jewellery`
+        );
+      }
+    } catch(e) { console.error('Cart recovery error:', e); }
+  }
+  
 };

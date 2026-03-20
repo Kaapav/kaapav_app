@@ -72,6 +72,16 @@ CREATE TABLE IF NOT EXISTS chats (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS order_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  event_source TEXT,
+  message TEXT,
+  meta_json TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   message_id TEXT UNIQUE,
@@ -356,6 +366,30 @@ CREATE TABLE IF NOT EXISTS labels (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS notification_queue (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel TEXT NOT NULL,
+  recipient TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',
+  attempt_count INTEGER DEFAULT 0,
+  last_error TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS return_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  sku TEXT,
+  item_name TEXT,
+  reason TEXT,
+  status TEXT DEFAULT 'requested',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS analytics (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_type TEXT,
@@ -387,6 +421,18 @@ CREATE TABLE IF NOT EXISTS notification_log (
   message TEXT,
   status TEXT DEFAULT 'sent',
   sent_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS return_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  sku TEXT,
+  item_name TEXT,
+  reason TEXT,
+  status TEXT DEFAULT 'requested',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
 );
 
 -- ═══════════════════════════════════════════════
@@ -1196,3 +1242,10 @@ UPDATE quick_replies SET group_name = 'brand'      WHERE shortcut IN ('faq_about
 ALTER TABLE products ADD COLUMN website_link TEXT;
 ALTER TABLE products ADD COLUMN material TEXT;
 ALTER TABLE products ADD COLUMN tags TEXT DEFAULT '[]';
+ALTER TABLE orders ADD COLUMN shiprocket_order_id TEXT;
+ALTER TABLE orders ADD COLUMN awb_code TEXT;
+ALTER TABLE orders ADD COLUMN return_requested INTEGER DEFAULT 0;
+ALTER TABLE orders ADD COLUMN return_reason TEXT;
+ALTER TABLE orders ADD COLUMN return_requested_at TEXT;
+ALTER TABLE orders ADD COLUMN review_sent INTEGER DEFAULT 0;
+ALTER TABLE products ADD COLUMN reserved_stock INTEGER DEFAULT 0;

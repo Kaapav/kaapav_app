@@ -1118,26 +1118,35 @@ class _ChatProductPickerState extends State<_ChatProductPicker> {
   void _selectCat(String cat) { setState(() => _cat = cat); _filter(); }
 
   Future<void> _send(Product p) async {
-    setState(() => _sending = p.sku);
-    try {
-      await ApiClient.instance.post('/api/products/send', data: {'sku': p.sku, 'phone': widget.phone});
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+  setState(() => _sending = p.sku);
+  try {
+    await ApiClient.instance.post(
+      '/api/products/send',
+      data: {'sku': p.sku, 'phone': widget.phone},
+    );
+    if (mounted) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
           content: Text('✅ Sent ${p.name}'),
           backgroundColor: const Color(0xFF10B981),
           behavior: SnackBarBehavior.floating,
-        ));
-      }
-    } catch (e) {
-      setState(() => _sending = null);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('❌ Failed: $e'),
-        backgroundColor: const Color(0xFFEF4444),
-        behavior: SnackBarBehavior.floating,
-      )); 
+        ),
+      );
+    }
+  } catch (e) {
+    setState(() => _sending = null);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Failed: $e'),
+          backgroundColor: const Color(0xFFEF4444),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
+}
 
   @override
   Widget build(BuildContext context) {

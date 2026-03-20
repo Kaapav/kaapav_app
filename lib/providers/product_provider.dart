@@ -126,50 +126,110 @@ class ProductNotifier extends StateNotifier<ProductListState> {
     }
   }
 
-  Future<bool> createProduct(Map<String, dynamic> data) async {
+    Future<bool> createProduct(Map<String, dynamic> data) async {
     try {
-      await _productApi.createProduct(data);
+      final response = await _productApi.createProduct(data);
+      final body = response.data;
+
+      final success = body['success'] == true;
+
+      if (!success) {
+        state = state.copyWith(
+          error: body is Map<String, dynamic>
+              ? (body['error']?.toString() ??
+                  body['message']?.toString() ??
+                  'Failed to create product')
+              : 'Failed to create product',
+        );
+        return false;
+      }
+
       await loadProducts(refresh: true);
       return true;
     } catch (e) {
-      state = state.copyWith(error: e.toString());
+      state = state.copyWith(error: 'Failed to create product');
       return false;
     }
   }
 
   // Mirrors updateProduct
-  Future<bool> updateProduct(String sku, Map<String, dynamic> data) async {
+      Future<bool> updateProduct(String sku, Map<String, dynamic> data) async {
     try {
-      await _productApi.updateProduct(sku, data);
+      final response = await _productApi.updateProduct(sku, data);
+      final body = response.data;
+
+      if (body is Map<String, dynamic>) {
+        final ok = body['success'] == true || !body.containsKey('success');
+        if (!ok) {
+          state = state.copyWith(
+            error: body['error']?.toString() ??
+                body['message']?.toString() ??
+                'Failed to update product',
+          );
+          return false;
+        }
+      }
+
       await loadProducts(refresh: true);
       return true;
     } catch (e) {
-      state = state.copyWith(error: e.toString());
+      state = state.copyWith(error: 'Failed to update product');
       return false;
     }
   }
 
-  Future<bool> updateStock(String sku, int stock) async {
+    Future<bool> updateStock(String sku, int stock) async {
     try {
-      await _productApi.updateStock(sku, stock);
+      final response = await _productApi.updateStock(sku, stock);
+      final body = response.data;
+
+      final success = body['success'] == true;
+
+      if (!success) {
+        state = state.copyWith(
+          error: body is Map<String, dynamic>
+              ? (body['error']?.toString() ??
+                  body['message']?.toString() ??
+                  'Failed to update stock')
+              : 'Failed to update stock',
+        );
+        return false;
+      }
+
       final updated = state.products.map((p) {
         if (p.sku == sku) return p.copyWith(stock: stock);
         return p;
       }).toList();
+
       state = state.copyWith(products: updated);
       return true;
     } catch (e) {
+      state = state.copyWith(error: 'Failed to update stock');
       return false;
     }
   }
 
-  Future<bool> deleteProduct(String sku) async {
+      Future<bool> deleteProduct(String sku) async {
     try {
-      await _productApi.deleteProduct(sku);
-      final updated = state.products.where((p) => p.sku != sku).toList();
-      state = state.copyWith(products: updated);
+      final response = await _productApi.deleteProduct(sku);
+      final body = response.data;
+
+      if (body is Map<String, dynamic>) {
+        final ok = body['success'] == true || !body.containsKey('success');
+        if (!ok) {
+          state = state.copyWith(
+            error: body['error']?.toString() ??
+                body['message']?.toString() ??
+                'Failed to delete product',
+          );
+          return false;
+        }
+      }
+
+      await loadProducts(refresh: true);
       return true;
     } catch (e) {
+      state = state.copyWith(error: 'Failed to delete product');
       return false;
     }
   }
@@ -195,11 +255,15 @@ class ProductNotifier extends StateNotifier<ProductListState> {
     }
   }
 
-  void setStockFilter(bool? inStock) {
+    void setStockFilter(bool? inStock) {
     if (inStock == null) {
       state = state.copyWith(clearStock: true);
     } else {
       state = state.copyWith(inStockFilter: inStock);
     }
+  }
+
+  void clearError() {
+    state = state.copyWith(clearError: true);
   }
 }

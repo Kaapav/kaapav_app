@@ -26,16 +26,22 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
   String _sortBy = 'newest'; // newest | oldest | amount_high | amount_low
 
   static const _statusTabs = [
-    'all', 'pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled',
+    'all',
+    'pending',
+    'confirmed',
+    'processing',
+    'shipped',
+    'delivered',
+    'cancelled',
   ];
 
   static const _statusColors = {
-    'pending':    Color(0xFFF59E0B),
-    'confirmed':  Color(0xFF3B82F6),
+    'pending': Color(0xFFF59E0B),
+    'confirmed': Color(0xFF3B82F6),
     'processing': Color(0xFF8B5CF6),
-    'shipped':    Color(0xFF06B6D4),
-    'delivered':  Color(0xFF10B981),
-    'cancelled':  Color(0xFFEF4444),
+    'shipped': Color(0xFF06B6D4),
+    'delivered': Color(0xFF10B981),
+    'cancelled': Color(0xFFEF4444),
   };
 
   @override
@@ -52,7 +58,6 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
     super.dispose();
   }
 
-  // ── Sort picker ───────────────────────────────────────────────
   void _showSortPicker() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     showModalBottomSheet(
@@ -63,17 +68,18 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
       ),
       builder: (ctx) {
         final options = {
-          'newest':      'Newest first',
-          'oldest':      'Oldest first',
+          'newest': 'Newest first',
+          'oldest': 'Oldest first',
           'amount_high': 'Amount: High → Low',
-          'amount_low':  'Amount: Low → High',
+          'amount_low': 'Amount: Low → High',
         };
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 36, height: 4,
+                width: 36,
+                height: 4,
                 margin: const EdgeInsets.only(top: 12, bottom: 16),
                 decoration: BoxDecoration(
                   color: Colors.grey.withValues(alpha: 0.3),
@@ -82,19 +88,27 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
               ),
               const Padding(
                 padding: EdgeInsets.only(bottom: 8),
-                child: Text('Sort Orders',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                child: Text(
+                  'Sort Orders',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
               ),
-              ...options.entries.map((e) => ListTile(
-                title: Text(e.value),
-                trailing: _sortBy == e.key
-                    ? Icon(Icons.check_circle_rounded, color: KaapavTheme.gold, size: 20)
-                    : null,
-                onTap: () {
-                  Navigator.pop(ctx);
-                  setState(() => _sortBy = e.key);
-                },
-              )),
+              ...options.entries.map(
+                (e) => ListTile(
+                  title: Text(e.value),
+                  trailing: _sortBy == e.key
+                      ? Icon(
+                          Icons.check_circle_rounded,
+                          color: KaapavTheme.gold,
+                          size: 20,
+                        )
+                      : null,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    setState(() => _sortBy = e.key);
+                  },
+                ),
+              ),
               const SizedBox(height: 8),
             ],
           ),
@@ -103,7 +117,6 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
     );
   }
 
-  // ── Manual order creation ─────────────────────────────────────
   void _createManualOrder() {
     showModalBottomSheet(
       context: context,
@@ -117,7 +130,11 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
       builder: (ctx) => _CreateOrderSheet(
         onCreated: (orderId) {
           Navigator.pop(ctx);
-          Navigator.pushNamed(context, AppRoutes.orderDetail, arguments: orderId);
+          Navigator.pushNamed(
+            context,
+            AppRoutes.orderDetail,
+            arguments: orderId,
+          );
           KaapavToast.success(context, 'Order $orderId created');
           ref.read(orderProvider.notifier).loadOrders();
         },
@@ -130,27 +147,28 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
     final orderState = ref.watch(orderProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Pre-count per status for tab badges
     final counts = <String, int>{'all': orderState.orders.length};
     for (final s in _statusTabs.skip(1)) {
       counts[s] = orderState.orders.where((o) => o.status == s).length;
     }
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0F0F0F) : const Color(0xFFF5F5F5),
+      backgroundColor:
+          isDark ? const Color(0xFF0F0F0F) : const Color(0xFFF5F5F5),
       appBar: AppBar(
-        title: const Text('Orders', style: TextStyle(fontWeight: FontWeight.w700)),
+        title: const Text(
+          'Orders',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
         backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
         foregroundColor: isDark ? Colors.white : const Color(0xFF1A1A1A),
         elevation: 0,
         actions: [
-          // Sort button
           IconButton(
             icon: const Icon(Icons.sort_rounded),
             tooltip: 'Sort',
             onPressed: _showSortPicker,
           ),
-          // Refresh
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Refresh',
@@ -164,7 +182,10 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
           unselectedLabelColor: const Color(0xFF9CA3AF),
           indicatorColor: KaapavTheme.gold,
           indicatorWeight: 3,
-          labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          labelStyle: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
           tabAlignment: TabAlignment.start,
           tabs: _statusTabs.map((s) {
             final count = counts[s] ?? 0;
@@ -177,17 +198,22 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
                   if (count > 0) ...[
                     const SizedBox(width: 5),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 1,
+                      ),
                       decoration: BoxDecoration(
                         color: s == 'pending'
                             ? const Color(0xFFF59E0B).withValues(alpha: 0.15)
-                            : (_statusColors[s] ?? KaapavTheme.gold).withValues(alpha: 0.15),
+                            : (_statusColors[s] ?? KaapavTheme.gold)
+                                .withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
                         '$count',
                         style: TextStyle(
-                          fontSize: 10, fontWeight: FontWeight.w700,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
                           color: _statusColors[s] ?? KaapavTheme.gold,
                         ),
                       ),
@@ -201,7 +227,6 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
       ),
       body: Column(
         children: [
-          // ── Search + active filter summary ──
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
             child: Row(
@@ -210,7 +235,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
                   child: CustomSearchBar(
                     controller: _searchController,
                     hintText: 'Search by name, phone, ID...',
-                    onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
+                    onChanged: (v) =>
+                        setState(() => _searchQuery = v.toLowerCase()),
                     onClear: () {
                       _searchController.clear();
                       setState(() => _searchQuery = '');
@@ -222,14 +248,22 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
                   GestureDetector(
                     onTap: () => setState(() => _sortBy = 'newest'),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 7,
+                      ),
                       decoration: BoxDecoration(
                         color: KaapavTheme.gold.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: KaapavTheme.gold.withValues(alpha: 0.3)),
+                        border: Border.all(
+                          color: KaapavTheme.gold.withValues(alpha: 0.3),
+                        ),
                       ),
-                      child: const Icon(Icons.filter_alt_rounded,
-                          size: 16, color: KaapavTheme.gold),
+                      child: const Icon(
+                        Icons.filter_alt_rounded,
+                        size: 16,
+                        color: KaapavTheme.gold,
+                      ),
                     ),
                   ),
                 ],
@@ -237,17 +271,15 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
             ),
           ),
           const SizedBox(height: 8),
-
-          // ── Revenue summary strip (all orders) ──
           if (!orderState.isLoading && orderState.orders.isNotEmpty)
             _RevenueSummary(orders: orderState.orders, isDark: isDark),
-
           const SizedBox(height: 6),
-
-          // ── Tab content ──
           Expanded(
             child: orderState.isLoading
-                ? const ShimmerLoading(type: ShimmerType.orderList, itemCount: 6)
+                ? const ShimmerLoading(
+                    type: ShimmerType.orderList,
+                    itemCount: 6,
+                  )
                 : TabBarView(
                     controller: _tabController,
                     children: _statusTabs.map((status) {
@@ -269,21 +301,34 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
   Widget _buildOrderList(OrderState orderState, String statusFilter) {
     var orders = [...orderState.orders];
 
-    // Status filter
     if (statusFilter != 'all') {
       orders = orders.where((o) => o.status == statusFilter).toList();
     }
 
-    // Search filter
     if (_searchQuery.isNotEmpty) {
       orders = orders.where((o) {
-        return o.orderId.toLowerCase().contains(_searchQuery) ||
+        final matchesBasic =
+            o.orderId.toLowerCase().contains(_searchQuery) ||
             (o.customerName ?? '').toLowerCase().contains(_searchQuery) ||
             o.phone.toLowerCase().contains(_searchQuery);
+
+        final matchesItems = o.items.any((item) {
+          if (item is Map) {
+            final map = Map<String, dynamic>.from(item);
+            final name = (map['name'] ?? '').toString().toLowerCase();
+            final category = (map['category'] ?? '').toString().toLowerCase();
+            final sku = (map['sku'] ?? '').toString().toLowerCase();
+            return name.contains(_searchQuery) ||
+                category.contains(_searchQuery) ||
+                sku.contains(_searchQuery);
+          }
+          return false;
+        });
+
+        return matchesBasic || matchesItems;
       }).toList();
     }
 
-    // Sort
     switch (_sortBy) {
       case 'oldest':
         orders.sort((a, b) => (a.createdAt ?? '').compareTo(b.createdAt ?? ''));
@@ -294,7 +339,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
       case 'amount_low':
         orders.sort((a, b) => a.total.compareTo(b.total));
         break;
-      default: // newest
+      default:
         orders.sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
     }
 
@@ -316,15 +361,28 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
         itemCount: orders.length,
         itemBuilder: (context, index) {
           final order = orders[index];
+          debugPrint('ORDER ${order.orderId} items => ${order.items}');
+
           return OrderCard(
-  order: order,
-  // ✅ removed state: orderState
-  onTap: () => Navigator.pushNamed(
-    context,
-    AppRoutes.orderDetail,
-    arguments: order.orderId,
-  ).then((_) => ref.read(orderProvider.notifier).loadOrders()),
-);
+            order: order,
+            onTap: () async {
+              debugPrint('Tapped order: ${order.orderId}');
+              try {
+                await Navigator.pushNamed(
+                  context,
+                  AppRoutes.orderDetail,
+                  arguments: order.orderId,
+                );
+              } catch (e, st) {
+                debugPrint('OPEN ORDER ERROR: $e');
+                debugPrintStack(stackTrace: st);
+              } finally {
+                if (mounted) {
+                  ref.read(orderProvider.notifier).loadOrders();
+                }
+              }
+            },
+          );
         },
       ),
     );
@@ -335,12 +393,17 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
 class _RevenueSummary extends StatelessWidget {
   final List orders;
   final bool isDark;
-  const _RevenueSummary({required this.orders, required this.isDark});
+
+  const _RevenueSummary({
+    required this.orders,
+    required this.isDark,
+  });
 
   @override
   Widget build(BuildContext context) {
     final paid = orders.where((o) => o.paymentStatus == 'paid');
-    final revenue = paid.fold<double>(0, (s, o) => s + (o.total as num).toDouble());
+    final revenue =
+        paid.fold<double>(0, (s, o) => s + (o.total as num).toDouble());
     final pending = orders.where((o) => o.status == 'pending').length;
     final today = orders.where((o) {
       final d = o.createdAt ?? '';
@@ -393,83 +456,160 @@ class _RevenueSummary extends StatelessWidget {
 class _Divider extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
-    width: 0.5, height: 28,
-    margin: const EdgeInsets.symmetric(horizontal: 10),
-    color: const Color(0xFFE5E7EB),
-  );
+        width: 0.5,
+        height: 28,
+        margin: const EdgeInsets.symmetric(horizontal: 10),
+        color: const Color(0xFFE5E7EB),
+      );
 }
 
 class _StatChip extends StatelessWidget {
   final String label;
   final String value;
   final Color color;
-  const _StatChip({required this.label, required this.value, required this.color});
+
+  const _StatChip({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) => Expanded(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Text(value,
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color)),
-        const SizedBox(height: 1),
-        Text(label,
-          style: const TextStyle(fontSize: 10, color: Color(0xFF9CA3AF))),
-      ],
-    ),
-  );
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+            const SizedBox(height: 1),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 10,
+                color: Color(0xFF9CA3AF),
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 // ── Create Manual Order Sheet ─────────────────────────────────
 class _CreateOrderSheet extends ConsumerStatefulWidget {
   final Function(String orderId) onCreated;
-  const _CreateOrderSheet({required this.onCreated});
+
+  const _CreateOrderSheet({
+    required this.onCreated,
+  });
 
   @override
   ConsumerState<_CreateOrderSheet> createState() => _CreateOrderSheetState();
 }
 
 class _CreateOrderSheetState extends ConsumerState<_CreateOrderSheet> {
-  final _nameCtrl    = TextEditingController();
-  final _phoneCtrl   = TextEditingController();
-  final _addrCtrl    = TextEditingController();
-  final _cityCtrl    = TextEditingController();
-  final _stateCtrl   = TextEditingController();
-  final _pinCtrl     = TextEditingController();
-  final _totalCtrl   = TextEditingController();
-  final _notesCtrl   = TextEditingController();
+  final _nameCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _addrCtrl = TextEditingController();
+  final _cityCtrl = TextEditingController();
+  final _stateCtrl = TextEditingController();
+  final _pinCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
+
+  final List<Map<String, dynamic>> _items = [];
+  final _itemNameCtrl = TextEditingController();
+  final _itemPriceCtrl = TextEditingController();
+  final _itemQtyCtrl = TextEditingController(text: '1');
+
   bool _loading = false;
+
+  double get _subtotal =>
+      _items.fold(0, (s, i) => s + ((i['price'] as double) * (i['qty'] as int)));
+  double get _shipping => _subtotal >= 498 ? 0 : 60;
+  double get _total => _subtotal + _shipping;
 
   @override
   void dispose() {
-    for (final c in [_nameCtrl,_phoneCtrl,_addrCtrl,_cityCtrl,
-                     _stateCtrl,_pinCtrl,_totalCtrl,_notesCtrl]) {
+    for (final c in [
+      _nameCtrl,
+      _phoneCtrl,
+      _emailCtrl,
+      _addrCtrl,
+      _cityCtrl,
+      _stateCtrl,
+      _pinCtrl,
+      _notesCtrl,
+      _itemNameCtrl,
+      _itemPriceCtrl,
+      _itemQtyCtrl,
+    ]) {
       c.dispose();
     }
     super.dispose();
   }
 
-  Future<void> _submit() async {
-    final name  = _nameCtrl.text.trim();
-    final phone = _phoneCtrl.text.trim();
-    final total = double.tryParse(_totalCtrl.text.trim());
-    if (name.isEmpty || phone.length < 10 || total == null) {
-      KaapavToast.error(context, 'Name, phone (10 digits), and total are required');
+  void _addItem() {
+    final name = _itemNameCtrl.text.trim();
+    final price = double.tryParse(_itemPriceCtrl.text.trim());
+    final qty = int.tryParse(_itemQtyCtrl.text.trim()) ?? 1;
+
+    if (name.isEmpty || price == null || price <= 0) {
+      KaapavToast.error(context, 'Enter item name and valid price');
       return;
     }
+
+    setState(() {
+      _items.add({
+        'name': name,
+        'price': price,
+        'qty': qty,
+        'sku': 'MANUAL',
+      });
+      _itemNameCtrl.clear();
+      _itemPriceCtrl.clear();
+      _itemQtyCtrl.text = '1';
+    });
+  }
+
+  Future<void> _submit() async {
+    final name = _nameCtrl.text.trim();
+    final phone = _phoneCtrl.text.trim();
+
+    if (name.isEmpty) {
+      KaapavToast.error(context, 'Name is required');
+      return;
+    }
+    if (phone.length < 10) {
+      KaapavToast.error(context, 'Valid phone required');
+      return;
+    }
+    if (_items.isEmpty) {
+      KaapavToast.error(context, 'Add at least one item');
+      return;
+    }
+
     setState(() => _loading = true);
     try {
       final orderId = await ref.read(orderProvider.notifier).createManualOrder(
-        name: name,
-        phone: '91$phone',
-        address: _addrCtrl.text.trim(),
-        city: _cityCtrl.text.trim(),
-        state_: _stateCtrl.text.trim(),
-        pincode: _pinCtrl.text.trim(),
-        total: total,
-        notes: _notesCtrl.text.trim(),
-      );
+            name: name,
+            phone: '91$phone',
+            address: _addrCtrl.text.trim(),
+            city: _cityCtrl.text.trim(),
+            state_: _stateCtrl.text.trim(),
+            pincode: _pinCtrl.text.trim(),
+            total: _total,
+            notes: _notesCtrl.text.trim(),
+            items: _items,
+          );
+
       if (!mounted) return;
+
       if (orderId != null) {
         widget.onCreated(orderId);
       } else {
@@ -482,7 +622,8 @@ class _CreateOrderSheetState extends ConsumerState<_CreateOrderSheet> {
 
   @override
   Widget build(BuildContext context) {
-    //final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: SingleChildScrollView(
@@ -492,7 +633,8 @@ class _CreateOrderSheetState extends ConsumerState<_CreateOrderSheet> {
           children: [
             Center(
               child: Container(
-                width: 36, height: 4,
+                width: 36,
+                height: 4,
                 margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(
                   color: Colors.grey.withValues(alpha: 0.3),
@@ -500,21 +642,198 @@ class _CreateOrderSheetState extends ConsumerState<_CreateOrderSheet> {
                 ),
               ),
             ),
-            const Text('Create Manual Order',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+            const Text(
+              'Create Manual Order',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 16),
-            _Field(ctrl: _nameCtrl,  hint: 'Customer name *',      keyboard: TextInputType.name),
-            _Field(ctrl: _phoneCtrl, hint: 'Phone (10 digits) *',  keyboard: TextInputType.phone, maxLen: 10),
-            _Field(ctrl: _totalCtrl, hint: 'Total amount *',        keyboard: TextInputType.number),
-            _Field(ctrl: _addrCtrl,  hint: 'Address',               maxLines: 2),
-            Row(children: [
-              Expanded(child: _Field(ctrl: _cityCtrl,  hint: 'City')),
-              const SizedBox(width: 10),
-              Expanded(child: _Field(ctrl: _pinCtrl,   hint: 'Pincode', keyboard: TextInputType.number, maxLen: 6)),
-            ]),
+
+            _Field(
+              ctrl: _nameCtrl,
+              hint: 'Customer name *',
+              keyboard: TextInputType.name,
+            ),
+            _Field(
+              ctrl: _phoneCtrl,
+              hint: 'Phone (10 digits) *',
+              keyboard: TextInputType.phone,
+              maxLen: 10,
+            ),
+            _Field(
+              ctrl: _emailCtrl,
+              hint: 'Email (optional)',
+              keyboard: TextInputType.emailAddress,
+            ),
+            _Field(ctrl: _addrCtrl, hint: 'Address', maxLines: 2),
+            Row(
+              children: [
+                Expanded(child: _Field(ctrl: _cityCtrl, hint: 'City')),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _Field(
+                    ctrl: _pinCtrl,
+                    hint: 'Pincode',
+                    keyboard: TextInputType.number,
+                    maxLen: 6,
+                  ),
+                ),
+              ],
+            ),
             _Field(ctrl: _stateCtrl, hint: 'State'),
             _Field(ctrl: _notesCtrl, hint: 'Notes (optional)', maxLines: 2),
-            const SizedBox(height: 6),
+
+            const SizedBox(height: 8),
+            const Text(
+              'ORDER ITEMS',
+              style: TextStyle(
+                fontSize: 10,
+                letterSpacing: 0.3,
+                fontWeight: FontWeight.w700,
+                color: KaapavTheme.gold,
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            Row(
+              children: [
+                Expanded(
+                  flex: 4,
+                  child: _Field(ctrl: _itemNameCtrl, hint: 'Item name'),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  flex: 2,
+                  child: _Field(
+                    ctrl: _itemPriceCtrl,
+                    hint: '₹ Price',
+                    keyboard: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  flex: 1,
+                  child: _Field(
+                    ctrl: _itemQtyCtrl,
+                    hint: 'Qty',
+                    keyboard: TextInputType.number,
+                    maxLen: 2,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: _addItem,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: KaapavTheme.gold,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.add, color: Colors.white, size: 18),
+                  ),
+                ),
+              ],
+            ),
+
+            if (_items.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                decoration: BoxDecoration(
+                  color:
+                      isDark ? const Color(0xFF1F1F1F) : const Color(0xFFF9F9F9),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color:
+                        isDark ? Colors.white12 : const Color(0xFFE5E7EB),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    ..._items.asMap().entries.map((e) {
+                      final i = e.key;
+                      final item = e.value;
+                      final lineTotal =
+                          (item['price'] as double) * (item['qty'] as int);
+
+                      return ListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 0,
+                        ),
+                        title: Text(
+                          '${item['name']}  ×${item['qty']}',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        subtitle: Text(
+                          '\u20B9${(item['price'] as double).toStringAsFixed(0)} × ${item['qty']} = \u20B9${lineTotal.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF9CA3AF),
+                          ),
+                        ),
+                        trailing: IconButton(
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            size: 18,
+                            color: Color(0xFFEF4444),
+                          ),
+                          onPressed: () => setState(() => _items.removeAt(i)),
+                        ),
+                      );
+                    }),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: KaapavTheme.gold.withValues(alpha: 0.08),
+                        borderRadius: const BorderRadius.only(
+                          bottomLeft: Radius.circular(8),
+                          bottomRight: Radius.circular(8),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Subtotal: \u20B9${_subtotal.toStringAsFixed(0)}',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                                Text(
+                                  _shipping == 0
+                                      ? 'Shipping: FREE'
+                                      : 'Shipping: \u20B960',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: _shipping == 0
+                                        ? const Color(0xFF10B981)
+                                        : null,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            '\u20B9${_total.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: KaapavTheme.gold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -523,12 +842,22 @@ class _CreateOrderSheetState extends ConsumerState<_CreateOrderSheet> {
                   backgroundColor: KaapavTheme.gold,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  disabledBackgroundColor: KaapavTheme.gold.withValues(alpha: 0.5),
+                  disabledBackgroundColor:
+                      KaapavTheme.gold.withValues(alpha: 0.5),
                 ),
                 child: _loading
-                    ? const SizedBox(width: 20, height: 20,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : const Text('Create Order', style: TextStyle(fontWeight: FontWeight.w600)),
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        'Create Order',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
               ),
             ),
           ],
@@ -544,6 +873,7 @@ class _Field extends StatelessWidget {
   final TextInputType keyboard;
   final int? maxLen;
   final int maxLines;
+
   const _Field({
     required this.ctrl,
     required this.hint,
@@ -565,18 +895,23 @@ class _Field extends StatelessWidget {
         decoration: InputDecoration(
           hintText: hint,
           counterText: '',
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 11,
+          ),
           filled: true,
           fillColor: isDark ? const Color(0xFF2C2C2C) : const Color(0xFFF9F9F9),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide(
-              color: isDark ? Colors.white12 : const Color(0xFFE5E7EB)),
+              color: isDark ? Colors.white12 : const Color(0xFFE5E7EB),
+            ),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide(
-              color: isDark ? Colors.white12 : const Color(0xFFE5E7EB)),
+              color: isDark ? Colors.white12 : const Color(0xFFE5E7EB),
+            ),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),

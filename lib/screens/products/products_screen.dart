@@ -343,12 +343,15 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
       builder: (_) => _ProductFormSheet(
         product: p,
         isDark: Theme.of(context).brightness == Brightness.dark,
-        onSave: (data) async {
+                onSave: (data) async {
           final ok = await ref.read(productProvider.notifier).updateProduct(p.sku, data);
           if (context.mounted) {
             Navigator.pop(context);
             _showToast(context, ok ? '✅ Saved' : '❌ Failed to save', ok);
-            if (ok) setState(() => _selectedProduct = null);
+            if (ok) {
+              final updated = ref.read(productProvider.notifier).getProduct(p.sku);
+              setState(() => _selectedProduct = updated);
+            }
           }
         },
       ),
@@ -1196,7 +1199,7 @@ class _DetailPane extends ConsumerWidget {
             _ImageGallery(
               images: product.images.isNotEmpty
                   ? product.images
-                  : [if (product.imageUrl != null) product.imageUrl!],
+                  : [if ((product.imageUrl ?? '').isNotEmpty) product.imageUrl!],
               isDark: isDark,
             ),
             const SizedBox(height: 20),
@@ -1400,6 +1403,7 @@ class _FullscreenImage extends StatelessWidget {
 // ─────────────────────────────────────────────
 // SHARE OPTIONS SHEET
 // ─────────────────────────────────────────────
+// ignore: unused_element
 class _ShareOptionsSheet extends StatelessWidget {
   final Product product;
   final bool isDark;
@@ -1731,44 +1735,67 @@ class _InfoRow extends StatelessWidget {
 // ─────────────────────────────────────────────
 // PRODUCT FORM SHEET — image URL fixed
 // ─────────────────────────────────────────────
+
 class _ProductFormSheet extends StatefulWidget {
   final Product? product;
   final bool isDark, isCopy;
   final Future<void> Function(Map<String, dynamic>) onSave;
-  const _ProductFormSheet({this.product, required this.isDark, this.isCopy = false, required this.onSave});
+
+  const _ProductFormSheet({
+    this.product,
+    required this.isDark,
+    this.isCopy = false,
+    required this.onSave,
+  });
 
   @override
   State<_ProductFormSheet> createState() => _ProductFormSheetState();
 }
 
 class _ProductFormSheetState extends State<_ProductFormSheet> {
-  late final TextEditingController _name, _sku, _desc, _price, _mrp, _stock, _url, _websiteUrl;
+  late final TextEditingController _name,
+      _sku,
+      _desc,
+      _price,
+      _mrp,
+      _stock,
+      _websiteUrl;
+
   String _category = 'bracelet';
   bool _active = true, _featured = false, _saving = false;
   List<String> _tags = [];
+  List<String> _images = [];
   final _productApi = ProductApi();
 
   @override
   void initState() {
     super.initState();
     final p = widget.product;
-    _name  = TextEditingController(text: p?.name ?? '');
-    _sku   = TextEditingController(text: p?.sku ?? '');
-    _desc  = TextEditingController(text: p?.description ?? '');
-    _price = TextEditingController(text: p != null ? p.price.toStringAsFixed(0) : '');
-    _mrp   = TextEditingController(text: p?.comparePrice != null ? p!.comparePrice!.toStringAsFixed(0) : '');
+    _name = TextEditingController(text: p?.name ?? '');
+    _sku = TextEditingController(text: p?.sku ?? '');
+    _desc = TextEditingController(text: p?.description ?? '');
+    _price = TextEditingController(
+      text: p != null ? p.price.toStringAsFixed(0) : '',
+    );
+    _mrp = TextEditingController(
+      text: p?.comparePrice != null ? p!.comparePrice!.toStringAsFixed(0) : '',
+    );
     _stock = TextEditingController(text: p != null ? '${p.stock}' : '0');
-    _url        = TextEditingController(text: p?.imageUrl ?? '');
-    _websiteUrl = TextEditingController(text: p?.websiteLink ?? ''); // FIXED
+    _websiteUrl = TextEditingController(text: p?.websiteLink ?? '');
     _category = p?.category ?? 'bracelet';
-    _active   = p?.isActive ?? true;
+    _active = p?.isActive ?? true;
     _featured = p?.isFeatured ?? false;
-    _tags     = List<String>.from(p?.tags ?? []);
+    _tags = List<String>.from(p?.tags ?? []);
+
+    _images = [
+      if ((p?.imageUrl ?? '').isNotEmpty) p!.imageUrl!,
+      ...(p?.images ?? <String>[]),
+    ].toSet().toList();
   }
 
   @override
   void dispose() {
-    for (final c in [_name, _sku, _desc, _price, _mrp, _stock, _url, _websiteUrl]) {
+    for (final c in [_name, _sku, _desc, _price, _mrp, _stock, _websiteUrl]) {
       c.dispose();
     }
     super.dispose();
@@ -1777,41 +1804,64 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
   bool get _isEdit => widget.product != null && !widget.isCopy;
 
   void _save() async {
-    if (_name.text.trim().isEmpty)  { _toast('Product name is required'); return; }
-    if (_sku.text.trim().isEmpty)   { _toast('SKU is required'); return; }
-    if (_price.text.trim().isEmpty) { _toast('Price is required'); return; }
+    if (_name.text.trim().isEmpty) {
+      _toast('Product name is required');
+      return;
+    }
+    if (_sku.text.trim().isEmpty) {
+      _toast('SKU is required');
+      return;
+    }
+    if (_price.text.trim().isEmpty) {
+      _toast('Price is required');
+      return;
+    }
+
     setState(() => _saving = true);
+
     await widget.onSave({
-      'name':          _name.text.trim(),
-      'sku':           _sku.text.trim(),
-      'category':      _category,
-      'description':   _desc.text.trim(),
-      'price':         double.tryParse(_price.text) ?? 0,
+      'name': _name.text.trim(),
+      'sku': _sku.text.trim(),
+      'category': _category,
+      'description': _desc.text.trim(),
+      'price': double.tryParse(_price.text) ?? 0,
       'compare_price': double.tryParse(_mrp.text) ?? 0,
-      'stock':         int.tryParse(_stock.text) ?? 0,
-      'image_url':     _url.text.trim(),
-      'website_link':  _websiteUrl.text.trim(),
-      'is_active':     _active ? 1 : 0,
-      'is_featured':   _featured ? 1 : 0,
-      'tags':          _tags,
+      'stock': int.tryParse(_stock.text) ?? 0,
+      'image_url': _images.isNotEmpty ? _images.first : '',
+      'images': _images,
+      'website_link': _websiteUrl.text.trim(),
+      'is_active': _active ? 1 : 0,
+      'is_featured': _featured ? 1 : 0,
+      'tags': _tags,
     });
+
     if (mounted) setState(() => _saving = false);
   }
 
- void _toast(String msg) {
+  void _toast(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), backgroundColor: const Color(0xFFEF4444)));
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: const Color(0xFFEF4444),
+      ),
+    );
   }
 
-  Future<void> _pickImage() async {
+  Future<void> _pickAndUploadImage() async {
     final picker = ImagePicker();
-    final file = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+    final file = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
     if (file == null) return;
+
     setState(() => _saving = true);
     try {
       final res = await _productApi.uploadImage(file.path, file.name);
       final url = res.data['url'] ?? res.data['mediaUrl'];
-      if (url != null) setState(() => _url.text = url);
+      if (url != null && !_images.contains(url)) {
+        setState(() => _images.add(url as String));
+      }
     } catch (e) {
       _toast('Upload failed: $e');
     } finally {
@@ -1821,112 +1871,212 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final bg          = widget.isDark ? const Color(0xFF0F0C07) : Colors.white;
-    final borderColor = widget.isDark ? const Color(0xFF251D0A) : const Color(0xFFE5E7EB);
+    final bg = widget.isDark ? const Color(0xFF0F0C07) : Colors.white;
+    final borderColor =
+        widget.isDark ? const Color(0xFF251D0A) : const Color(0xFFE5E7EB);
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.9, maxChildSize: 0.97, minChildSize: 0.5,
+      initialChildSize: 0.9,
+      maxChildSize: 0.97,
+      minChildSize: 0.5,
       builder: (_, scrollCtrl) => Container(
         decoration: BoxDecoration(
           color: bg,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           border: Border(top: BorderSide(color: KaapavTheme.gold, width: 1)),
         ),
-        child: Column(children: [
-          Center(child: Container(margin: const EdgeInsets.only(top: 10),
-              width: 36, height: 4,
-              decoration: BoxDecoration(color: borderColor, borderRadius: BorderRadius.circular(2)))),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-            child: Row(children: [
-              Text(_isEdit ? 'Edit Product' : 'Add New Product',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: KaapavTheme.gold)),
-              const Spacer(),
-              IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
-            ]),
-          ),
-          const Divider(height: 1),
-          Expanded(child: ListView(controller: scrollCtrl,
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-            children: [
-              _FormSection('Basic Information', isDark: widget.isDark),
-              _FormField('Product Name *', child: _input(_name, 'e.g. Crystal Lotus Ring')),
-              Row(children: [
-                Expanded(child: _FormField('SKU *', child: _input(_sku, 'e.g. 701015'))),
-                const SizedBox(width: 12),
-                Expanded(child: _FormField('Category', child: _catDropdown())),
-              ]),
-              _FormField('Description', child: _textArea(_desc)),
-              _FormSection('Pricing', isDark: widget.isDark),
-              Row(children: [
-                Expanded(child: _FormField('Sale Price (₹) *', child: _numInput(_price, '249'))),
-                const SizedBox(width: 12),
-                Expanded(child: _FormField('MRP (₹)', child: _numInput(_mrp, '499'))),
-              ]),
-              _PricePreview(priceCtrl: _price, mrpCtrl: _mrp, isDark: widget.isDark),
-              _FormSection('Inventory', isDark: widget.isDark),
-              Row(children: [
-                Expanded(child: _FormField('Stock', child: _numInput(_stock, '0'))),
-                const SizedBox(width: 12),
-                Expanded(child: _FormField('Main Image', child: Row(children: [
-                  Expanded(child: _input(_url, 'https://...')),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: _saving ? null : _pickImage,
-                    child: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: KaapavTheme.gold.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: KaapavTheme.gold.withValues(alpha: 0.3)),
-                      ),
-                      child: _saving
-                          ? SizedBox(width: 18, height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: KaapavTheme.gold))
-                          : Icon(Icons.photo_library_outlined, size: 18, color: KaapavTheme.gold),
+        child: Column(
+          children: [
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 10),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: borderColor,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+              child: Row(
+                children: [
+                  Text(
+                    _isEdit ? 'Edit Product' : 'Add New Product',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: KaapavTheme.gold,
                     ),
                   ),
-                ]))),
-              ]),
-              _FormField('Website URL', child: _input(_websiteUrl, 'https://www.kaapav.com/shop/...')),
-              // Image preview
-              if (_url.text.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                _FormImagePreview(imageUrl: _url.text, isDark: widget.isDark),
-                const SizedBox(height: 8),
-              ],
-              _FormSection('Tags', isDark: widget.isDark),
-              _TagSelector(selected: _tags, isDark: widget.isDark, onChanged: (v) => setState(() => _tags = v)),
-              const SizedBox(height: 16),
-              _FormSection('Settings', isDark: widget.isDark),
-              _ToggleRow(label: 'Show in WhatsApp Bot', sub: 'Display in order flow',
-                  value: _active, onChanged: (v) => setState(() => _active = v), isDark: widget.isDark),
-              _ToggleRow(label: 'Featured Product', sub: 'Show in bestsellers',
-                  value: _featured, onChanged: (v) => setState(() => _featured = v), isDark: widget.isDark),
-            ],
-          )),
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
-            decoration: BoxDecoration(color: bg, border: Border(top: BorderSide(color: borderColor))),
-            child: Row(children: [
-              _OutlineBtn(label: 'Cancel', isDark: widget.isDark, onTap: () => Navigator.pop(context)),
-              const Spacer(),
-              _GoldBtn(label: _saving ? 'Saving...' : '💾 Save', onTap: _saving ? null : _save),
-            ]),
-          ),
-        ]),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView(
+                controller: scrollCtrl,
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                children: [
+                  _FormSection('Basic Information', isDark: widget.isDark),
+                  _FormField(
+                    'Product Name *',
+                    child: _input(_name, 'e.g. Crystal Lotus Ring'),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _FormField(
+                          'SKU *',
+                          child: _input(_sku, 'e.g. 701015'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _FormField('Category', child: _catDropdown()),
+                      ),
+                    ],
+                  ),
+                  _FormField('Description', child: _textArea(_desc)),
+
+                  _FormSection('Pricing', isDark: widget.isDark),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _FormField(
+                          'Sale Price (₹) *',
+                          child: _numInput(_price, '249'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _FormField(
+                          'MRP (₹)',
+                          child: _numInput(_mrp, '499'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  _PricePreview(
+                    priceCtrl: _price,
+                    mrpCtrl: _mrp,
+                    isDark: widget.isDark,
+                  ),
+
+                  _FormSection('Inventory', isDark: widget.isDark),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _FormField('Stock', child: _numInput(_stock, '0')),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _FormField(
+                          'Website URL',
+                          child: _input(
+                            _websiteUrl,
+                            'https://www.kaapav.com/shop/...',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  _FormSection('Images', isDark: widget.isDark),
+                  _MultiImageManager(
+                    images: _images,
+                    isDark: widget.isDark,
+                    onAdd: (url) => setState(() {
+                      if (!_images.contains(url)) _images.add(url);
+                    }),
+                    onDelete: (i) => setState(() => _images.removeAt(i)),
+                    onSetMain: (i) {
+                      if (i <= 0 || i >= _images.length) return;
+                      setState(() {
+                        final item = _images.removeAt(i);
+                        _images.insert(0, item);
+                      });
+                    },
+                    onPickAndUpload: _pickAndUploadImage,
+                  ),
+
+                  const SizedBox(height: 8),
+                  _FormSection('Tags', isDark: widget.isDark),
+                  _TagSelector(
+                    selected: _tags,
+                    isDark: widget.isDark,
+                    onChanged: (v) => setState(() => _tags = v),
+                  ),
+
+                  const SizedBox(height: 16),
+                  _FormSection('Settings', isDark: widget.isDark),
+                  _ToggleRow(
+                    label: 'Show in WhatsApp Bot',
+                    sub: 'Display in order flow',
+                    value: _active,
+                    onChanged: (v) => setState(() => _active = v),
+                    isDark: widget.isDark,
+                  ),
+                  _ToggleRow(
+                    label: 'Featured Product',
+                    sub: 'Show in bestsellers',
+                    value: _featured,
+                    onChanged: (v) => setState(() => _featured = v),
+                    isDark: widget.isDark,
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+              decoration: BoxDecoration(
+                color: bg,
+                border: Border(top: BorderSide(color: borderColor)),
+              ),
+              child: Row(
+                children: [
+                  _OutlineBtn(
+                    label: 'Cancel',
+                    isDark: widget.isDark,
+                    onTap: () => Navigator.pop(context),
+                  ),
+                  const Spacer(),
+                  _GoldBtn(
+                    label: _saving ? 'Saving...' : '💾 Save',
+                    onTap: _saving ? null : _save,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _input(TextEditingController c, String hint) =>
       _BaseInput(controller: c, hint: hint, isDark: widget.isDark);
+
   Widget _numInput(TextEditingController c, String hint) => _BaseInput(
-      controller: c, hint: hint, isDark: widget.isDark,
-      keyboardType: TextInputType.number,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly]);
+        controller: c,
+        hint: hint,
+        isDark: widget.isDark,
+        keyboardType: TextInputType.number,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      );
+
   Widget _textArea(TextEditingController c) => _BaseInput(
-      controller: c, hint: 'Short product description...', isDark: widget.isDark, maxLines: 3);
+        controller: c,
+        hint: 'Short product description...',
+        isDark: widget.isDark,
+        maxLines: 3,
+      );
 
   Widget _catDropdown() {
     return Container(
@@ -1934,16 +2084,29 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
       decoration: BoxDecoration(
         color: widget.isDark ? const Color(0xFF1A1208) : const Color(0xFFF9F6EF),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: widget.isDark ? const Color(0xFF251D0A) : const Color(0xFFE5E7EB)),
+        border: Border.all(
+          color: widget.isDark ? const Color(0xFF251D0A) : const Color(0xFFE5E7EB),
+        ),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
-          value: _category, isExpanded: true,
-          style: TextStyle(fontSize: 12, color: widget.isDark ? const Color(0xFFF2E8D0) : const Color(0xFF1A1A1A)),
+          value: _category,
+          isExpanded: true,
+          style: TextStyle(
+            fontSize: 12,
+            color: widget.isDark ? const Color(0xFFF2E8D0) : const Color(0xFF1A1A1A),
+          ),
           dropdownColor: widget.isDark ? const Color(0xFF1A1208) : Colors.white,
           onChanged: (v) => setState(() => _category = v!),
-          items: _catConfig.entries.map((e) => DropdownMenuItem(value: e.key,
-              child: Text('${e.value['emoji']} ${e.value['label']}', style: const TextStyle(fontSize: 12)))).toList(),
+          items: _catConfig.entries.map((e) {
+            return DropdownMenuItem(
+              value: e.key,
+              child: Text(
+                '${e.value['emoji']} ${e.value['label']}',
+                style: const TextStyle(fontSize: 12),
+              ),
+            );
+          }).toList(),
         ),
       ),
     );
@@ -2301,5 +2464,275 @@ class _TagSelectorInnerState extends State<_TagSelectorInner> {
         ),
       ],
     ]);
+  }
+}
+// ─────────────────────────────────────────────
+// MULTI IMAGE MANAGER
+// ─────────────────────────────────────────────
+class _MultiImageManager extends StatefulWidget {
+  final List<String> images;
+  final bool isDark;
+  final ValueChanged<String> onAdd;
+  final ValueChanged<int> onDelete;
+  final ValueChanged<int> onSetMain;
+  final VoidCallback onPickAndUpload;
+
+  const _MultiImageManager({
+    required this.images,
+    required this.isDark,
+    required this.onAdd,
+    required this.onDelete,
+    required this.onSetMain,
+    required this.onPickAndUpload,
+  });
+
+  @override
+  State<_MultiImageManager> createState() => _MultiImageManagerState();
+}
+
+class _MultiImageManagerState extends State<_MultiImageManager> {
+  late final TextEditingController _urlCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _urlCtrl = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _urlCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final images = widget.images;
+    final isDark = widget.isDark;
+    final borderColor =
+        isDark ? const Color(0xFF251D0A) : const Color(0xFFE5E7EB);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (images.isNotEmpty) ...[
+          SizedBox(
+            height: 160,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: images.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (_, i) {
+                final isMain = i == 0;
+                return SizedBox(
+                  width: 140,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Stack(
+                          children: [
+                            GestureDetector(
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      _FullscreenImage(url: images[i]),
+                                ),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: CachedNetworkImage(
+                                  imageUrl: images[i],
+                                  width: 140,
+                                  height: double.infinity,
+                                  fit: BoxFit.cover,
+                                  errorWidget: (_, __, ___) => Container(
+                                    color: isDark
+                                        ? const Color(0xFF1A1208)
+                                        : const Color(0xFFF0EDE6),
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.broken_image_outlined,
+                                        color: Color(0xFF9CA3AF),
+                                        size: 24,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              top: 6,
+                              left: 6,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isMain
+                                      ? KaapavTheme.gold
+                                      : Colors.black.withValues(alpha: 0.55),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  isMain ? 'Main' : '#${i + 1}',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: isMain
+                                        ? const Color(0xFF0A0804)
+                                        : Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              top: 6,
+                              right: 6,
+                              child: GestureDetector(
+                                onTap: () => widget.onDelete(i),
+                                child: Container(
+                                  padding: const EdgeInsets.all(5),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFEF4444),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.close,
+                                    color: Colors.white,
+                                    size: 14,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: isMain ? null : () => widget.onSetMain(i),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: KaapavTheme.gold,
+                                side: const BorderSide(color: KaapavTheme.gold),
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                              ),
+                              child: const Text(
+                                'Set Main',
+                                style: TextStyle(fontSize: 11),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _urlCtrl,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark
+                      ? const Color(0xFFF2E8D0)
+                      : const Color(0xFF1A1A1A),
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Paste image URL and tap +',
+                  hintStyle: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF9CA3AF),
+                  ),
+                  filled: true,
+                  fillColor:
+                      isDark ? const Color(0xFF1A1208) : const Color(0xFFF9F6EF),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: borderColor),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: borderColor),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: KaapavTheme.goldDark),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            GestureDetector(
+              onTap: () {
+                final url = _urlCtrl.text.trim();
+                if (url.isNotEmpty && !images.contains(url)) {
+                  widget.onAdd(url);
+                  _urlCtrl.clear();
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: KaapavTheme.gold.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: KaapavTheme.gold.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.link,
+                  size: 18,
+                  color: KaapavTheme.gold,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            GestureDetector(
+              onTap: widget.onPickAndUpload,
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: KaapavTheme.gold,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.photo_library_outlined,
+                  size: 18,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        if (images.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              '${images.length} image${images.length == 1 ? '' : 's'} added. First image is the main catalogue image.',
+              style: const TextStyle(
+                fontSize: 10,
+                color: Color(0xFF9CA3AF),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class Product {
   final int? id;
   final String sku;
@@ -54,7 +56,6 @@ class Product {
     this.websiteLink,
     this.material,
   });
-  
 
   factory Product.fromJson(Map<String, dynamic> json) {
     return Product(
@@ -66,8 +67,9 @@ class Product {
       comparePrice: json['compare_price'] != null
           ? _toDouble(json['compare_price'])
           : null,
-      costPrice:
-          json['cost_price'] != null ? _toDouble(json['cost_price']) : null,
+      costPrice: json['cost_price'] != null
+          ? _toDouble(json['cost_price'])
+          : null,
       category: json['category'] as String?,
       subcategory: json['subcategory'] as String?,
       tags: _parseStringList(json['tags']),
@@ -78,8 +80,7 @@ class Product {
       imageUrl: json['image_url'] as String?,
       images: _parseStringList(json['images']),
       videoUrl: json['video_url'] as String?,
-      hasVariants:
-          json['has_variants'] == 1 || json['has_variants'] == true,
+      hasVariants: json['has_variants'] == 1 || json['has_variants'] == true,
       variants: _parseDynamicList(json['variants']),
       waProductId: json['wa_product_id'] as String?,
       viewCount: _toInt(json['view_count']),
@@ -87,8 +88,7 @@ class Product {
       isActive: json['is_active'] == 1 ||
           json['is_active'] == true ||
           json['is_active'] == null,
-      isFeatured:
-          json['is_featured'] == 1 || json['is_featured'] == true,
+      isFeatured: json['is_featured'] == 1 || json['is_featured'] == true,
       createdAt: json['created_at'] as String?,
       updatedAt: json['updated_at'] as String?,
       websiteLink: json['website_link'] as String?,
@@ -125,65 +125,90 @@ class Product {
         'material': material,
       };
 
+  static const _unset = Object();
+
   Product copyWith({
     int? id,
     String? sku,
     String? name,
-    String? description,
+    Object? description = _unset,
     double? price,
-    double? comparePrice,
-    double? costPrice,
-    String? category,
-    String? subcategory,
+    Object? comparePrice = _unset,
+    Object? costPrice = _unset,
+    Object? category = _unset,
+    Object? subcategory = _unset,
     List<String>? tags,
     int? stock,
     bool? trackInventory,
-    String? imageUrl,
+    Object? imageUrl = _unset,
     List<String>? images,
-    String? videoUrl,
+    Object? videoUrl = _unset,
     bool? hasVariants,
     List<dynamic>? variants,
-    String? waProductId,
+    Object? waProductId = _unset,
     int? viewCount,
     int? orderCount,
     bool? isActive,
     bool? isFeatured,
-    String? createdAt,
-    String? updatedAt,
-    String? websiteLink,
-    String? material,
+    Object? createdAt = _unset,
+    Object? updatedAt = _unset,
+    Object? websiteLink = _unset,
+    Object? material = _unset,
   }) {
     return Product(
       id: id ?? this.id,
       sku: sku ?? this.sku,
       name: name ?? this.name,
-      description: description ?? this.description,
+      description: identical(description, _unset)
+          ? this.description
+          : description as String?,
       price: price ?? this.price,
-      comparePrice: comparePrice ?? this.comparePrice,
-      costPrice: costPrice ?? this.costPrice,
-      category: category ?? this.category,
-      subcategory: subcategory ?? this.subcategory,
+      comparePrice: identical(comparePrice, _unset)
+          ? this.comparePrice
+          : comparePrice as double?,
+      costPrice: identical(costPrice, _unset)
+          ? this.costPrice
+          : costPrice as double?,
+      category: identical(category, _unset)
+          ? this.category
+          : category as String?,
+      subcategory: identical(subcategory, _unset)
+          ? this.subcategory
+          : subcategory as String?,
       tags: tags ?? this.tags,
       stock: stock ?? this.stock,
       trackInventory: trackInventory ?? this.trackInventory,
-      imageUrl: imageUrl ?? this.imageUrl,
+      imageUrl: identical(imageUrl, _unset)
+          ? this.imageUrl
+          : imageUrl as String?,
       images: images ?? this.images,
-      videoUrl: videoUrl ?? this.videoUrl,
+      videoUrl: identical(videoUrl, _unset)
+          ? this.videoUrl
+          : videoUrl as String?,
       hasVariants: hasVariants ?? this.hasVariants,
       variants: variants ?? this.variants,
-      waProductId: waProductId ?? this.waProductId,
+      waProductId: identical(waProductId, _unset)
+          ? this.waProductId
+          : waProductId as String?,
       viewCount: viewCount ?? this.viewCount,
       orderCount: orderCount ?? this.orderCount,
       isActive: isActive ?? this.isActive,
       isFeatured: isFeatured ?? this.isFeatured,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
-      websiteLink: websiteLink ?? this.websiteLink,
-      material: material ?? this.material,
+      createdAt: identical(createdAt, _unset)
+          ? this.createdAt
+          : createdAt as String?,
+      updatedAt: identical(updatedAt, _unset)
+          ? this.updatedAt
+          : updatedAt as String?,
+      websiteLink: identical(websiteLink, _unset)
+          ? this.websiteLink
+          : websiteLink as String?,
+      material: identical(material, _unset)
+          ? this.material
+          : material as String?,
     );
   }
 
-  // ── Convenience getters ──
   bool get inStock => !trackInventory || stock > 0;
   bool get isLowStock => trackInventory && stock > 0 && stock <= 5;
   bool get isOutOfStock => trackInventory && stock <= 0;
@@ -220,28 +245,45 @@ class Product {
 
   static List<String> _parseStringList(dynamic val) {
     if (val == null) return [];
-    if (val is List) return val.map((e) => e.toString()).toList();
+
+    if (val is List) {
+      return val.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
+    }
+
     if (val is String) {
-      if (val.isEmpty || val == '[]') return [];
+      if (val.trim().isEmpty || val.trim() == '[]') return [];
+
       try {
+        final decoded = jsonDecode(val);
+        if (decoded is List) {
+          return decoded
+              .map((e) => e.toString())
+              .where((e) => e.isNotEmpty)
+              .toList();
+        }
+      } catch (_) {
         return val
-            .replaceAll('[', '')
-            .replaceAll(']', '')
-            .replaceAll('"', '')
             .split(',')
             .map((e) => e.trim())
             .where((e) => e.isNotEmpty)
             .toList();
-      } catch (_) {
-        return [];
       }
     }
+
     return [];
   }
 
   static List<dynamic> _parseDynamicList(dynamic val) {
     if (val == null) return [];
     if (val is List) return val;
+
+    if (val is String && val.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(val);
+        if (decoded is List) return decoded;
+      } catch (_) {}
+    }
+
     return [];
   }
 }

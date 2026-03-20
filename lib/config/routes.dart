@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import '../screens/splash_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/home_screen.dart';
@@ -38,7 +38,8 @@ class AppRoutes {
 
   // Route generator
   static Route<dynamic> generateRoute(RouteSettings routeSettings) {
-    final args = routeSettings.arguments as Map<String, dynamic>? ?? {};
+    final args = routeSettings.arguments;
+    final argMap = args is Map<String, dynamic> ? args : <String, dynamic>{};
 
     switch (routeSettings.name) {
       case splash:
@@ -53,21 +54,23 @@ class AppRoutes {
         return _page(const ChatsScreen(), routeSettings);
       case chatWindow:
         return _page(
-          ChatWindowScreen(phone: args['phone'] as String? ?? ''),
+          ChatWindowScreen(phone: argMap['phone'] as String? ?? ''),
           routeSettings,
         );
       case orders:
         return _page(const OrdersScreen(), routeSettings);
       case orderDetail:
-        return _page(
-          OrderDetailScreen(orderId: args['orderId'] as String? ?? ''),
-          routeSettings,
-        );
+  final orderArgs = routeSettings.arguments;
+  final orderId = orderArgs is String
+      ? orderArgs
+      : (orderArgs as Map<String, dynamic>?)?['orderId'] as String? ?? '';
+  return _page(OrderDetailScreen(orderId: orderId), routeSettings);
+
       case products:
         return _page(const ProductsScreen(), routeSettings);
       case productDetail:
         return _page(
-          ProductDetailScreen(sku: args['sku'] as String? ?? ''),
+          ProductDetailScreen(sku: argMap['sku'] as String? ?? ''),
           routeSettings,
         );
       case customers:

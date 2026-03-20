@@ -22,6 +22,7 @@ TRACKING_URL = "https://www.shiprocket.in/shipment-tracking/"
 FACEBOOK_URL = "https://www.facebook.com/kaapavfashionjewellery/"
 INSTAGRAM_URL = "https://www.instagram.com/kaapavfashionjewellery/"
 ACCOUNT_ID = "5cb4855f980c560ebbeba5ccc3be6901"
+OWNER_PHONE = "919148330016"
 
 [[d1_databases]]
 binding = "DB"

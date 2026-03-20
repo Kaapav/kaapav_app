@@ -89,6 +89,7 @@ class OrderNotifier extends StateNotifier<OrderState> {
       final orderList = (data['orders'] as List? ?? [])
           .map((json) => Order.fromJson(json as Map<String, dynamic>))
           .toList();
+
       state = state.copyWith(
         orders: orderList,
         totalOrders: data['total'] ?? orderList.length,
@@ -104,6 +105,7 @@ class OrderNotifier extends StateNotifier<OrderState> {
   // ── Load more ────────────────────────────────────────────────
   Future<void> loadMore() async {
     if (state.isLoadingMore || state.orders.length >= state.totalOrders) return;
+
     state = state.copyWith(isLoadingMore: true);
     try {
       final response = await _api.getOrders(
@@ -115,6 +117,7 @@ class OrderNotifier extends StateNotifier<OrderState> {
       final newOrders = (data['orders'] as List? ?? [])
           .map((json) => Order.fromJson(json as Map<String, dynamic>))
           .toList();
+
       state = state.copyWith(
         orders: [...state.orders, ...newOrders],
         isLoadingMore: false,
@@ -152,10 +155,26 @@ class OrderNotifier extends StateNotifier<OrderState> {
   }
 
   // ── Confirm ──────────────────────────────────────────────────
-  Future<bool> confirmOrder(String orderId) async {
+  Future<bool> confirmOrder(
+    String orderId, {
+    required String paymentId,
+    String? phone,
+  }) async {
     try {
-      await _api.confirmOrder(orderId);
-      _updateOrderLocal(orderId, (o) => o.copyWith(status: 'confirmed'));
+      await _api.confirmOrder(
+        orderId,
+        paymentId: paymentId,
+        phone: phone,
+      );
+
+      _updateOrderLocal(
+        orderId,
+        (o) => o.copyWith(
+          status: 'confirmed',
+          paymentStatus: 'paid',
+          paymentId: paymentId,
+        ),
+      );
       return true;
     } on ApiError catch (e) {
       state = state.copyWith(error: e.displayMessage);
@@ -167,31 +186,102 @@ class OrderNotifier extends StateNotifier<OrderState> {
   Future<bool> shipOrder(String orderId, Map<String, dynamic> data) async {
     try {
       await _api.shipOrder(orderId, data);
-      _updateOrderLocal(orderId, (o) => o.copyWith(status: 'shipped'));
+
+      _updateOrderLocal(
+        orderId,
+        (o) => o.copyWith(
+          status: 'shipped',
+          awbNumber: data['awb']?.toString(),
+          courier: data['courier']?.toString(),
+          trackingUrl: data['awb'] != null
+              ? 'https://www.shiprocket.in/shipment-tracking/?id=${data['awb']}'
+              : o.trackingUrl,
+        ),
+      );
       return true;
     } on ApiError catch (e) {
       state = state.copyWith(error: e.displayMessage);
       return false;
     }
   }
-
-  // ── Cancel ───────────────────────────────────────────────────
-  Future<bool> cancelOrder(String orderId, {String? reason}) async {
+ 
+    // ── Update AWB / courier ─────────────────────────────────────
+  Future<bool> updateAwb(
+    String orderId, {
+    required String awb,
+    String? courier,
+  }) async {
     try {
-      await _api.cancelOrder(orderId, reason: reason);
-      _updateOrderLocal(orderId, (o) => o.copyWith(status: 'cancelled'));
-      return true;
+      final response = await _api.updateAwb(
+        orderId,
+        awb: awb,
+        courier: courier,
+      );
+      final data = response.data as Map<String, dynamic>;
+
+      if (data['success'] == true) {
+        _updateOrderLocal(
+          orderId,
+          (o) => o.copyWith(
+            status: 'shipped',
+            awbNumber: awb,
+            courier: courier ?? 'Shiprocket',
+            trackingUrl: 'https://www.shiprocket.in/shipment-tracking/?id=$awb',
+          ),
+        );
+        return true;
+      }
+      return false;
     } on ApiError catch (e) {
       state = state.copyWith(error: e.displayMessage);
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // ── Get order events ─────────────────────────────────────────
+  Future<List<Map<String, dynamic>>> getOrderEvents(String orderId) async {
+    try {
+      final response = await _api.getOrderEvents(orderId);
+      final data = response.data as Map<String, dynamic>;
+      final events = (data['events'] as List? ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      return events;
+    } catch (_) {
+      return [];
+    }
+  }
+
+    // ── Cancel ───────────────────────────────────────────────────
+    Future<bool> cancelOrder(String orderId, {String? reason}) async {
+    try {
+      final response = await _api.cancelOrder(orderId, reason: reason);
+      final data = response.data as Map<String, dynamic>;
+
+      if (data['success'] == true) {
+        _updateOrderLocal(
+          orderId,
+          (o) => o.copyWith(
+            status: 'cancelled',
+            cancellationReason: reason ?? 'Cancelled by admin',
+          ),
+        );
+        return true;
+      }
+      return false;
+    } on ApiError catch (e) {
+      state = state.copyWith(error: e.displayMessage);
+      return false;
+    } catch (_) {
       return false;
     }
   }
 
   // ── Update status (manual, any → any) ───────────────────────
-  // Called by the status picker in OrderDetailScreen
   Future<bool> updateOrderStatus(String orderId, String newStatus) async {
     try {
-      // Optimistic update first — feels instant
       _updateOrderLocal(orderId, (o) => o.copyWith(status: newStatus));
 
       final response = await _api.updateOrderStatus(orderId, newStatus);
@@ -199,11 +289,10 @@ class OrderNotifier extends StateNotifier<OrderState> {
 
       if (data['success'] == true) return true;
 
-      // Rollback on failure — reload from server
       await loadOrders(silent: true);
       return false;
     } on ApiError catch (e) {
-      await loadOrders(silent: true); // rollback
+      await loadOrders(silent: true);
       state = state.copyWith(error: e.displayMessage);
       return false;
     } catch (e) {
@@ -212,18 +301,170 @@ class OrderNotifier extends StateNotifier<OrderState> {
     }
   }
 
+    // ── Update customer/shipping details ─────────────────────────
+  Future<bool> updateOrderDetails(
+    String orderId, {
+    required String customerName,
+    required String phone,
+    required String shippingName,
+    required String shippingAddress,
+    required String shippingCity,
+    required String shippingState,
+    required String shippingPincode,
+  }) async {
+    try {
+      final response = await _api.updateOrderDetails(
+        orderId,
+        customerName: customerName,
+        phone: phone,
+        shippingName: shippingName,
+        shippingAddress: shippingAddress,
+        shippingCity: shippingCity,
+        shippingState: shippingState,
+        shippingPincode: shippingPincode,
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      if (data['success'] == true) {
+        _updateOrderLocal(
+          orderId,
+          (o) => o.copyWith(
+            customerName: customerName,
+            phone: phone,
+            shippingName: shippingName,
+            shippingAddress: shippingAddress,
+            shippingCity: shippingCity,
+            shippingState: shippingState,
+            shippingPincode: shippingPincode,
+          ),
+        );
+        return true;
+      }
+      return false;
+    } on ApiError catch (e) {
+      state = state.copyWith(error: e.displayMessage);
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+     // ── Update payment info ──────────────────────────────────────
+  Future<bool> updateOrderPayment(
+    String orderId, {
+    required String paymentStatus,
+    String paymentId = '',
+  }) async {
+    try {
+      final response = await _api.updateOrderPayment(
+        orderId,
+        paymentStatus: paymentStatus,
+        paymentId: paymentId,
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      if (data['success'] == true) {
+        _updateOrderLocal(
+          orderId,
+          (o) => o.copyWith(
+            paymentStatus: paymentStatus,
+            paymentId: paymentId.isNotEmpty ? paymentId : o.paymentId,
+            status: data['status']?.toString() ?? o.status,
+          ),
+        );
+        return true;
+      }
+      return false;
+    } on ApiError catch (e) {
+      state = state.copyWith(error: e.displayMessage);
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ── Update internal notes ────────────────────────────────────
+    Future<bool> updateOrderNotes(String orderId, String notes) async {
+    try {
+      final response = await _api.updateOrderNotes(orderId, notes);
+      final data = response.data as Map<String, dynamic>;
+
+      if (data['success'] == true) {
+        _updateOrderLocal(
+          orderId,
+          (o) => o.copyWith(internalNotes: notes),
+        );
+        return true;
+      }
+      return false;
+    } on ApiError catch (e) {
+      state = state.copyWith(error: e.displayMessage);
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ── Generate payment link ────────────────────────────────────
-  Future<String?> generatePaymentLink(String orderId) async {
+    Future<String?> generatePaymentLink(String orderId) async {
     try {
       final response = await _api.generatePaymentLink(orderId);
+      debugPrint('PAYMENT LINK RESPONSE RAW: ${response.data}');
       final data = response.data as Map<String, dynamic>;
+
       if (data['success'] == true) {
         return data['paymentLink'] as String?;
       }
+
+      debugPrint('PAYMENT LINK FAILED RESPONSE BODY: $data');
+      state = state.copyWith(
+        error: data['error']?.toString() ??
+            data['message']?.toString() ??
+            'Failed to generate payment link',
+      );
       return null;
     } on ApiError catch (e) {
+      debugPrint('PAYMENT LINK API ERROR: ${e.displayMessage}');
       state = state.copyWith(error: e.displayMessage);
       return null;
+    } catch (e) {
+      debugPrint('PAYMENT LINK ERROR: $e');
+      state = state.copyWith(error: 'Failed to generate payment link');
+      return null;
+    }
+  }
+
+  // ── Book Shiprocket ──────────────────────────────────────────
+  Future<Map<String, dynamic>> bookShiprocket(String orderId) async {
+    try {
+      final response = await _api.bookShiprocket(orderId);
+      final data = response.data as Map<String, dynamic>;
+
+      if (data['success'] == true) {
+        _updateOrderLocal(
+          orderId,
+          (o) => o.copyWith(status: 'processing'),
+        );
+
+        return {
+          'success': true,
+          'shiprocketOrderId': data['shiprocketOrderId'] ?? '',
+          'message': data['message'] ?? 'Booked successfully',
+        };
+      }
+
+      await loadOrders(silent: true);
+      return {
+        'success': false,
+        'message': data['error'] ?? data['message'] ?? 'Booking failed',
+      };
+    } on ApiError catch (e) {
+      await loadOrders(silent: true);
+      state = state.copyWith(error: e.displayMessage);
+      return {'success': false, 'message': e.displayMessage};
+    } catch (e) {
+      await loadOrders(silent: true);
+      return {'success': false, 'message': 'Failed: $e'};
     }
   }
 
@@ -237,7 +478,7 @@ class OrderNotifier extends StateNotifier<OrderState> {
     }
   }
 
-  // ── Create manual order (from Flutter app) ───────────────────
+  // ── Create manual order ──────────────────────────────────────
   Future<String?> createManualOrder({
     required String name,
     required String phone,
@@ -261,10 +502,11 @@ class OrderNotifier extends StateNotifier<OrderState> {
         notes: notes,
         items: items,
       );
+
       final data = response.data as Map<String, dynamic>;
       if (data['success'] == true) {
         final orderId = data['orderId'] as String?;
-        await loadOrders(silent: true); // refresh list quietly
+        await loadOrders(silent: true);
         return orderId;
       }
       return null;
@@ -285,6 +527,40 @@ class OrderNotifier extends StateNotifier<OrderState> {
         return o;
       }).toList(),
     );
+  }
+
+    // ── Fetch single order by ID ─────────────────────────────────
+  Future<Order?> fetchOrderById(String orderId) async {
+    try {
+      final existing = getOrderById(orderId);
+      if (existing != null) return existing;
+
+      final response = await _api.getOrder(orderId);
+      final data = response.data as Map<String, dynamic>;
+
+      if (data['success'] == true && data['order'] != null) {
+        final fetched = Order.fromJson(data['order'] as Map<String, dynamic>);
+
+        final alreadyExists = state.orders.any((o) => o.orderId == orderId);
+        if (!alreadyExists) {
+          state = state.copyWith(
+            orders: [...state.orders, fetched],
+          );
+        } else {
+          _updateOrderLocal(orderId, (_) => fetched);
+        }
+
+        return fetched;
+      }
+
+      return null;
+    } on ApiError catch (e) {
+      state = state.copyWith(error: e.displayMessage);
+      return null;
+    } catch (e) {
+      state = state.copyWith(error: 'Failed to load order');
+      return null;
+    }
   }
 
   Order? getOrderById(String orderId) {

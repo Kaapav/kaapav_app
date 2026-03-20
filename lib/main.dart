@@ -1,4 +1,6 @@
 // lib/main.dart
+import 'dart:io' show Platform;
+import 'firebase_options.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,13 +14,15 @@ import 'services/notification_service.dart';
 import 'utils/logger.dart';
 import 'dart:convert';  // For jsonEncode
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+
 // ═══════════════════════════════════════════════════════════════
 // BACKGROUND HANDLER — MUST BE TOP-LEVEL (Outside any class!)
 // This runs in a SEPARATE ISOLATE when app is killed/background
 // ═══════════════════════════════════════════════════════════════
 @pragma('vm:entry-point')
 Future<void> firebaseBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   debugPrint('🔥 BACKGROUND HANDLER FIRED: ${message.data}');
 
   final plugin = FlutterLocalNotificationsPlugin();
@@ -66,17 +70,20 @@ void main() async {
   await dotenv.load(fileName: ".env");
 
   // Initialize Firebase FIRST
-  await Firebase.initializeApp();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   
   // Register background handler BEFORE runApp (ONLY ONCE!)
   FirebaseMessaging.onBackgroundMessage(firebaseBackgroundHandler);
 
+
   // Setup Crashlytics
+if (!Platform.isWindows) {
   FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
   PlatformDispatcher.instance.onError = (error, stack) {
     FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
     return true;
   };
+}
 
   // Initialize notifications
   try {

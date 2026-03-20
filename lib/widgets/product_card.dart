@@ -43,9 +43,11 @@ class ProductCard extends StatelessWidget {
               borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
               child: AspectRatio(
                 aspectRatio: 1,
-                child: product.imageUrl != null
-                    ? CachedNetworkImage(
-                        imageUrl: product.imageUrl!,
+                child: ((product.imageUrl ?? '').isNotEmpty || product.images.isNotEmpty)
+    ? CachedNetworkImage(
+        imageUrl: (product.imageUrl ?? '').isNotEmpty
+            ? product.imageUrl!
+            : product.images.first,
                         fit: BoxFit.cover,
                         placeholder: (_, __) => Container(
                           color: const Color(0xFFFBF8F1),
@@ -88,7 +90,7 @@ class ProductCard extends StatelessWidget {
                   Row(
                     children: [
                       Text(
-                        '?${product.price.toStringAsFixed(0)}',
+                        '₹${product.price.toStringAsFixed(0)}',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -98,7 +100,7 @@ class ProductCard extends StatelessWidget {
                       if (product.hasDiscount) ...[
                         const SizedBox(width: 6),
                         Text(
-                          '?${product.comparePrice!.toStringAsFixed(0)}',
+                          '₹${product.comparePrice!.toStringAsFixed(0)}',
                           style: const TextStyle(
                             fontSize: 11,
                             color: Color(0xFF9CA3AF),

@@ -1,7 +1,7 @@
 // lib/services/api/order_api.dart
 // ═══════════════════════════════════════════════════════════
 // ORDER API
-// Matches: worker/handlers/order.js
+// Matches current worker routes
 // ═══════════════════════════════════════════════════════════
 
 import 'package:dio/dio.dart';
@@ -59,7 +59,7 @@ class OrderApi {
     );
   }
 
-  // ── Create order (from chat / WA flow) ───────────────────────
+  // ── Create order (generic) ───────────────────────────────────
   Future<Response> createOrder(Map<String, dynamic> data) {
     return _client.post(ApiEndpoints.orders, data: data);
   }
@@ -69,10 +69,10 @@ class OrderApi {
     return _client.put(ApiEndpoints.order(orderId), data: data);
   }
 
-  // ── Update status only (manual picker in detail screen) ──────
-  // PATCH /api/orders/:orderId/status
+  // ── Update status only ───────────────────────────────────────
+  // Worker route:
+  // PUT /api/orders/:id/status
   // Body: { status }
-  // Auto-sends WhatsApp on confirmed/shipped/delivered/cancelled
   Future<Response> updateOrderStatus(String orderId, String status) {
     return _client.put(
       '/api/orders/$orderId/status',
@@ -80,41 +80,146 @@ class OrderApi {
     );
   }
 
-  // ── Confirm order ─────────────────────────────────────────────
-  Future<Response> confirmOrder(String orderId) {
-    return _client.post(ApiEndpoints.orderConfirm(orderId));
+    // ── Update customer/shipping details ─────────────────────────
+  Future<Response> updateOrderDetails(
+    String orderId, {
+    required String customerName,
+    required String phone,
+    required String shippingName,
+    required String shippingAddress,
+    required String shippingCity,
+    required String shippingState,
+    required String shippingPincode,
+  }) {
+    return _client.patch(
+      '/api/orders/$orderId/details',
+      data: {
+        'customerName': customerName,
+        'phone': phone,
+        'shippingName': shippingName,
+        'shippingAddress': shippingAddress,
+        'shippingCity': shippingCity,
+        'shippingState': shippingState,
+        'shippingPincode': shippingPincode,
+      },
+    );
   }
 
-  // ── Ship order ────────────────────────────────────────────────
-  Future<Response> shipOrder(String orderId, Map<String, dynamic> data) {
-    return _client.post(ApiEndpoints.orderShip(orderId), data: data);
+     // ── Update payment info ──────────────────────────────────────
+  Future<Response> updateOrderPayment(
+    String orderId, {
+    required String paymentStatus,
+    String paymentId = '',
+  }) {
+    return _client.patch(
+      '/api/orders/$orderId/payment',
+      data: {
+        'paymentStatus': paymentStatus,
+        'paymentId': paymentId,
+      },
+    );
   }
 
-  // ── Cancel order ─────────────────────────────────────────────
-  Future<Response> cancelOrder(String orderId, {String? reason}) {
+  // ── Update internal notes ────────────────────────────────────
+  // Worker route:
+  // PATCH /api/orders/:id/notes
+  // Body: { notes }
+  Future<Response> updateOrderNotes(String orderId, String notes) {
+    return _client.patch(
+      '/api/orders/$orderId/notes',
+      data: {'notes': notes},
+    );
+  }
+
+  // ── Confirm order / payment manually ─────────────────────────
+  // Worker route:
+  // POST /api/orders/confirm
+  // Body: { orderId, paymentId, phone }
+  Future<Response> confirmOrder(
+    String orderId, {
+    required String paymentId,
+    String? phone,
+  }) {
     return _client.post(
-      ApiEndpoints.orderCancel(orderId),
+      '/api/orders/confirm',
+      data: {
+        'orderId': orderId,
+        'paymentId': paymentId,
+        if (phone != null) 'phone': phone,
+      },
+    );
+  }
+
+  // ── Ship order via AWB update ────────────────────────────────
+  // Worker route:
+  // PUT /api/orders/:id/awb
+  // Body: { awb, courier }
+  Future<Response> shipOrder(String orderId, Map<String, dynamic> data) {
+    return _client.put(
+      '/api/orders/$orderId/awb',
+      data: data,
+    );
+  }
+
+  // ── Book Shiprocket ──────────────────────────────────────────
+  // Worker route:
+  // POST /api/orders/:id/ship
+  Future<Response> bookShiprocket(String orderId) {
+    return _client.post(
+      '/api/orders/$orderId/ship',
+      data: {},
+    );
+  }
+
+    // ── Update AWB / courier ─────────────────────────────────────
+  Future<Response> updateAwb(
+    String orderId, {
+    required String awb,
+    String? courier,
+  }) {
+    return _client.put(
+      '/api/orders/$orderId/awb',
+      data: {
+        'awb': awb,
+        'courier': courier ?? 'Shiprocket',
+      },
+    );
+  }
+
+  // ── Get order events ─────────────────────────────────────────
+  Future<Response> getOrderEvents(String orderId) {
+    return _client.get('/api/orders/$orderId/events');
+  }
+
+    // ── Cancel order with reason ─────────────────────────────────
+  Future<Response> cancelOrder(String orderId, {String? reason}) {
+    return _client.patch(
+      '/api/orders/$orderId/cancel',
       data: {'reason': reason ?? 'Cancelled by admin'},
     );
   }
 
   // ── Generate Razorpay payment link ───────────────────────────
+  // Worker route:
+  // POST /api/orders/:id/payment-link
   Future<Response> generatePaymentLink(String orderId) {
-    return _client.post(ApiEndpoints.orderPaymentLink(orderId));
+    return _client.post('/api/orders/$orderId/payment-link');
   }
 
-  // ── Send WA notification ─────────────────────────────────────
+  // ── Send WhatsApp notification ───────────────────────────────
+  // Worker route:
+  // POST /api/orders/:id/send-notification
+  // Type supported: confirmed / shipped / delivered
   Future<Response> sendNotification(String orderId, String type) {
     return _client.post(
       '/api/orders/$orderId/send-notification',
-      data: {'type': type},
+      data: {'type': type == 'confirmation' ? 'confirmed' : type},
     );
   }
 
-  // ── Create manual order (from Flutter admin app) ─────────────
+  // ── Create manual order ──────────────────────────────────────
+  // Worker route:
   // POST /api/orders/manual
-  // Body: { name, phone, total, address, city, state, pincode, notes, items[] }
-  // Response: { success, orderId }
   Future<Response> createManualOrder({
     required String name,
     required String phone,
