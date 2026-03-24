@@ -409,6 +409,32 @@ CREATE TABLE IF NOT EXISTS settings (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS sync_queue (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_type TEXT,
+  entity_id TEXT,
+  action TEXT,
+  destination TEXT,
+  payload TEXT,
+  status TEXT DEFAULT 'pending',
+  retry_count INTEGER DEFAULT 0,
+  last_error TEXT,
+  next_retry_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS sync_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_type TEXT,
+  entity_id TEXT,
+  action TEXT,
+  destination TEXT,
+  status TEXT,
+  error_message TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 -- ═══════════════════════════════════════════════
 -- NOTIFICATION LOG
 -- Tracks all WhatsApp notifications sent
@@ -465,6 +491,10 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
 ('free_shipping_threshold', '498'),
 ('currency', 'INR'),
 ('timezone', 'Asia/Kolkata');
+
+INSERT OR IGNORE INTO settings (key, value) VALUES ('sync_mode', 'd1_only');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('sync_google_sheets_enabled', 'false');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('sync_supabase_enabled', 'false');
 
 -- ═══════════════════════════════════════════════
 -- FAQ DATA — 40 Questions

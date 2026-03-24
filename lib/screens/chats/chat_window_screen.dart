@@ -29,6 +29,7 @@ import 'starred_messages_screen.dart';
 import '../../services/api/api_client.dart';
 import '../../models/product.dart';
 import '../../services/api/product_api.dart';
+import '../../providers/settings_provider.dart';
 
 class ChatWindowScreen extends ConsumerStatefulWidget {
   final String phone;
@@ -178,6 +179,36 @@ class _ChatWindowScreenState extends ConsumerState<ChatWindowScreen>
     );
   }
 }
+
+    Color _resolveWallpaperColor(bool isDark, String wallpaper) {
+    switch (wallpaper) {
+      case 'cream':
+        return const Color(0xFFFBF8F1);
+      case 'dark':
+        return const Color(0xFF1A1A1A);
+      case 'gold':
+        return const Color(0xFFF5E6C8);
+      case 'gray':
+        return const Color(0xFFF0F0F0);
+      case 'mint':
+        return const Color(0xFFE8F5E9);
+      case 'sky':
+        return const Color(0xFFE3F2FD);
+      case 'default':
+      default:
+        return isDark ? const Color(0xFF121212) : const Color(0xFFFAFAD2);
+    }
+  }
+
+  bool _isReadReceiptsEnabled(Map<String, dynamic> settings) {
+    final value = settings['read_receipts'];
+    if (value is bool) return value;
+    if (value is String) {
+      final v = value.toLowerCase().trim();
+      return v == 'true' || v == '1' || v == 'yes';
+    }
+    return true;
+  }
 
   void _showAttachmentPicker() {
     showModalBottomSheet(
@@ -616,6 +647,11 @@ class _ChatWindowScreenState extends ConsumerState<ChatWindowScreen>
     final customer = ref.watch(currentCustomerProvider);
     final messages = ref.watch(messagesForPhoneProvider(widget.phone));
     final messageState = ref.watch(messageProvider);
+    final settings = ref.watch(settingsProvider).settings;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final wallpaper = (settings['chat_wallpaper'] ?? 'default').toString();
+    final readReceiptsEnabled = _isReadReceiptsEnabled(settings);
+    final wallpaperColor = _resolveWallpaperColor(isDark, wallpaper);
     final isLoading = messageState.isLoading(widget.phone);
     final isSending = messageState.isSending;
 
@@ -631,16 +667,19 @@ class _ChatWindowScreenState extends ConsumerState<ChatWindowScreen>
     );
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAD2),
+      backgroundColor: wallpaperColor,
       appBar: _buildAppBar(chat, customer),
               body: Column(
           children: [
             Expanded(
-              child: isLoading && messages.isEmpty
-                  ? _buildLoadingState()
-                  : messages.isEmpty
-                      ? _buildEmptyState()
-                      : _buildMessagesList(messages),
+              child: Container(
+                color: wallpaperColor,
+                child: isLoading && messages.isEmpty
+                    ? _buildLoadingState()
+                    : messages.isEmpty
+                        ? _buildEmptyState()
+                        : _buildMessagesList(messages, readReceiptsEnabled),
+              ),
             ),
 
             // -- Reply Preview Bar (NEW) --
@@ -648,9 +687,9 @@ class _ChatWindowScreenState extends ConsumerState<ChatWindowScreen>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: KaapavTheme.cream,
+                  color: isDark ? const Color(0xFF1A1A1A) : Colors.white,
                   border: const Border(top: BorderSide(color: KaapavTheme.border)),
-                ),
+                  ),
                 child: Row(
                   children: [
                     Container(width: 4, height: 40, decoration: BoxDecoration(
@@ -879,7 +918,7 @@ floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 
-  Widget _buildMessagesList(List<Message> messages) {
+  Widget _buildMessagesList(List<Message> messages, bool readReceiptsEnabled) {
     // Apply search filter
     var filtered = messages;
     if (_searchQuery.isNotEmpty) {
@@ -918,21 +957,29 @@ floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
             ...dateMessages.map((message) {
               final isSelected = _selectedIds.contains(message.messageId);
 
+              final bubbleMessage =
+                  !readReceiptsEnabled && message.isOutgoing
+                      ? message.copyWith(
+                          status: message.isFailed ? 'failed' : 'sent',
+                          readAt: null,
+                          deliveredAt: null,
+                        )
+                      : message;
+
               Widget bubble = ChatBubble(
-                message: message,
+                message: bubbleMessage,
                 onButtonClick: _handleButtonClick,
                 onRetry: _handleRetry,
                 onLongPress: _isSelecting
                     ? (_) => setState(() {
                         if (isSelected) {
-  _selectedIds.remove(message.messageId);
-} else {
-  _selectedIds.add(message.messageId);
-}
+                          _selectedIds.remove(message.messageId);
+                        } else {
+                          _selectedIds.add(message.messageId);
+                        }
                       })
                     : _showMessageOptions,
               );
-
               // Selection mode
               if (_isSelecting) {
                 bubble = GestureDetector(

@@ -1,4 +1,6 @@
+
 class Message {
+  
   final int? id;
   final String messageId;
   final String phone;

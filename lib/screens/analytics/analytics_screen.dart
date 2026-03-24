@@ -2,8 +2,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kaapav_app/config/theme.dart';
-import '../../providers/analytics_provider.dart'; // ✅ FIXED
-import '../../models/analytics_model.dart';        // ✅ FIXED
+import '../../providers/analytics_provider.dart';
+import '../../models/analytics_model.dart';       
+import '../../providers/order_provider.dart';
+import '../../models/order.dart';
 
 class AnalyticsScreen extends ConsumerStatefulWidget {
   const AnalyticsScreen({super.key});
@@ -19,8 +21,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen>
   void initState() {
     super.initState();
     _tab = TabController(length: 3, vsync: this);
-    Future.microtask(
-        () => ref.read(analyticsProvider.notifier).loadDashboard());
+    Future.microtask(() async {
+      await ref.read(analyticsProvider.notifier).loadDashboard();
+      await ref.read(orderProvider.notifier).loadOrders();
+    });
   }
 
   @override
@@ -30,14 +34,15 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen>
   }
 
   String _fmt(double v) {
-    if (v >= 100000) return '₹${(v / 100000).toStringAsFixed(2)}L';
-    if (v >= 1000) return '₹${(v / 1000).toStringAsFixed(1)}K';
-    return '₹${v.toStringAsFixed(0)}';
+    if (v >= 100000) return '\u20B9${(v / 100000).toStringAsFixed(2)}L';
+    if (v >= 1000) return '\u20B9${(v / 1000).toStringAsFixed(1)}K';
+    return '\u20B9${v.toStringAsFixed(0)}';
   }
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(analyticsProvider);
+    final orders = ref.watch(orderProvider).orders;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? const Color(0xFF0F0F0F) : const Color(0xFFF5F5F5);
     final card = isDark ? const Color(0xFF1F1F1F) : Colors.white;
@@ -58,8 +63,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen>
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
-            onPressed: () =>
-                ref.read(analyticsProvider.notifier).loadDashboard(),
+            onPressed: () async {
+              await ref.read(analyticsProvider.notifier).loadDashboard();
+              await ref.read(orderProvider.notifier).loadOrders();
+            },
           ),
         ],
         bottom: TabBar(
@@ -81,13 +88,16 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen>
                   CircularProgressIndicator(color: KaapavTheme.gold))
           : RefreshIndicator(
               color: KaapavTheme.gold,
-              onRefresh: () =>
-                  ref.read(analyticsProvider.notifier).loadDashboard(),
+              onRefresh: () async {
+                await ref.read(analyticsProvider.notifier).loadDashboard();
+                await ref.read(orderProvider.notifier).loadOrders();
+              },
               child: TabBarView(
                 controller: _tab,
                 children: [
                   _OverviewTab(
                       state: state,
+                    orders: orders,
                       isDark: isDark,
                       card: card,
                       border: border,
@@ -96,6 +106,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen>
                       fmt: _fmt),
                   _OrdersTab(
                       state: state,
+                    orders: orders,
                       isDark: isDark,
                       card: card,
                       border: border,
@@ -122,12 +133,14 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen>
 // ═══════════════════════════════════════
 class _OverviewTab extends StatelessWidget {
   final AnalyticsState state;
+  final List<Order> orders;
   final bool isDark;
   final Color card, border, text, sub;
   final String Function(double) fmt;
 
   const _OverviewTab({
     required this.state,
+    required this.orders,
     required this.isDark,
     required this.card,
     required this.border,
@@ -192,11 +205,12 @@ class _OverviewTab extends StatelessWidget {
         _SectionTitle('Order Status Breakdown', text),
         const SizedBox(height: 10),
         _StatusBreakdown(
-            state: state,
+            orders: orders,
             card: card,
             border: border,
             text: text,
-            sub: sub),
+            sub: sub
+        ),
         const SizedBox(height: 20),
         _SectionTitle('Revenue Split', text),
         const SizedBox(height: 10),
@@ -229,12 +243,14 @@ class _OverviewTab extends StatelessWidget {
 // ═══════════════════════════════════════
 class _OrdersTab extends StatelessWidget {
   final AnalyticsState state;
+  final List<Order> orders;
   final bool isDark;
   final Color card, border, text, sub;
   final String Function(double) fmt;
 
   const _OrdersTab({
     required this.state,
+    required this.orders,
     required this.isDark,
     required this.card,
     required this.border,
@@ -317,7 +333,7 @@ class _OrdersTab extends StatelessWidget {
         _SectionTitle('Order Pipeline', text),
         const SizedBox(height: 10),
         _OrderPipeline(
-            stats: stats,
+          orders: orders,
             card: card,
             border: border,
             text: text,
@@ -326,7 +342,7 @@ class _OrdersTab extends StatelessWidget {
         _SectionTitle('Payment Status', text),
         const SizedBox(height: 10),
         _PaymentStatus(
-            stats: stats,
+          orders: orders,
             card: card,
             border: border,
             text: text,
@@ -664,26 +680,34 @@ class _InsightRow extends StatelessWidget {
 }
 
 class _StatusBreakdown extends StatelessWidget {
-  final AnalyticsState state;
+  final List<Order> orders;
   final Color card, border, text, sub;
 
-  const _StatusBreakdown(
-      {required this.state,
-      required this.card,
-      required this.border,
-      required this.text,
-      required this.sub});
+  const _StatusBreakdown({
+    required this.orders,
+    required this.card,
+    required this.border,
+    required this.text,
+    required this.sub,
+  });
 
   @override
   Widget build(BuildContext context) {
     final statuses = [
-      _SB('Pending', state.stats?.pendingOrders ?? 0,
+      _SB('Pending', orders.where((o) => o.status == 'pending').length,
           const Color(0xFFF59E0B)),
-      _SB('Confirmed', 0, const Color(0xFF3B82F6)),
-      _SB('Processing', 0, const Color(0xFF8B5CF6)),
-      _SB('Shipped', 0, const Color(0xFF06B6D4)),
-      _SB('Delivered', 0, const Color(0xFF10B981)),
+      _SB('Confirmed', orders.where((o) => o.status == 'confirmed').length,
+          const Color(0xFF3B82F6)),
+      _SB('Processing', orders.where((o) => o.status == 'processing').length,
+          const Color(0xFF8B5CF6)),
+      _SB('Shipped', orders.where((o) => o.status == 'shipped').length,
+          const Color(0xFF06B6D4)),
+      _SB('Delivered', orders.where((o) => o.status == 'delivered').length,
+          const Color(0xFF10B981)),
+      _SB('Cancelled', orders.where((o) => o.status == 'cancelled').length,
+          const Color(0xFFEF4444)),
     ];
+
     final total = statuses.fold<int>(0, (s, e) => s + e.count);
 
     return Container(
@@ -698,30 +722,34 @@ class _StatusBreakdown extends StatelessWidget {
           final pct = total > 0 ? s.count / total : 0.0;
           return Padding(
             padding: const EdgeInsets.only(bottom: 10),
-            child: Column(children: [
-              Row(children: [
-                Text(s.label,
-                    style: TextStyle(fontSize: 12, color: text)),
-                const Spacer(),
-                Text('${s.count}',
-                    style: TextStyle(
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Text(s.label, style: TextStyle(fontSize: 12, color: text)),
+                    const Spacer(),
+                    Text(
+                      '${s.count}',
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: s.color)),
-              ]),
-              const SizedBox(height: 5),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: pct.toDouble(),
-                  backgroundColor:
-                      s.color.withValues(alpha: 0.1),
-                  valueColor:
-                      AlwaysStoppedAnimation(s.color),
-                  minHeight: 6,
+                        color: s.color,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ]),
+                const SizedBox(height: 5),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: pct,
+                    backgroundColor: s.color.withValues(alpha: 0.1),
+                    valueColor: AlwaysStoppedAnimation(s.color),
+                    minHeight: 6,
+                  ),
+                ),
+              ],
+            ),
           );
         }).toList(),
       ),
@@ -1004,26 +1032,32 @@ class _PB {
 }
 
 class _OrderPipeline extends StatelessWidget {
-  final DashboardStats? stats;
+  final List<Order> orders;
   final Color card, border, text, sub;
 
-  const _OrderPipeline(
-      {required this.stats,
-      required this.card,
-      required this.border,
-      required this.text,
-      required this.sub});
+  const _OrderPipeline({
+    required this.orders,
+    required this.card,
+    required this.border,
+    required this.text,
+    required this.sub,
+  });
 
   @override
   Widget build(BuildContext context) {
     final stages = [
-      _Stage('Pending', stats?.pendingOrders ?? 0,
+      _Stage('Pending', orders.where((o) => o.status == 'pending').length,
           const Color(0xFFF59E0B)),
-      _Stage('Confirmed', 0, const Color(0xFF3B82F6)),
-      _Stage('Processing', 0, const Color(0xFF8B5CF6)),
-      _Stage('Shipped', 0, const Color(0xFF06B6D4)),
-      _Stage('Delivered', 0, const Color(0xFF10B981)),
+      _Stage('Confirmed', orders.where((o) => o.status == 'confirmed').length,
+          const Color(0xFF3B82F6)),
+      _Stage('Processing', orders.where((o) => o.status == 'processing').length,
+          const Color(0xFF8B5CF6)),
+      _Stage('Shipped', orders.where((o) => o.status == 'shipped').length,
+          const Color(0xFF06B6D4)),
+      _Stage('Delivered', orders.where((o) => o.status == 'delivered').length,
+          const Color(0xFF10B981)),
     ];
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -1035,43 +1069,48 @@ class _OrderPipeline extends StatelessWidget {
         children: stages.asMap().entries.map((e) {
           final idx = e.key;
           final stage = e.value;
+
           return Expanded(
             child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Expanded(
-                    child: Column(children: [
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Expanded(
+                  child: Column(
+                    children: [
                       Container(
                         width: 36,
                         height: 36,
                         decoration: BoxDecoration(
-                          color: stage.color
-                              .withValues(alpha: 0.15),
+                          color: stage.color.withValues(alpha: 0.15),
                           shape: BoxShape.circle,
                           border: Border.all(
-                              color: stage.color
-                                  .withValues(alpha: 0.4)),
+                            color: stage.color.withValues(alpha: 0.4),
+                          ),
                         ),
                         child: Center(
-                          child: Text('${stage.count}',
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight:
-                                      FontWeight.w800,
-                                  color: stage.color)),
+                          child: Text(
+                            '${stage.count}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: stage.color,
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 5),
-                      Text(stage.label,
-                          style: TextStyle(
-                              fontSize: 8, color: sub),
-                          textAlign: TextAlign.center),
-                    ]),
+                      Text(
+                        stage.label,
+                        style: TextStyle(fontSize: 8, color: sub),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
-                  if (idx < stages.length - 1)
-                    Icon(Icons.arrow_forward_ios,
-                        size: 10, color: sub),
-                ]),
+                ),
+                if (idx < stages.length - 1)
+                  Icon(Icons.arrow_forward_ios, size: 10, color: sub),
+              ],
+            ),
           );
         }).toList(),
       ),
@@ -1087,22 +1126,32 @@ class _Stage {
 }
 
 class _PaymentStatus extends StatelessWidget {
-  final DashboardStats? stats;
+  final List<Order> orders;
   final Color card, border, text, sub;
   final String Function(double) fmt;
 
-  const _PaymentStatus(
-      {required this.stats,
-      required this.card,
-      required this.border,
-      required this.text,
-      required this.sub,
-      required this.fmt});
+  const _PaymentStatus({
+    required this.orders,
+    required this.card,
+    required this.border,
+    required this.text,
+    required this.sub,
+    required this.fmt,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final total = stats?.totalRevenue ?? 0;
-    const unpaid = 0.0;
+    final paid = orders
+        .where((o) => o.paymentStatus == 'paid')
+        .fold<double>(0, (s, o) => s + o.total);
+
+    final unpaid = orders
+        .where((o) => o.paymentStatus == 'unpaid')
+        .fold<double>(0, (s, o) => s + o.total);
+
+    final refunded = orders
+        .where((o) => o.paymentStatus == 'refunded')
+        .fold<double>(0, (s, o) => s + o.total);
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1111,19 +1160,39 @@ class _PaymentStatus extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: border),
       ),
-      child: Row(children: [
-        Expanded(
-            child: _PayChip('Paid', fmt(total),
-                const Color(0xFF10B981), text, sub)),
-        const SizedBox(width: 10),
-        Expanded(
-            child: _PayChip('Unpaid', fmt(unpaid),
-                const Color(0xFFEF4444), text, sub)),
-        const SizedBox(width: 10),
-        Expanded(
-            child: _PayChip('Refunded', '₹0',
-                const Color(0xFFF59E0B), text, sub)),
-      ]),
+      child: Row(
+        children: [
+          Expanded(
+            child: _PayChip(
+              'Paid',
+              fmt(paid),
+              const Color(0xFF10B981),
+              text,
+              sub,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _PayChip(
+              'Unpaid',
+              fmt(unpaid),
+              const Color(0xFFEF4444),
+              text,
+              sub,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _PayChip(
+              'Refunded',
+              fmt(refunded),
+              const Color(0xFFF59E0B),
+              text,
+              sub,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

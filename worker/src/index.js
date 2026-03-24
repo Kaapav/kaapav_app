@@ -17,19 +17,41 @@ function errorResponse(message, status = 400) {
 
 async function logOrderEvent(env, orderId, eventType, message, meta = {}, source = 'system') {
   try {
+    const createdAt = new Date().toISOString();
+
     await env.DB.prepare(`
       INSERT INTO order_events (
         order_id, event_type, event_source, message, meta_json, created_at
-      ) VALUES (?, ?, ?, ?, ?, datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?)
     `).bind(
       orderId,
       eventType,
       source,
       message || '',
-      JSON.stringify(meta || {})
+      JSON.stringify(meta || {}),
+      createdAt
     ).run();
+
+    await appendOrderEventToGoogleSheets(env, {
+      created_at: createdAt,
+      order_id: orderId,
+      event_type: eventType,
+      event_source: source,
+      message: message || '',
+      meta_json: JSON.stringify(meta || {}),
+    });
   } catch (e) {
     console.error('logOrderEvent error:', e);
+
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'order_event',
+      entity_id: orderId,
+      action: eventType,
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
   }
 }
 
@@ -104,6 +126,923 @@ async function getAccessToken(env) {
     }
   } catch (e) { console.error('FCM token error:', e); }
   return null;
+}
+
+// ═══════════════════ GOOGLE SHEETS ═══════════════════
+function base64UrlEncode(bytes) {
+  let binary = '';
+  const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  for (let i = 0; i < arr.length; i++) {
+    binary += String.fromCharCode(arr[i]);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function utf8ToBase64Url(str) {
+  return base64UrlEncode(new TextEncoder().encode(str));
+}
+
+async function getGoogleSheetsAccessToken(env) {
+  const cached = await env.KV.get('google_sheets_access_token');
+  if (cached) return cached;
+
+  const now = Math.floor(Date.now() / 1000);
+  const header = utf8ToBase64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const claim = utf8ToBase64Url(JSON.stringify({
+    iss: env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    scope: 'https://www.googleapis.com/auth/spreadsheets',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: now + 3600,
+  }));
+
+  const signingInput = `${header}.${claim}`;
+
+  const pem = env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
+    .replace(/-----END PRIVATE KEY-----/g, '')
+    .replace(/\\n/g, '\n')
+    .replace(/\n/g, '');
+
+  const binaryDer = Uint8Array.from(atob(pem), c => c.charCodeAt(0));
+
+  const privateKey = await crypto.subtle.importKey(
+    'pkcs8',
+    binaryDer.buffer,
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      hash: 'SHA-256',
+    },
+    false,
+    ['sign']
+  );
+
+  const signature = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    privateKey,
+    new TextEncoder().encode(signingInput)
+  );
+
+  const jwt = `${signingInput}.${base64UrlEncode(signature)}`;
+
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt,
+    }),
+  });
+
+  const tokenJson = await tokenRes.json();
+  if (!tokenRes.ok || !tokenJson.access_token) {
+    throw new Error(`Google token error: ${JSON.stringify(tokenJson)}`);
+  }
+
+  await env.KV.put('google_sheets_access_token', tokenJson.access_token, {
+    expirationTtl: 3300,
+  });
+
+  return tokenJson.access_token;
+}
+
+async function googleSheetsRequest(env, method, path, body) {
+  const token = await getGoogleSheetsAccessToken(env);
+
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${env.GOOGLE_SHEETS_SPREADSHEET_ID}${path}`, {
+    method,
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const text = await res.text();
+  let json = {};
+  try { json = text ? JSON.parse(text) : {}; } catch (_) {}
+
+  if (!res.ok) {
+    throw new Error(`Sheets API ${method} ${path} failed: ${text}`);
+  }
+
+  return json;
+}
+
+async function getSheetValues(env, tabName) {
+  const encodedRange = encodeURIComponent(`${tabName}!A:ZZ`);
+  const json = await googleSheetsRequest(env, 'GET', `/values/${encodedRange}`, null);
+  return json.values || [];
+}
+
+async function appendSheetRow(env, tabName, row) {
+  const encodedRange = encodeURIComponent(`${tabName}!A:ZZ`);
+  return await googleSheetsRequest(env, 'POST', `/values/${encodedRange}:append?valueInputOption=RAW`, {
+    values: [row],
+  });
+}
+
+async function updateSheetRow(env, tabName, rowIndex1Based, row) {
+  const encodedRange = encodeURIComponent(`${tabName}!A${rowIndex1Based}:ZZ${rowIndex1Based}`);
+  return await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, {
+    values: [row],
+  });
+}
+
+async function findSheetRowIndexByKey(env, tabName, keyColumnIndex, keyValue) {
+  const rows = await getSheetValues(env, tabName);
+  if (!rows || rows.length < 2) return null;
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i] || [];
+    if ((row[keyColumnIndex] || '').toString() === (keyValue || '').toString()) {
+      return i + 1; // 1-based row index in Google Sheets
+    }
+  }
+  return null;
+}
+
+async function upsertSheetRow(env, tabName, keyColumnIndex, keyValue, row) {
+  const existingRowIndex = await findSheetRowIndexByKey(env, tabName, keyColumnIndex, keyValue);
+  if (existingRowIndex) {
+    return await updateSheetRow(env, tabName, existingRowIndex, row);
+  }
+  return await appendSheetRow(env, tabName, row);
+}
+
+function safeText(value) {
+  return value == null ? '' : String(value);
+}
+
+function safeNumber(value) {
+  if (value == null || value === '') return 0;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function itemsSummaryFromJson(itemsRaw) {
+  try {
+    const items = typeof itemsRaw === 'string' ? JSON.parse(itemsRaw || '[]') : (itemsRaw || []);
+    if (!Array.isArray(items)) return '';
+    return items.map(i => `${i.name || i.sku || 'Item'} x${i.qty || i.quantity || 1}`).join(', ');
+  } catch (_) {
+    return '';
+  }
+}
+
+function labelsSummary(labelsRaw) {
+  try {
+    const labels = typeof labelsRaw === 'string' ? JSON.parse(labelsRaw || '[]') : (labelsRaw || []);
+    if (!Array.isArray(labels)) return '';
+    return labels.join(', ');
+  } catch (_) {
+    return '';
+  }
+}
+
+function tagsSummary(tagsRaw) {
+  try {
+    const tags = typeof tagsRaw === 'string' ? JSON.parse(tagsRaw || '[]') : (tagsRaw || []);
+    if (!Array.isArray(tags)) return '';
+    return tags.join(', ');
+  } catch (_) {
+    return '';
+  }
+}
+
+function mapOrderToSheetRow(order) {
+  return [
+    safeText(order.order_id),
+    safeText(order.created_at),
+    safeText(order.updated_at),
+    safeText(order.customer_name),
+    safeText(order.phone),
+    safeText(order.source),
+    itemsSummaryFromJson(order.items),
+    safeNumber(order.item_count),
+    safeNumber(order.subtotal),
+    safeNumber(order.shipping_cost),
+    safeNumber(order.total),
+    safeText(order.status),
+    safeText(order.payment_status),
+    safeText(order.payment_id),
+    safeText(order.payment_method),
+    safeText(order.payment_link),
+    safeText(order.payment_link_expires),
+    safeText(order.shipping_name),
+    safeText(order.shipping_phone),
+    safeText(order.shipping_address),
+    safeText(order.shipping_city),
+    safeText(order.shipping_state),
+    safeText(order.shipping_pincode),
+    safeText(order.paid_at),
+    safeText(order.cancelled_at),
+    safeText(order.cancellation_reason),
+    safeText(order.customer_notes),
+    safeText(order.internal_notes),
+    '', // owner_note (manual)
+    '', // follow_up_needed (manual)
+    '', // verified (manual)
+  ];
+}
+
+function mapCustomerToSheetRow(customer, unpaidOrderCount = 0, unpaidOrderValue = 0) {
+  let cartItems = [];
+  try {
+    cartItems = JSON.parse(customer.cart || '[]');
+    if (!Array.isArray(cartItems)) cartItems = [];
+  } catch (_) {
+    cartItems = [];
+  }
+
+  const cartItemCount = cartItems.reduce((sum, item) => {
+    return sum + Number(item.qty || item.quantity || 1);
+  }, 0);
+
+  const cartValue = cartItems.reduce((sum, item) => {
+    const qty = Number(item.qty || item.quantity || 1);
+    const price = Number(item.price || 0);
+    return sum + (qty * price);
+  }, 0);
+
+  return [
+    safeText(customer.phone),
+    safeText(customer.name),
+    safeText(customer.email),
+    safeText(customer.city),
+    safeText(customer.state),
+    safeText(customer.pincode),
+    '', // source, can derive later
+    safeText(customer.segment),
+    safeText(customer.tier),
+    labelsSummary(customer.labels),
+    safeNumber(customer.message_count),
+    safeNumber(customer.order_count),
+    safeNumber(customer.total_spent),
+    cartItemCount,
+    cartValue,
+    safeNumber(unpaidOrderCount),
+    safeNumber(unpaidOrderValue),
+    safeText(customer.first_seen),
+    safeText(customer.last_seen),
+    safeText(customer.last_order_at),
+    '', // owner_note (manual)
+    '', // follow_up_priority (manual)
+  ];
+}
+
+function mapProductToSheetRow(product) {
+  return [
+    safeText(product.sku),
+    safeText(product.name),
+    safeText(product.category),
+    safeText(product.subcategory),
+    safeNumber(product.price),
+    safeNumber(product.compare_price),
+    safeNumber(product.stock),
+    safeNumber(product.reserved_stock),
+    safeText(product.is_active),
+    safeText(product.is_featured),
+    safeText(product.image_url),
+    safeText(product.website_link),
+    safeText(product.material),
+    tagsSummary(product.tags),
+    safeText(product.updated_at),
+    '', // restock_note (manual)
+  ];
+}
+
+function mapShipmentToSheetRow(order) {
+  return [
+    safeText(order.order_id),
+    safeText(order.customer_name),
+    safeText(order.phone),
+    safeText(order.status),
+    safeText(order.payment_status),
+    safeText(order.shiprocket_order_id),
+    safeText(order.shipment_id),
+    safeText(order.courier),
+    safeText(order.awb_number),
+    safeText(order.awb_code),
+    safeText(order.tracking_id),
+    safeText(order.tracking_url),
+    safeText(order.shipping_city),
+    safeText(order.shipping_state),
+    safeText(order.shipping_pincode),
+    safeText(order.paid_at),
+    safeText(order.shipped_at),
+    safeText(order.delivered_at),
+    safeText(order.updated_at),
+    '', // dispatch_note (manual)
+    '', // dispatch_verified (manual)
+  ];
+}
+
+function mapCartToSheetRow(cart, customerName = '') {
+  return [
+    safeText(cart.phone),
+    safeText(customerName),
+    safeNumber(cart.item_count),
+    safeNumber(cart.total),
+    itemsSummaryFromJson(cart.items),
+    safeText(cart.status),
+    safeNumber(cart.reminder_count),
+    safeText(cart.last_reminder_at),
+    safeText(cart.created_at),
+    safeText(cart.updated_at),
+    safeText(cart.converted_at),
+    '', // owner_note (manual)
+    '', // follow_up_needed (manual)
+  ];
+}
+
+function deriveLeadStatus(customer) {
+  const orderCount = safeNumber(customer.order_count);
+  const totalSpent = safeNumber(customer.total_spent);
+  const messageCount = safeNumber(customer.message_count);
+
+  if (orderCount > 0 || totalSpent > 0) return 'ordered';
+  if (messageCount >= 5) return 'interested';
+  if (messageCount > 0) return 'engaged';
+  return 'new';
+}
+
+function mapLeadToSheetRow(customer) {
+  return [
+    safeText(customer.created_at || customer.first_seen),
+    safeText(customer.phone),
+    safeText(customer.name),
+    '', // source, derive later if available
+    deriveLeadStatus(customer),
+    safeNumber(customer.message_count),
+    safeNumber(customer.order_count),
+    safeNumber(customer.total_spent),
+    safeText(customer.segment),
+    safeText(customer.tier),
+    labelsSummary(customer.labels),
+    safeText(customer.last_seen),
+    safeText(customer.last_order_at),
+    '', // owner_note (manual)
+    '', // follow_up_needed (manual)
+  ];
+}
+
+function deriveSalesStage(order) {
+  if (safeText(order.status) === 'delivered') return 'delivered';
+  if (safeText(order.status) === 'shipped') return 'shipped';
+  if (safeText(order.payment_status) === 'paid') return 'paid';
+  if (safeText(order.payment_status) === 'unpaid') return 'unpaid';
+  return 'lead';
+}
+
+function mapSalesToSheetRow(order) {
+  return [
+    safeText(order.order_id),
+    safeText(order.created_at),
+    safeText(order.source),
+    safeText(order.customer_name),
+    safeText(order.phone),
+    safeNumber(order.total),
+    safeText(order.payment_status),
+    safeText(order.status),
+    safeText(order.paid_at),
+    safeText(order.shipped_at),
+    safeText(order.delivered_at),
+    safeNumber(order.item_count),
+    itemsSummaryFromJson(order.items),
+    deriveSalesStage(order),
+    '', // owner_note (manual)
+  ];
+}
+
+async function appendOrderEventToGoogleSheets(env, eventRow) {
+  try {
+    await appendSheetRow(env, 'Order Events', [
+      safeText(eventRow.created_at),
+      safeText(eventRow.order_id),
+      safeText(eventRow.event_type),
+      safeText(eventRow.event_source),
+      safeText(eventRow.message),
+      safeText(eventRow.meta_json),
+    ]);
+  } catch (e) {
+    console.error('Order Events sheet append error:', e);
+  }
+}
+
+async function appendSyncFailureToGoogleSheets(env, failure) {
+  try {
+    await appendSheetRow(env, 'Sync Failures', [
+      safeText(failure.created_at || new Date().toISOString()),
+      safeText(failure.destination || 'google_sheets'),
+      safeText(failure.entity_type),
+      safeText(failure.entity_id),
+      safeText(failure.action),
+      safeText(failure.error_message),
+      safeText(failure.retry_count || 0),
+      safeText(failure.status || 'failed'),
+    ]);
+  } catch (e) {
+    console.error('Sync Failures sheet append error:', e);
+  }
+}
+
+
+
+async function syncOrderToGoogleSheets(env, orderId) {
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) throw new Error(`Order not found for Sheets sync: ${orderId}`);
+
+  const row = mapOrderToSheetRow(order);
+  await upsertSheetRow(env, 'Orders', 0, order.order_id, row);
+}
+
+async function syncCustomerToGoogleSheets(env, phone) {
+  const customer = await env.DB.prepare(
+    `SELECT * FROM customers WHERE phone = ?`
+  ).bind(phone).first();
+
+  if (!customer) throw new Error(`Customer not found for Sheets sync: ${phone}`);
+
+  const unpaid = await env.DB.prepare(`
+    SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
+    FROM orders
+    WHERE phone = ?
+      AND payment_status = 'unpaid'
+      AND status != 'cancelled'
+  `).bind(phone).first();
+
+  const row = mapCustomerToSheetRow(
+    customer,
+    unpaid?.count || 0,
+    unpaid?.value || 0
+  );
+
+  await upsertSheetRow(env, 'Customers', 0, customer.phone, row);
+}
+
+async function syncProductToGoogleSheets(env, sku) {
+  const product = await env.DB.prepare(
+    `SELECT * FROM products WHERE sku = ?`
+  ).bind(sku).first();
+
+  if (!product) throw new Error(`Product not found for Sheets sync: ${sku}`);
+
+  const row = mapProductToSheetRow(product);
+  await upsertSheetRow(env, 'Inventory', 0, product.sku, row);
+}
+
+
+
+async function syncSalesToGoogleSheets(env, orderId) {
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) return;
+
+  const row = mapSalesToSheetRow(order);
+  await upsertSheetRow(env, 'Sales', 0, order.order_id, row);
+}
+
+async function rebuildSourcePerformanceSheet(env) {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const sourceRows = await env.DB.prepare(`
+    SELECT
+      LOWER(COALESCE(source, 'unknown')) as source,
+      COUNT(*) as orders,
+      SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END) as paid_orders,
+      COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as revenue
+    FROM orders
+    GROUP BY LOWER(COALESCE(source, 'unknown'))
+  `).all();
+
+  const leadRows = await env.DB.prepare(`
+    SELECT
+      '' as source,
+      COUNT(*) as leads
+    FROM customers
+  `).all();
+
+  const values = [[
+    'date', 'source', 'leads', 'orders', 'paid_orders', 'revenue', 'avg_order_value', 'conversion_rate', 'notes'
+  ]];
+
+  const leadsFallback = Number(leadRows?.results?.[0]?.leads || 0);
+
+  for (const row of (sourceRows?.results || [])) {
+    const orders = Number(row.orders || 0);
+    const paidOrders = Number(row.paid_orders || 0);
+    const revenue = Number(row.revenue || 0);
+    const avgOrderValue = paidOrders > 0 ? revenue / paidOrders : 0;
+    const conversionRate = leadsFallback > 0 ? (orders / leadsFallback) * 100 : 0;
+
+    values.push([
+      today,
+      safeText(row.source),
+      leadsFallback,
+      orders,
+      paidOrders,
+      revenue,
+      avgOrderValue.toFixed(2),
+      conversionRate.toFixed(2),
+      '',
+    ]);
+  }
+
+  const encodedRange = encodeURIComponent('Source Performance!A:I');
+  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, {
+    values,
+  });
+}
+
+async function syncShipmentToGoogleSheets(env, orderId) {
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) throw new Error(`Order not found for shipment sync: ${orderId}`);
+
+  const row = mapShipmentToSheetRow(order);
+  await upsertSheetRow(env, 'Shipments', 0, order.order_id, row);
+}
+
+async function syncCartToGoogleSheets(env, phone) {
+  const cart = await env.DB.prepare(
+    `SELECT * FROM carts WHERE phone = ?`
+  ).bind(phone).first();
+
+  if (!cart) return;
+
+  const customer = await env.DB.prepare(
+    `SELECT name FROM customers WHERE phone = ?`
+  ).bind(phone).first();
+
+  const row = mapCartToSheetRow(cart, customer?.name || '');
+  await upsertSheetRow(env, 'Cart Activity', 0, cart.phone, row);
+}
+
+async function syncLeadToGoogleSheets(env, phone) {
+  const customer = await env.DB.prepare(
+    `SELECT * FROM customers WHERE phone = ?`
+  ).bind(phone).first();
+
+  if (!customer) return;
+
+  const row = mapLeadToSheetRow(customer);
+  await upsertSheetRow(env, 'Leads', 1, customer.phone, row);
+}
+
+const SHEET_MANUAL_COLUMNS = {
+  'Orders': [28, 29, 30],
+  'Shipments': [19, 20],
+  'Inventory': [15],
+  'Order Events': [],
+  'Sync Failures': [],
+  'Leads': [13, 14],
+  'Sales': [14],
+  'Source Performance': [8],
+  'Customers': [20, 21],
+  'Cart Activity': [11, 12],
+};
+
+function mergeSheetRowPreservingManual(existingRow = [], newRow = [], manualIndexes = []) {
+  const maxLen = Math.max(existingRow.length, newRow.length);
+  const merged = Array.from({ length: maxLen }, (_, i) =>
+    i < newRow.length ? newRow[i] : (existingRow[i] ?? '')
+  );
+
+  for (const idx of manualIndexes) {
+    if (existingRow[idx] !== undefined && existingRow[idx] !== '') {
+      merged[idx] = existingRow[idx];
+    }
+  }
+
+  return merged;
+}
+
+async function getSheetRowByKey(env, tabName, keyColumnIndex, keyValue) {
+  const rows = await getSheetValues(env, tabName);
+  if (!rows || rows.length < 2) return null;
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i] || [];
+    if ((row[keyColumnIndex] || '').toString() === (keyValue || '').toString()) {
+      return { rowIndex1Based: i + 1, row };
+    }
+  }
+  return null;
+}
+
+async function upsertSheetRowSafe(env, tabName, keyColumnIndex, keyValue, row) {
+  const existing = await getSheetRowByKey(env, tabName, keyColumnIndex, keyValue);
+  const manualIndexes = SHEET_MANUAL_COLUMNS[tabName] || [];
+
+  if (existing) {
+    const mergedRow = mergeSheetRowPreservingManual(existing.row, row, manualIndexes);
+    return await updateSheetRow(env, tabName, existing.rowIndex1Based, mergedRow);
+  }
+
+  return await appendSheetRow(env, tabName, row);
+}
+
+async function syncLeadToGoogleSheetsSafe(env, phone) {
+  const customer = await env.DB.prepare(
+    `SELECT * FROM customers WHERE phone = ?`
+  ).bind(phone).first();
+
+  if (!customer) return;
+
+  const firstOrder = await env.DB.prepare(`
+    SELECT source, created_at
+    FROM orders
+    WHERE phone = ?
+    ORDER BY datetime(created_at) ASC
+    LIMIT 1
+  `).bind(phone).first();
+
+  const orderCount = safeNumber(customer.order_count);
+  const totalSpent = safeNumber(customer.total_spent);
+  const messageCount = safeNumber(customer.message_count);
+
+  let leadStatus = 'new';
+  if (orderCount > 0 || totalSpent > 0) leadStatus = 'ordered';
+  else if (messageCount >= 5) leadStatus = 'interested';
+  else if (messageCount > 0) leadStatus = 'engaged';
+
+  const row = [
+    safeText(customer.created_at || customer.first_seen),
+    safeText(customer.phone),
+    safeText(customer.name),
+    safeText(firstOrder?.source || ''),
+    leadStatus,
+    safeNumber(customer.message_count),
+    safeNumber(customer.order_count),
+    safeNumber(customer.total_spent),
+    safeText(customer.segment),
+    safeText(customer.tier),
+    labelsSummary(customer.labels),
+    safeText(customer.last_seen),
+    safeText(firstOrder?.created_at || ''),
+    '', // owner_note
+    '', // follow_up_needed
+  ];
+
+  await upsertSheetRowSafe(env, 'Leads', 1, customer.phone, row);
+}
+
+async function syncCustomerToGoogleSheetsSafe(env, phone) {
+  const customer = await env.DB.prepare(
+    `SELECT * FROM customers WHERE phone = ?`
+  ).bind(phone).first();
+
+  if (!customer) throw new Error(`Customer not found for Sheets sync: ${phone}`);
+
+  const unpaid = await env.DB.prepare(`
+    SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
+    FROM orders
+    WHERE phone = ?
+      AND payment_status = 'unpaid'
+      AND status != 'cancelled'
+  `).bind(phone).first();
+
+  const firstOrder = await env.DB.prepare(`
+    SELECT source
+    FROM orders
+    WHERE phone = ?
+    ORDER BY datetime(created_at) ASC
+    LIMIT 1
+  `).bind(phone).first();
+
+  let cartItems = [];
+  try {
+    cartItems = JSON.parse(customer.cart || '[]');
+    if (!Array.isArray(cartItems)) cartItems = [];
+  } catch (_) {
+    cartItems = [];
+  }
+
+  const cartItemCount = cartItems.reduce((sum, item) => {
+    return sum + Number(item.qty || item.quantity || 1);
+  }, 0);
+
+  const cartValue = cartItems.reduce((sum, item) => {
+    const qty = Number(item.qty || item.quantity || 1);
+    const price = Number(item.price || 0);
+    return sum + (qty * price);
+  }, 0);
+
+  const row = [
+    safeText(customer.phone),
+    safeText(customer.name),
+    safeText(customer.email),
+    safeText(customer.city),
+    safeText(customer.state),
+    safeText(customer.pincode),
+    safeText(firstOrder?.source || ''),
+    safeText(customer.segment),
+    safeText(customer.tier),
+    labelsSummary(customer.labels),
+    safeNumber(customer.message_count),
+    safeNumber(customer.order_count),
+    safeNumber(customer.total_spent),
+    cartItemCount,
+    cartValue,
+    safeNumber(unpaid?.count || 0),
+    safeNumber(unpaid?.value || 0),
+    safeText(customer.first_seen),
+    safeText(customer.last_seen),
+    safeText(customer.last_order_at),
+    '', // owner_note
+    '', // follow_up_priority
+  ];
+
+  await upsertSheetRowSafe(env, 'Customers', 0, customer.phone, row);
+}
+
+async function syncOrderToGoogleSheetsSafe(env, orderId) {
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) throw new Error(`Order not found for Sheets sync: ${orderId}`);
+
+  const row = mapOrderToSheetRow(order);
+  await upsertSheetRowSafe(env, 'Orders', 0, order.order_id, row);
+}
+
+async function syncProductToGoogleSheetsSafe(env, sku) {
+  const product = await env.DB.prepare(
+    `SELECT * FROM products WHERE sku = ?`
+  ).bind(sku).first();
+
+  if (!product) throw new Error(`Product not found for Sheets sync: ${sku}`);
+
+  const row = [
+    safeText(product.sku),
+    safeText(product.name),
+    safeText(product.category),
+    safeText(product.subcategory),
+    safeNumber(product.price),
+    safeNumber(product.compare_price),
+    safeNumber(product.stock),
+    safeNumber(product.reserved_stock || 0),
+    safeText(product.is_active),
+    safeText(product.is_featured),
+    safeText(product.image_url),
+    safeText(product.website_link),
+    safeText(product.material),
+    tagsSummary(product.tags),
+    safeText(product.updated_at),
+    '', // restock_note
+  ];
+
+  await upsertSheetRowSafe(env, 'Inventory', 0, product.sku, row);
+}
+
+async function syncShipmentToGoogleSheetsSafe(env, orderId) {
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) throw new Error(`Order not found for shipment sync: ${orderId}`);
+
+  const row = mapShipmentToSheetRow(order);
+  await upsertSheetRowSafe(env, 'Shipments', 0, order.order_id, row);
+}
+
+async function syncCartToGoogleSheetsSafe(env, phone) {
+  const cart = await env.DB.prepare(
+    `SELECT * FROM carts WHERE phone = ?`
+  ).bind(phone).first();
+
+  if (!cart) return;
+
+  const customer = await env.DB.prepare(
+    `SELECT name FROM customers WHERE phone = ?`
+  ).bind(phone).first();
+
+  const row = mapCartToSheetRow(cart, customer?.name || '');
+  await upsertSheetRowSafe(env, 'Cart Activity', 0, cart.phone, row);
+}
+
+async function syncSalesToGoogleSheetsSafe(env, orderId) {
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) return;
+
+  const row = mapSalesToSheetRow(order);
+  await upsertSheetRowSafe(env, 'Sales', 0, order.order_id, row);
+}
+
+async function backfillOrdersToGoogleSheets(env) {
+  const { results: orders } = await env.DB.prepare(`
+    SELECT order_id, phone, shipment_id, shiprocket_order_id, awb_number, awb_code
+    FROM orders
+    ORDER BY created_at ASC
+  `).all();
+
+  for (const order of (orders || [])) {
+    await syncOrderToGoogleSheetsSafe(env, order.order_id);
+
+    if (order.phone) {
+      await syncCustomerToGoogleSheetsSafe(env, order.phone);
+      await syncLeadToGoogleSheetsSafe(env, order.phone);
+    }
+
+    await syncSalesToGoogleSheetsSafe(env, order.order_id);
+
+    const hasShipmentData =
+      (order.shipment_id && String(order.shipment_id).trim()) ||
+      (order.shiprocket_order_id && String(order.shiprocket_order_id).trim()) ||
+      (order.awb_number && String(order.awb_number).trim()) ||
+      (order.awb_code && String(order.awb_code).trim());
+
+    if (hasShipmentData) {
+      await syncShipmentToGoogleSheetsSafe(env, order.order_id);
+    }
+  }
+
+  return { totalOrders: orders?.length || 0 };
+}
+
+async function backfillProductsToGoogleSheets(env) {
+  const { results: products } = await env.DB.prepare(`
+    SELECT sku FROM products ORDER BY name ASC
+  `).all();
+
+  for (const product of (products || [])) {
+    await syncProductToGoogleSheetsSafe(env, product.sku);
+  }
+
+  return { totalProducts: products?.length || 0 };
+}
+
+async function backfillCartsToGoogleSheets(env) {
+  const { results: carts } = await env.DB.prepare(`
+    SELECT phone FROM carts ORDER BY updated_at DESC
+  `).all();
+
+  for (const cart of (carts || [])) {
+    await syncCartToGoogleSheetsSafe(env, cart.phone);
+  }
+
+  return { totalCarts: carts?.length || 0 };
+}
+
+async function backfillOrderEventsToGoogleSheets(env) {
+  const { results: events } = await env.DB.prepare(`
+    SELECT created_at, order_id, event_type, event_source, message, meta_json
+    FROM order_events
+    ORDER BY created_at ASC
+  `).all().catch(() => ({ results: [] }));
+
+  if (!events || events.length === 0) {
+    return { totalOrderEvents: 0 };
+  }
+
+  const header = [[
+    'created_at', 'order_id', 'event_type', 'event_source', 'message', 'meta_json'
+  ]];
+
+  const values = header.concat(events.map(event => [
+    safeText(event.created_at),
+    safeText(event.order_id),
+    safeText(event.event_type),
+    safeText(event.event_source),
+    safeText(event.message),
+    safeText(event.meta_json),
+  ]));
+
+  const encodedRange = encodeURIComponent('Order Events!A:F');
+  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, {
+    values,
+  });
+
+  return { totalOrderEvents: events.length };
+}
+
+async function backfillAllGoogleSheets(env) {
+  const orders = await backfillOrdersToGoogleSheets(env);
+  const products = await backfillProductsToGoogleSheets(env);
+  const carts = await backfillCartsToGoogleSheets(env);
+  const events = await backfillOrderEventsToGoogleSheets(env);
+  await rebuildSourcePerformanceSheet(env);
+
+  return {
+    orders,
+    products,
+    carts,
+    events,
+    sourcePerformance: true,
+    syncedAt: new Date().toISOString(),
+  };
 }
 
 async function sendFCMNotification(env, phone, name, text, messageId) {
@@ -808,10 +1747,94 @@ async function handleUpdateProduct(sku, request, env) {
   await env.DB.prepare(
     `UPDATE products SET ${fields.join(', ')} WHERE sku = ?`
   ).bind(...values).run();
+  try {
+    await syncProductToGoogleSheets(env, sku);
+   } catch (e) {
+    console.error('Google Sheets sync error (product update):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'product',
+      entity_id: sku,
+      action: 'product_updated',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
 
   return jsonResponse({ success: true });
 }
 
+async function handleCreateProduct(request, env) {
+  const body = await request.json();
+
+  const sku = safeText(body.sku).trim();
+  if (!sku) return errorResponse('sku required');
+
+  const name = safeText(body.name).trim();
+  if (!name) return errorResponse('name required');
+
+  await env.DB.prepare(`
+    INSERT INTO products (
+      sku, name, description, price, compare_price, cost_price,
+      category, subcategory, tags, stock, track_inventory,
+      image_url, images, video_url, has_variants, variants,
+      wa_product_id, is_active, is_featured, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+  `).bind(
+    sku,
+    name,
+    safeText(body.description),
+    safeNumber(body.price),
+    safeNumber(body.compare_price),
+    safeNumber(body.cost_price),
+    safeText(body.category),
+    safeText(body.subcategory),
+    JSON.stringify(body.tags || []),
+    safeNumber(body.stock),
+    body.track_inventory === undefined ? 1 : safeNumber(body.track_inventory),
+    safeText(body.image_url),
+    JSON.stringify(body.images || []),
+    safeText(body.video_url),
+    body.has_variants === undefined ? 0 : safeNumber(body.has_variants),
+    JSON.stringify(body.variants || []),
+    safeText(body.wa_product_id),
+    body.is_active === undefined ? 1 : safeNumber(body.is_active),
+    body.is_featured === undefined ? 0 : safeNumber(body.is_featured),
+  ).run();
+
+  // Optional extended columns if present in DB
+  try {
+    await env.DB.prepare(`
+      UPDATE products SET
+        website_link = ?,
+        material = ?,
+        updated_at = datetime('now')
+      WHERE sku = ?
+    `).bind(
+      safeText(body.website_link),
+      safeText(body.material),
+      sku
+    ).run();
+  } catch (_) {}
+
+  try {
+    await syncProductToGoogleSheets(env, sku);
+  } catch (e) {
+    console.error('Google Sheets sync error (product create):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'product',
+      entity_id: sku,
+      action: 'product_created',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
+
+  return jsonResponse({ success: true, sku });
+}
 
 async function handleDeleteProduct(sku, env) {
   await env.DB.prepare(`DELETE FROM products WHERE sku = ?`).bind(sku).run();
@@ -823,6 +1846,21 @@ async function handleUpdateStock(sku, request, env) {
   const stock = parseInt(body.stock);
   if (isNaN(stock)) return errorResponse('stock required');
   await env.DB.prepare(`UPDATE products SET stock = ?, updated_at = datetime('now') WHERE sku = ?`).bind(stock, sku).run();
+  try {
+    await syncProductToGoogleSheets(env, sku);
+   } catch (e) {
+    console.error('Google Sheets sync error (stock update):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'product',
+      entity_id: sku,
+      action: 'stock_updated',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
+
   return jsonResponse({ success: true });
 }
 
@@ -886,6 +1924,290 @@ async function handleRegisterFCM(request, env) {
   if (!token) return errorResponse('token required');
   await env.KV.put('fcm_token:flutter', token);
   return jsonResponse({ success: true });
+}
+
+async function getSettingValue(env, key, fallback = null) {
+  try {
+    const row = await env.DB.prepare(
+      `SELECT value FROM settings WHERE key = ?`
+    ).bind(key).first();
+    return row?.value ?? fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function toBool(value, fallback = false) {
+  if (typeof value === 'boolean') return value;
+  const raw = String(value ?? '').toLowerCase().trim();
+  if (raw === 'true' || raw === '1' || raw === 'yes') return true;
+  if (raw === 'false' || raw === '0' || raw === 'no') return false;
+  return fallback;
+}
+
+async function handleGetDashboardOps(env) {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+
+    const [
+      paidSummary,
+      unpaidSummary,
+      todayPaidSummary,
+      todayUnpaidSummary,
+      readyForShiprocketRow,
+      shiprocketBookedRow,
+      awbAddedRow,
+      lowStockRow,
+      outOfStockRow,
+      totalProductsRow,
+      sourceRows,
+      todayOrdersRow,
+      todayPaidOrdersRow,
+      todayUnpaidOrdersRow,
+      todayReadyToShipRow,
+      todayShippedRow,
+      syncMode,
+      sheetsEnabledRaw,
+      supabaseEnabledRaw,
+      pendingQueueRow,
+      failedQueueRow,
+      lastSyncSuccessRow,
+      lastSyncFailureRow,
+    ] = await Promise.all([
+      env.DB.prepare(`
+        SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
+        FROM orders
+        WHERE payment_status = 'paid'
+      `).first(),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
+        FROM orders
+        WHERE payment_status = 'unpaid'
+      `).first(),
+
+      env.DB.prepare(`
+        SELECT COALESCE(SUM(total), 0) as value
+        FROM orders
+        WHERE payment_status = 'paid'
+          AND substr(created_at, 1, 10) = ?
+      `).bind(today).first(),
+
+      env.DB.prepare(`
+        SELECT COALESCE(SUM(total), 0) as value
+        FROM orders
+        WHERE payment_status = 'unpaid'
+          AND substr(created_at, 1, 10) = ?
+      `).bind(today).first(),
+
+      env.DB.prepare(`
+  SELECT COUNT(*) as count
+  FROM orders
+  WHERE (
+    (shipment_id IS NOT NULL AND shipment_id != '')
+    OR (shiprocket_order_id IS NOT NULL AND shiprocket_order_id != '')
+  )
+  AND (
+    (awb_number IS NULL OR awb_number = '')
+    AND (awb_code IS NULL OR awb_code = '')
+  )
+  AND status NOT IN ('delivered', 'cancelled')
+`).first(),    
+
+       env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM orders
+        WHERE (
+          (shipment_id IS NOT NULL AND shipment_id != '')
+          OR (shiprocket_order_id IS NOT NULL AND shiprocket_order_id != '')
+        )
+        AND (
+          (awb_number IS NULL OR awb_number = '')
+          AND (awb_code IS NULL OR awb_code = '')
+        )
+        AND status NOT IN ('delivered', 'cancelled')
+      `).first(),
+
+       env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM orders
+        WHERE (
+          (awb_number IS NOT NULL AND awb_number != '')
+          OR (awb_code IS NOT NULL AND awb_code != '')
+        )
+        AND status NOT IN ('delivered', 'cancelled')
+      `).first(),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM products
+        WHERE is_active = 1
+          AND stock > 0
+          AND stock <= 5
+      `).first(),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM products
+        WHERE is_active = 1
+          AND stock <= 0
+      `).first(),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM products
+        WHERE is_active = 1
+      `).first(),
+
+      env.DB.prepare(`
+        SELECT LOWER(COALESCE(source, 'unknown')) as source, COUNT(*) as count
+        FROM orders
+        GROUP BY LOWER(COALESCE(source, 'unknown'))
+      `).all(),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM orders
+        WHERE substr(created_at, 1, 10) = ?
+      `).bind(today).first(),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM orders
+        WHERE payment_status = 'paid'
+          AND substr(created_at, 1, 10) = ?
+      `).bind(today).first(),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM orders
+        WHERE payment_status = 'unpaid'
+          AND substr(created_at, 1, 10) = ?
+      `).bind(today).first(),
+
+      env.DB.prepare(`
+  SELECT COUNT(*) as count
+  FROM orders
+  WHERE payment_status = 'paid'
+    AND status IN ('confirmed', 'processing')
+    AND (
+      (shipment_id IS NULL OR shipment_id = '')
+      AND (shiprocket_order_id IS NULL OR shiprocket_order_id = '')
+    )
+    AND substr(created_at, 1, 10) = ?
+`).bind(today).first(),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM orders
+        WHERE status = 'shipped'
+          AND substr(shipped_at, 1, 10) = ?
+      `).bind(today).first(),
+
+      getSettingValue(env, 'sync_mode', 'd1_only'),
+      getSettingValue(env, 'sync_google_sheets_enabled', 'false'),
+      getSettingValue(env, 'sync_supabase_enabled', 'false'),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM sync_queue
+        WHERE status = 'pending'
+      `).first().catch(() => ({ count: 0 })),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM sync_queue
+        WHERE status = 'failed'
+      `).first().catch(() => ({ count: 0 })),
+
+      env.DB.prepare(`
+        SELECT created_at
+        FROM sync_log
+        WHERE status = 'success'
+        ORDER BY created_at DESC
+        LIMIT 1
+      `).first().catch(() => null),
+
+      env.DB.prepare(`
+        SELECT created_at
+        FROM sync_log
+        WHERE status = 'failed'
+        ORDER BY created_at DESC
+        LIMIT 1
+      `).first().catch(() => null),
+    ]);
+
+    const sourceMap = {
+      whatsapp: 0,
+      catalogue: 0,
+      website: 0,
+      manual: 0,
+    };
+
+    for (const row of (sourceRows?.results || [])) {
+      const key = String(row.source || '').toLowerCase();
+      if (sourceMap[key] != null) {
+        sourceMap[key] = Number(row.count || 0);
+      }
+    }
+
+    return jsonResponse({
+      success: true,
+      ops: {
+        lastSyncAt: new Date().toISOString(),
+
+        paymentBreakdown: {
+          paidCount: Number(paidSummary?.count || 0),
+          unpaidCount: Number(unpaidSummary?.count || 0),
+          paidValue: Number(paidSummary?.value || 0),
+          unpaidValue: Number(unpaidSummary?.value || 0),
+          todayPaid: Number(todayPaidSummary?.value || 0),
+          todayUnpaid: Number(todayUnpaidSummary?.value || 0),
+        },
+
+        shipmentQueue: {
+          readyForShiprocket: Number(readyForShiprocketRow?.count || 0),
+          shiprocketBooked: Number(shiprocketBookedRow?.count || 0),
+          awbAdded: Number(awbAddedRow?.count || 0),
+        },
+
+        inventory: {
+          lowStockCount: Number(lowStockRow?.count || 0),
+          outOfStockCount: Number(outOfStockRow?.count || 0),
+          totalProducts: Number(totalProductsRow?.count || 0),
+        },
+
+        sourceBreakdown: {
+          whatsapp: sourceMap.whatsapp,
+          catalogue: sourceMap.catalogue,
+          website: sourceMap.website,
+          manual: sourceMap.manual,
+        },
+
+        syncHealth: {
+          d1Live: true,
+          googleSheetsConnected: toBool(sheetsEnabledRaw, false),
+          supabaseConnected: toBool(supabaseEnabledRaw, false),
+          pendingQueue: Number(pendingQueueRow?.count || 0),
+          failedQueue: Number(failedQueueRow?.count || 0),
+          mode: syncMode || 'd1_only',
+          lastSuccess: lastSyncSuccessRow?.created_at || null,
+          lastFailure: lastSyncFailureRow?.created_at || null,
+        },
+
+        todayOps: {
+          totalOrders: Number(todayOrdersRow?.count || 0),
+          paidOrders: Number(todayPaidOrdersRow?.count || 0),
+          unpaidOrders: Number(todayUnpaidOrdersRow?.count || 0),
+          readyToShip: Number(todayReadyToShipRow?.count || 0),
+          shippedToday: Number(todayShippedRow?.count || 0),
+        },
+      }
+    });
+  } catch (e) {
+    console.error('handleGetDashboardOps error:', e);
+    return errorResponse('Failed to load dashboard ops', 500);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1107,35 +2429,24 @@ if (greetRegex.test(inputLower)) {
       'main_menu':        'MAIN_MENU',
       'back':             'MAIN_MENU',
       'home':             'MAIN_MENU',
-
       // Main menu buttons
-      'btn_shop':         'SHOP_MENU',
-      'btn_offers':       'OFFERS_MENU',
-      'btn_help':         'HELP_PROMPT',
+      'btn_website':       'OPEN_WEBSITE',
+      'btn_catalogue':     'OPEN_CATALOG',
+      'btn_help':          'HELP_MENU',
 
-      // Shop menu buttons
-      'btn_website':      'OPEN_WEBSITE',
-      'btn_catalogue':    'OPEN_CATALOG',
-      'btn_shop_back':    'MAIN_MENU',
+      // Help menu buttons
+      'btn_browse':        'BROWSE_TOPICS',
+      'btn_offers':        'OFFERS_MENU',
+      'btn_help_back':     'MAIN_MENU',
 
       // Offers menu buttons
-      'btn_deals':        'DEALS_MENU',
-      'btn_pay_track':    'PAY_TRACK_MENU',
-      'btn_offers_back':  'MAIN_MENU',
+      'btn_deals':         'DEALS_MENU',
+      'btn_offers_back':   'HELP_MENU',
 
       // Deals menu buttons
-      'btn_bestsellers':  'OPEN_BESTSELLERS',
-      'btn_shop_now':     'OPEN_WEBSITE',
-      'btn_deals_back':   'OFFERS_MENU',
-
-      // Pay & Track menu buttons
-      'btn_pay_now':      'PAY_NOW',
-      'btn_track_order':  'TRACK_ORDER',
-      'btn_paytrack_back':'OFFERS_MENU',
-
-      // Help prompt buttons
-      'btn_browse':       'BROWSE_TOPICS',
-      'btn_help_back':    'MAIN_MENU',
+      'btn_bestsellers':   'OPEN_BESTSELLERS',
+      'btn_shop_now':      'OPEN_WEBSITE',
+      'btn_deals_back':    'HELP_MENU',
 
       // Post-FAQ buttons
       'faq_more':         null, // handled separately above
@@ -1266,64 +2577,66 @@ if (greetRegex.test(inputLower)) {
 
 💎 Simple Luxury — Crafted for You
 
-💎 Timeless elegance
-✨ Stunning designs
-🎁 Perfect gifting	
+👑 Elegant collections
+✨ Timeless sparkle
+💝 Crafted to impress	
 
 How can we help you today? 👇`,
           [
-            { id: 'btn_shop',   title: '💎 Jewellery' },
-            { id: 'btn_offers', title: '🎁 Offers & Track' },
-            { id: 'btn_help',   title: '❓ Help & FAQs' },
+            { id: 'btn_website',   title: '💎 Website' },
+            { id: 'btn_catalogue', title: '📱 Catalogue' },
+            { id: 'btn_help',      title: '❓ Help & FAQs' },	
           ],
           '💖 Where Luxury Meets You'
         );
         break;
 
+
+
       // ════════════════════════════════════════
-      // SHOP MENU
+      // HELP MENU
       // ════════════════════════════════════════
-      case 'SHOP_MENU':
+      case 'HELP_MENU':
         await sendButtons(
 `═══════════════════════════
-💎 *Shop KAAPAV*
+❓ *Help & FAQs*
 ═══════════════════════════
 
-👑 Curated for You
+👑 We’re here to assist you
 
-✨ Handcrafted pieces
-🎀 Gift-ready packaging
-💝 Made with love
+💬 Get instant answers
+🎁 Explore offers & tracking
+✨ Everything in one place
 
-Where would you like to shop? 👇`,
+What would you like to do? 👇`,
           [
-            { id: 'btn_website',   title: '🌐 Website' },
-            { id: 'btn_catalogue', title: '📱 Catalogue' },
-            { id: 'btn_shop_back', title: '🏠 Back' },
+            { id: 'btn_browse',    title: '📋 FAQs' },
+            { id: 'btn_offers',    title: '🎁 Offers' },
+            { id: 'btn_help_back', title: '🏠 Back' },
           ],
-          '🌐 kaapav.com'
+          '💖 Assistance with elegance'
         );
         break;
 
       // ════════════════════════════════════════
-      // OFFERS & TRACK MENU
+      // OFFERS & DEALS MENU
       // ════════════════════════════════════════
       case 'OFFERS_MENU':
         await sendButtons(
 `═══════════════════════════
-🎁 *Offers & Track*
+🎁 *Offers*
 ═══════════════════════════
 
-👑 Deals & Order Tracking
+👑 Discover our special picks
 
-🔥 50% OFF on collections
-🚚 Free shipping above ₹498/-
-⚡ Hurry, grab yours!
+🔥 Bestselling favourites
+✨ Luxury at irresistible prices
+💎 Curated to be loved
 
-What do you need? 👇`,
+What would you like to explore? 👇`,
           [
-            { id: 'btn_deals',       title: '🔥 Deals & Offers' },
-            { id: 'btn_pay_track',   title: '💳  Pay & Track' },
+            { id: 'btn_deals',       title: '🔥 Bestsellers' },
+            { id: 'btn_shop_now',    title: '💎 Website' },
             { id: 'btn_offers_back', title: '🏠 Back' },
           ],
           '✨ Great deals await!'
@@ -1336,54 +2649,27 @@ What do you need? 👇`,
       case 'DEALS_MENU':
         await sendButtons(
 `═══════════════════════════
-🔥 *Deals & Offers*
+🔥 *Bestsellers*
 ═══════════════════════════
 
-👑 Best Prices Guaranteed
+👑 Most loved by KAAPAV customers
 
-🔥 Flat 50% OFF — limited time!
 💍 Earrings & Rings → ₹249/-
 📿 Necklace & Bracelet → ₹499/-
 ✨ Sets → ₹699/-
-
 🚚 FREE shipping above ₹498/-
 
-Grab your favourites! 👇`,
+Explore our favourites 👇`,
           [
-            { id: 'btn_bestsellers', title: '🛍️ Bestsellers' },
-            { id: 'btn_shop_now',    title: '🌐 Shop Now' },
+            { id: 'btn_bestsellers', title: '🛍️ Open Bestsellers' },
+            { id: 'btn_shop_now',    title: '💎 Website' },
             { id: 'btn_deals_back',  title: '🏠 Back' },
           ],
-          "⚡ Don't miss out!"
+          "💖 Crafted to stand out"
         );
         break;
 
-      // ════════════════════════════════════════
-      // PAY & TRACK MENU
-      // ════════════════════════════════════════
-      case 'PAY_TRACK_MENU':
-        await sendButtons(
-`═══════════════════════════
-📦 *Pay & Track*
-═══════════════════════════
-
-👑 Secure Payment & Live Tracking
-
-💳 UPI / Cards / Net Banking
-✅ Instant confirmation
-📦 Track your order live
-🚚 Delivered in 2–4 working days
-
-What do you need? 👇`,
-          [
-            { id: 'btn_pay_now',      title: '💳 Pay Now' },
-            { id: 'btn_track_order',  title: '📦 Track Order' },
-            { id: 'btn_paytrack_back',title: '🏠 Back' },
-          ],
-          '🔒 100% Secure'
-        );
-        break;
-
+ 
       // ════════════════════════════════════════
       // HELP PROMPT
       // User types freely OR browses topics
@@ -1404,7 +2690,8 @@ For example:
 
 Or browse all topics below 👇`,
           [
-            { id: 'btn_browse',    title: '📋 Browse Topics' },
+            { id: 'btn_browse',    title: '📋 FAQs' },
+            { id: 'btn_offers',    title: '🎁 Offers & Track' },
             { id: 'btn_help_back', title: '🏠 Back' },
           ],
           '💬 We answer everything!'
@@ -1440,20 +2727,17 @@ Or browse all topics below 👇`,
         );
         break;
 
-      // ════════════════════════════════════════
-      // OPEN CATALOG
-      // ════════════════════════════════════════
       case 'OPEN_CATALOG':
         await sendText(
 `═══════════════════════════
-📱 *WhatsApp Catalogue*
+📱 *KAAPAV Catalogue*
 ═══════════════════════════
 
-💎 Browse & Order on WhatsApp
+💎 Explore our online collection
 
-👆 Tap to view all products
-🛒 Add to cart directly
-💝 Easy & instant
+✨ Browse all categories
+🛍️ Discover your favourites
+💝 Designed for effortless shopping
 
 👉 ${env.CATALOG_URL}
 
@@ -1484,53 +2768,6 @@ Or browse all topics below 👇`,
         );
         break;
 
-      // ════════════════════════════════════════
-      // PAY NOW
-      // ════════════════════════════════════════
-      case 'PAY_NOW':
-        await sendText(
-`═══════════════════════════
-💳 *Secure Payment*
-═══════════════════════════
-
-💎 Pay Safely & Instantly
-
-🏦 UPI / Cards / Net Banking
-✅ Order confirmed instantly
-🔒 Powered by Razorpay
-
-👉 ${env.PAYMENT_URL}
-
-Need a payment link for your order?
-Just tell us what you'd like to order!
-
-═══════════════════════════
-💎 KAAPAV Fashion Jewellery`
-        );
-        break;
-
-      // ════════════════════════════════════════
-      // TRACK ORDER
-      // ════════════════════════════════════════
-      case 'TRACK_ORDER':
-        await sendText(
-`═══════════════════════════
-📦 *Track Your Order*
-═══════════════════════════
-
-💎 Real-Time Order Tracking
-
-📍 Live delivery updates
-🚚 Know exactly where it is
-⏰ Estimated arrival time
-
-Or track here:
-👉 ${env.TRACKING_URL}
-
-═══════════════════════════
-💎 KAAPAV Fashion Jewellery`
-        );
-        break;
       
       case 'CAT_BRACELET':
         await sendText(
@@ -1656,7 +2893,7 @@ Or track here:
 1️⃣ *Website* — browse & checkout:
    👉 ${env.WEBSITE_URL}
 
-2️⃣ *WhatsApp Catalogue* — quick order:
+2️⃣ *Catalogue Website* — browse & order:
    👉 ${env.CATALOG_URL}
 
 💍 Earrings & Rings → ₹249/-
@@ -1875,6 +3112,24 @@ Confirm order? 👇`,
   itemCount: items.length,
 }, 'whatsapp_bot');
 
+    try {
+      await syncOrderToGoogleSheets(env, orderId);
+      await syncCustomerToGoogleSheets(env, phone);
+      await syncLeadToGoogleSheets(env, phone);
+      await syncSalesToGoogleSheets(env, orderId);
+      await rebuildSourcePerformanceSheet(env);
+    } catch (e) {
+      console.error('Google Sheets sync error (WhatsApp order):', e);
+      await appendSyncFailureToGoogleSheets(env, {
+        destination: 'google_sheets',
+        entity_type: 'order',
+        entity_id: orderId,
+        action: 'order_created',
+        error_message: e.message,
+        retry_count: 0,
+        status: 'failed',
+      });
+    }
     await clearConvState(phone, env);
 
     // Build item lines for owner message
@@ -2203,6 +3458,24 @@ if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && met
 }, 'razorpay_webhook');
 
     const phone = order.phone;
+    try {
+      await syncOrderToGoogleSheets(env, orderId);
+      await syncCustomerToGoogleSheets(env, phone);
+      await syncLeadToGoogleSheets(env, phone);
+      await syncSalesToGoogleSheets(env, orderId);
+      await rebuildSourcePerformanceSheet(env);
+    } catch (e) {
+      console.error('Google Sheets sync error (payment_link.paid):', e);
+      await appendSyncFailureToGoogleSheets(env, {
+        destination: 'google_sheets',
+        entity_type: 'order',
+        entity_id: orderId,
+        action: 'payment_link_paid',
+        error_message: e.message,
+        retry_count: 0,
+        status: 'failed',
+      });
+    }
     const customerName = order.customer_name || 'Customer';
 
     // Parse items for owner message
@@ -2288,6 +3561,25 @@ if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && met
 }, 'razorpay_webhook');
 
     const phone = order.phone;
+    try {
+      await syncOrderToGoogleSheets(env, orderId);
+      await syncCustomerToGoogleSheets(env, phone);
+      await syncLeadToGoogleSheets(env, phone);
+      await syncSalesToGoogleSheets(env, orderId);
+      await rebuildSourcePerformanceSheet(env);
+     } catch (e) {
+      console.error('Google Sheets sync error (payment.captured):', e);
+      await appendSyncFailureToGoogleSheets(env, {
+        destination: 'google_sheets',
+        entity_type: 'order',
+        entity_id: orderId,
+        action: 'payment_captured',
+        error_message: e.message,
+        retry_count: 0,
+        status: 'failed',
+      });
+    }
+
     const customerName = order.customer_name || 'Customer';
 
     // Parse items for owner message
@@ -2361,7 +3653,25 @@ if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && met
   itemCount,
 }, 'catalogue');
 
-  const itemsText = items.map(i => `• ${i.name} x${i.qty} — ₹${i.price * i.qty}`).join('\n');
+  try {
+    await syncOrderToGoogleSheets(env, orderId);
+    await syncCustomerToGoogleSheets(env, phone);
+    await syncLeadToGoogleSheets(env, phone);
+    await syncSalesToGoogleSheets(env, orderId);
+    await rebuildSourcePerformanceSheet(env);
+  } catch (e) {
+    console.error('Google Sheets sync error (catalogue order):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'order',
+      entity_id: orderId,
+      action: 'catalogue_order_created',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  } 
+ const itemsText = items.map(i => `• ${i.name} x${i.qty} — ₹${i.price * i.qty}`).join('\n');
   
   await logOrderEvent(env, orderId, 'order_created', 'Catalogue order created', {
   phone,
@@ -2397,6 +3707,24 @@ await sendWhatsAppText(env, env.OWNER_PHONE,
     await env.DB.prepare(`UPDATE orders SET payment_link = ? WHERE order_id = ?`).bind(payLink, orderId).run();
     await sendWhatsAppText(env, phone, `💳 *Pay here:*\n${payLink}\n\n_Link valid for 24 hours_`);
   } catch(e) { console.error('Razorpay error:', e); }
+  try {
+    await syncOrderToGoogleSheets(env, orderId);
+    await syncCustomerToGoogleSheets(env, phone);
+    await syncLeadToGoogleSheets(env, phone);
+    await syncSalesToGoogleSheets(env, orderId);
+    await rebuildSourcePerformanceSheet(env);
+  } catch (e) {
+    console.error('Google Sheets sync error (manual order):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'order',
+      entity_id: orderId,
+      action: 'manual_order_created',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
   return jsonResponse({ success: true, orderId, total: grandTotal });
 } 
 
@@ -2494,7 +3822,24 @@ await sendWhatsAppText(env, env.OWNER_PHONE,
     `💰 Payment done! Order ${orderId} — ₹${amount}`,
     `confirm_${paymentId}`
   ));
-
+  try {
+    await syncOrderToGoogleSheets(env, orderId);
+    await syncCustomerToGoogleSheets(env, order.phone);
+    await syncLeadToGoogleSheets(env, order.phone);
+    await syncSalesToGoogleSheets(env, orderId);
+    await rebuildSourcePerformanceSheet(env);
+  } catch (e) {
+    console.error('Google Sheets sync error (manual payment confirm):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'order',
+      entity_id: orderId,
+      action: 'manual_payment_confirm',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
   return jsonResponse({ success: true, orderId, amount });
 }
 
@@ -2514,6 +3859,7 @@ await sendWhatsAppText(env, env.OWNER_PHONE,
     // PUBLIC — no auth needed, must be BEFORE auth wall
     if (path === '/api/push/fcm-register' && method === 'POST') return handleRegisterFCM(request, env);
 
+    
     const user = await authMiddleware(request, env);
     if (!user) return errorResponse('Unauthorized', 401);
 
@@ -2606,6 +3952,24 @@ if (path.match(/^\/api\/orders\/[^/]+\/details$/) && method === 'PATCH') {
     'admin'
   );
 
+  try {
+    await syncOrderToGoogleSheets(env, orderId);
+    await syncCustomerToGoogleSheets(env, phone);
+    await syncLeadToGoogleSheets(env, phone);
+    await syncSalesToGoogleSheets(env, orderId);
+   } catch (e) {
+    console.error('Google Sheets sync error (order details update):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'order',
+      entity_id: orderId,
+      action: 'details_updated',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
+
   return jsonResponse({
     success: true,
     orderId,
@@ -2678,6 +4042,24 @@ if (path.match(/^\/api\/orders\/[^/]+\/payment$/) && method === 'PATCH') {
     'admin'
   );
 
+  try {
+    await syncOrderToGoogleSheets(env, orderId);
+    await syncCustomerToGoogleSheets(env, order.phone);
+    await syncLeadToGoogleSheets(env, order.phone);
+    await syncSalesToGoogleSheets(env, orderId);
+    await rebuildSourcePerformanceSheet(env);
+  } catch (e) {
+    console.error('Google Sheets sync error (order payment update):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'order',
+      entity_id: orderId,
+      action: 'payment_updated',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
   return jsonResponse({
     success: true,
     orderId,
@@ -2717,6 +4099,24 @@ if (path.match(/^\/api\/orders\/[^/]+\/cancel$/) && method === 'PATCH') {
     'admin'
   );
 
+  try {
+    await syncOrderToGoogleSheets(env, orderId);
+    await syncCustomerToGoogleSheets(env, order.phone);
+    await syncLeadToGoogleSheets(env, order.phone);
+    await syncSalesToGoogleSheets(env, orderId);
+    await rebuildSourcePerformanceSheet(env);
+  } catch (e) {
+    console.error('Google Sheets sync error (order cancel):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'order',
+      entity_id: orderId,
+      action: 'order_cancelled',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
   return jsonResponse({
     success: true,
     orderId,
@@ -2737,6 +4137,35 @@ if (path.match(/^\/api\/orders\/[^/]+\/status$/) && method === 'PUT') {
   await env.DB.prepare(
     `UPDATE orders SET status = ?, updated_at = datetime('now') WHERE order_id = ?`
   ).bind(status, orderId).run();
+
+  try {
+    await syncOrderToGoogleSheets(env, orderId);
+    await syncShipmentToGoogleSheets(env, orderId);
+
+    const order = await env.DB.prepare(
+      `SELECT * FROM orders WHERE order_id = ?`
+    ).bind(orderId).first();
+
+    if (order?.phone) {
+      await syncCustomerToGoogleSheets(env, order.phone);
+      await syncLeadToGoogleSheets(env, order.phone);
+    }
+
+    await syncSalesToGoogleSheets(env, orderId);
+    await rebuildSourcePerformanceSheet(env);
+  } catch (e) {
+    console.error('Google Sheets sync error (order status update):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'order',
+      entity_id: orderId,
+      action: 'status_updated',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
+
   return jsonResponse({ success: true, orderId, status });
 }
 
@@ -2875,6 +4304,24 @@ if (path.match(/^\/api\/orders\/[^/]+\/ship$/) && method === 'POST') {
       await logOrderEvent(env, orderId, 'shiprocket_booked', 'Shiprocket booked successfully', {
   shiprocketOrderId: srOrderId,
 }, 'admin');
+      try {
+        await syncOrderToGoogleSheets(env, orderId);
+        await syncShipmentToGoogleSheets(env, orderId);
+        await syncCustomerToGoogleSheets(env, phone);
+        await syncLeadToGoogleSheets(env, phone);
+        await syncSalesToGoogleSheets(env, orderId);
+      } catch (e) {
+        console.error('Google Sheets sync error (shiprocket booked):', e);
+        await appendSyncFailureToGoogleSheets(env, {
+          destination: 'google_sheets',
+          entity_type: 'shipment',
+          entity_id: orderId,
+          action: 'shiprocket_booked',
+          error_message: e.message,
+          retry_count: 0,
+          status: 'failed',
+        });
+      }
 
       // Build item lines for messages
       const itemLines = items.length > 0
@@ -2971,6 +4418,24 @@ if (path.match(/^\/api\/orders\/[^/]+\/awb$/) && method === 'PUT') {
   awb,
   courier: courier || 'Shiprocket',
 }, 'admin');
+  try {
+    await syncOrderToGoogleSheets(env, orderId);
+    await syncShipmentToGoogleSheets(env, orderId);
+    await syncCustomerToGoogleSheets(env, order.phone);
+    await syncLeadToGoogleSheets(env, order.phone);
+    await syncSalesToGoogleSheets(env, orderId);
+  } catch (e) {
+    console.error('Google Sheets sync error (awb assigned):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'shipment',
+      entity_id: orderId,
+      action: 'awb_assigned',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
 
   const name = order.customer_name || 'Customer';
 
@@ -3213,6 +4678,7 @@ if (path.match(/^\/api\/customers\/[^/]+\/orders$/) && method === 'GET') {
     }
 
     if (path === '/api/stats' && method === 'GET') return handleGetStats(env);
+    if (path === '/api/dashboard/ops' && method === 'GET') return handleGetDashboardOps(env);
     if (path === '/api/analytics' && method === 'GET') return handleGetAnalytics(env);
     if (path === '/api/analytics/activities' && method === 'GET') return handleGetActivities(env);
     if (path === '/api/analytics/pending' && method === 'GET') {

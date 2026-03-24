@@ -14,6 +14,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/notification_service.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -44,7 +45,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   bool _aiAutoReply = true;
   bool _autoGreeting = true;
   bool _businessHoursEnabled = false;
-  String _businessHoursStart = '10:00';
+  String _businessHoursStart = '10:30';
   String _businessHoursEnd = '19:00';
   bool _orderConfirmation = true;
   bool _shippingNotification = true;
@@ -90,10 +91,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     super.dispose();
   }
 
+    bool _asBool(dynamic value, {bool fallback = false}) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final v = value.toLowerCase().trim();
+      return v == 'true' || v == '1' || v == 'yes';
+    }
+    return fallback;
+  }
+
+  int _asInt(dynamic value, {int fallback = 0}) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? fallback;
+    return fallback;
+  }
+
   // Fix: microtask prevents "modify provider during build" error
-  Future<void> _loadSettings() async {
+    Future<void> _loadSettings() async {
     await Future.microtask(() =>
         ref.read(settingsProvider.notifier).loadAll());
+
+    if (!mounted) return;
     final settings = ref.read(settingsProvider).settings;
 
     setState(() {
@@ -102,7 +122,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       _businessPhoneController.text =
           settings['business_phone'] ?? '919148330016';
       _businessEmailController.text =
-          settings['business_email'] ?? 'kaapavin@gmail.com';
+          settings['business_email'] ?? 'care.kaapav@gmail.com';
       _businessAddressController.text = settings['business_address'] ?? '';
       _websiteUrlController.text =
           settings['website_url'] ?? 'https://www.kaapav.com';
@@ -111,30 +131,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       _welcomeMessageController.text = settings['welcome_message'] ?? '';
       _awayMessageController.text = settings['away_message'] ?? '';
 
-      _aiAutoReply =
-          settings['ai_auto_reply'] == true ||
-          settings['ai_auto_reply'] == 'true';
-      _autoGreeting =
-          settings['auto_greeting'] == true ||
-          settings['auto_greeting'] == 'true';
-      _businessHoursEnabled = settings['business_hours_enabled'] == true;
-      _businessHoursStart = settings['business_hours_start'] ?? '10:00';
-      _businessHoursEnd = settings['business_hours_end'] ?? '19:00';
-      _orderConfirmation = settings['order_confirmation_enabled'] != false;
+      _aiAutoReply = _asBool(settings['ai_auto_reply'], fallback: true);
+      _autoGreeting = _asBool(settings['auto_greeting'], fallback: true);
+      _businessHoursEnabled =
+          _asBool(settings['business_hours_enabled'], fallback: false);
+      _businessHoursStart =
+          (settings['business_hours_start'] ?? '10:30').toString();
+      _businessHoursEnd =
+          (settings['business_hours_end'] ?? '19:00').toString();
+      _orderConfirmation =
+          _asBool(settings['order_confirmation_enabled'], fallback: true);
       _shippingNotification =
-          settings['shipping_notification_enabled'] != false;
+          _asBool(settings['shipping_notification_enabled'], fallback: true);
       _deliveryNotification =
-          settings['delivery_notification_enabled'] != false;
-      _cartRecovery = settings['cart_recovery_enabled'] == true;
-      _cartRecoveryHours = settings['cart_recovery_hours'] ?? 24;
-      _reviewRequest = settings['review_request_enabled'] == true;
-      _pushEnabled = settings['push_enabled'] != false;
-      _soundEnabled = settings['sound_enabled'] != false;
-      _currency = settings['currency'] ?? 'INR';
-      _timezone = settings['timezone'] ?? 'Asia/Kolkata';
-      _theme = settings['theme'] ?? 'light';
-      _readReceipts = settings['read_receipts'] != false;
-      _chatWallpaper = settings['chat_wallpaper'] ?? 'default';
+          _asBool(settings['delivery_notification_enabled'], fallback: true);
+      _cartRecovery =
+          _asBool(settings['cart_recovery_enabled'], fallback: false);
+      _cartRecoveryHours =
+          _asInt(settings['cart_recovery_hours'], fallback: 24);
+      _reviewRequest =
+          _asBool(settings['review_request_enabled'], fallback: false);
+      _pushEnabled = _asBool(settings['push_enabled'], fallback: true);
+      _soundEnabled = _asBool(settings['sound_enabled'], fallback: true);
+      _currency = (settings['currency'] ?? 'INR').toString();
+      _timezone = (settings['timezone'] ?? 'Asia/Kolkata').toString();
+      _theme = (settings['theme'] ?? 'light').toString();
+      _readReceipts = _asBool(settings['read_receipts'], fallback: true);
+      _chatWallpaper = (settings['chat_wallpaper'] ?? 'default').toString();
+      _hasChanges = false;
     });
   }
 
@@ -142,19 +166,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     if (!_hasChanges) setState(() => _hasChanges = true);
   }
 
-  Future<void> _saveSettings() async {
+    Future<void> _saveSettings() async {
     setState(() => _saving = true);
 
+    const secureStorage = FlutterSecureStorage();
+    await secureStorage.write(
+      key: 'sound_enabled',
+      value: _soundEnabled.toString(),
+    );
+
     final data = {
-      'business_name': _businessNameController.text,
-      'business_phone': _businessPhoneController.text,
-      'business_email': _businessEmailController.text,
-      'business_address': _businessAddressController.text,
-      'website_url': _websiteUrlController.text,
-      'instagram_url': _instagramUrlController.text,
-      'facebook_url': _facebookUrlController.text,
-      'welcome_message': _welcomeMessageController.text,
-      'away_message': _awayMessageController.text,
+      'business_name': _businessNameController.text.trim(),
+      'business_phone': _businessPhoneController.text.trim(),
+      'business_email': _businessEmailController.text.trim(),
+      'business_address': _businessAddressController.text.trim(),
+      'website_url': _websiteUrlController.text.trim(),
+      'instagram_url': _instagramUrlController.text.trim(),
+      'facebook_url': _facebookUrlController.text.trim(),
+      'welcome_message': _welcomeMessageController.text.trim(),
+      'away_message': _awayMessageController.text.trim(),
       'ai_auto_reply': _aiAutoReply,
       'auto_greeting': _autoGreeting,
       'business_hours_enabled': _businessHoursEnabled,
@@ -178,16 +208,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     final success =
         await ref.read(settingsProvider.notifier).updateSettings(data);
 
+    if (success) {
+      if (_pushEnabled) {
+        await NotificationService.instance.initialize();
+        await NotificationService.instance.refreshToken();
+      } else {
+        await FirebaseMessaging.instance.deleteToken();
+        await NotificationService.instance.cancelAll();
+      }
+    }
+
+    if (!mounted) return;
+
     setState(() {
       _saving = false;
       if (success) _hasChanges = false;
     });
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(success ? '✅ Settings saved!' : '❌ Failed to save'),
-        backgroundColor: success ? Colors.green : Colors.red,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(success ? '✅ Settings saved' : '❌ Failed to save'),
+          backgroundColor: success ? Colors.green : Colors.red,
+        ),
+      );
     }
   }
 
@@ -515,12 +559,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       padding: const EdgeInsets.all(16),
       children: [
         _buildSection('🔔 App Notifications', [
-          _buildToggle(
-              'Push Notifications', 'Browser/App push alerts', _pushEnabled,
-              (v) => setState(() {
-                    _pushEnabled = v;
-                    _markChanged();
-                  })),
+                    _buildToggle(
+            'Push Notifications',
+            'Browser/App push alerts',
+            _pushEnabled,
+            (v) async {
+              setState(() {
+                _pushEnabled = v;
+                _markChanged();
+              });
+
+              if (v) {
+                await NotificationService.instance.initialize();
+              } else {
+                await NotificationService.instance.cancelAll();
+              }
+            },
+          ),
           _buildToggle(
               'Sound Alerts', 'Play sound for new messages', _soundEnabled,
               (v) => setState(() {
