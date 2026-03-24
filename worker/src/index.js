@@ -346,6 +346,43 @@ function mapOrderToSheetRow(order) {
   ];
 }
 
+async function getAllProductCategories(env) {
+  const { results } = await env.DB.prepare(`SELECT sku, category FROM products`).all();
+  const map = {};
+  for (const p of (results || [])) {
+    if (p.sku && p.category) map[p.sku] = p.category;
+  }
+  return map;
+}
+
+function getCategoryFromItems(itemsRaw, categoryMap) {
+  try {
+    const items = typeof itemsRaw === 'string' ? JSON.parse(itemsRaw || '[]') : (itemsRaw || []);
+    if (!Array.isArray(items)) return '';
+    const cats = [];
+    for (const item of items) {
+      const cat = categoryMap[item.sku];
+      if (cat && !cats.includes(cat)) cats.push(cat);
+    }
+    return cats.join(', ');
+  } catch (_) { return ''; }
+}
+
+function parseProductImages(product) {
+  let images = [];
+  try {
+    images = typeof product.images === 'string'
+      ? JSON.parse(product.images || '[]')
+      : (product.images || []);
+    if (!Array.isArray(images)) images = [];
+  } catch (_) { images = []; }
+  return {
+    image_1: images[0] || '',
+    image_2: images[1] || '',
+    image_3: images[2] || '',
+  };
+}
+
 function mapCustomerToSheetRow(customer, unpaidOrderCount = 0, unpaidOrderValue = 0) {
   let cartItems = [];
   try {
@@ -565,7 +602,7 @@ async function syncCustomerToGoogleSheets(env, phone) {
     `SELECT * FROM customers WHERE phone = ?`
   ).bind(phone).first();
 
-  if (!customer) throw new Error(`Customer not found for Sheets sync: ${phone}`);
+  if (!customer) return;
 
   const unpaid = await env.DB.prepare(`
     SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
@@ -698,18 +735,63 @@ async function syncLeadToGoogleSheets(env, phone) {
 }
 
 const SHEET_MANUAL_COLUMNS = {
-  'Orders': [28, 29, 30],
+  'Orders': [30, 31, 32],
   'Shipments': [19, 20],
-  'Inventory': [15],
+  'Inventory': [18],
   'Order Events': [],
   'Sync Failures': [],
-  'Leads': [13, 14],
-  'Sales': [14],
+  'Leads': [15, 16],
+  'Sales': [15],
   'Source Performance': [8],
-  'Customers': [20, 21],
+  'Customers': [21, 22],
   'Cart Activity': [11, 12],
 };
 
+const SHEET_HEADERS = {
+  'Orders': [
+    'order_id','created_at','updated_at','customer_name','phone','source','category',
+    'items_summary','item_count','subtotal','shipping_cost','total',
+    'status','payment_status','payment_id','payment_method','payment_link','payment_link_expires',
+    'shipping_name','shipping_phone','shipping_address','shipping_city','shipping_state','shipping_pincode',
+    'paid_at','cancelled_at','cancellation_reason','customer_notes','internal_notes',
+    'owner_note','follow_up_needed','verified'
+  ],
+  'Customers': [
+    'phone','name','email','city','state','pincode','source','segment','tier','labels',
+    'message_count','order_count','total_spent','cart_item_count','cart_value',
+    'unpaid_order_count','unpaid_order_value','first_seen','last_seen','last_order_at',
+    'owner_note','follow_up_priority'
+  ],
+  'Leads': [
+    'created_at','phone','name','source','category','lead_status',
+    'message_count','order_count','total_spent','segment','tier','labels',
+    'last_seen','first_order_at',
+    'owner_note','follow_up_needed'
+  ],
+  'Sales': [
+    'order_id','created_at','source','category','customer_name','phone','total',
+    'payment_status','status','paid_at','shipped_at','delivered_at',
+    'item_count','items_summary','sales_stage','owner_note'
+  ],
+  'Inventory': [
+    'sku','name','category','subcategory','price','compare_price','stock','reserved_stock',
+    'status','is_featured','image_url','website_link','material','tags_summary','updated_at',
+    'image_1','image_2','image_3','restock_note'
+  ],
+  'Shipments': [
+    'order_id','customer_name','phone','status','payment_status',
+    'shiprocket_order_id','shipment_id','courier','awb_number','awb_code',
+    'tracking_id','tracking_url','shipping_city','shipping_state','shipping_pincode',
+    'paid_at','shipped_at','delivered_at','updated_at',
+    'dispatch_note','dispatch_verified'
+  ],
+  'Cart Activity': [
+    'phone','customer_name','item_count','total','items_summary','status',
+    'reminder_count','last_reminder_at','created_at','updated_at','converted_at',
+    'owner_note','follow_up_needed'
+  ],
+};
+ 
 function mergeSheetRowPreservingManual(existingRow = [], newRow = [], manualIndexes = []) {
   const maxLen = Math.max(existingRow.length, newRow.length);
   const merged = Array.from({ length: maxLen }, (_, i) =>
@@ -750,23 +832,108 @@ async function upsertSheetRowSafe(env, tabName, keyColumnIndex, keyValue, row) {
   return await appendSheetRow(env, tabName, row);
 }
 
+async function syncOrderToGoogleSheetsSafe(env, orderId) {
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+  if (!order) return;
+
+  const categoryMap = await getAllProductCategories(env);
+  const category = getCategoryFromItems(order.items, categoryMap);
+
+  const row = [
+    safeText(order.order_id),
+    safeText(order.created_at),
+    safeText(order.updated_at),
+    safeText(order.customer_name),
+    safeText(order.phone),
+    safeText(order.source),
+    safeText(category),
+    itemsSummaryFromJson(order.items),
+    safeNumber(order.item_count),
+    safeNumber(order.subtotal),
+    safeNumber(order.shipping_cost),
+    safeNumber(order.total),
+    safeText(order.status),
+    safeText(order.payment_status),
+    safeText(order.payment_id),
+    safeText(order.payment_method),
+    safeText(order.payment_link),
+    safeText(order.payment_link_expires),
+    safeText(order.shipping_name),
+    safeText(order.shipping_phone),
+    safeText(order.shipping_address),
+    safeText(order.shipping_city),
+    safeText(order.shipping_state),
+    safeText(order.shipping_pincode),
+    safeText(order.paid_at),
+    safeText(order.cancelled_at),
+    safeText(order.cancellation_reason),
+    safeText(order.customer_notes),
+    safeText(order.internal_notes),
+    '', '', '',
+  ];
+
+  await upsertSheetRowSafe(env, 'Orders', 0, order.order_id, row);
+}
+
+async function syncSalesToGoogleSheetsSafe(env, orderId) {
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+  if (!order) return;
+
+  const categoryMap = await getAllProductCategories(env);
+  const category = getCategoryFromItems(order.items, categoryMap);
+
+  const row = [
+    safeText(order.order_id),
+    safeText(order.created_at),
+    safeText(order.source),
+    safeText(category),
+    safeText(order.customer_name),
+    safeText(order.phone),
+    safeNumber(order.total),
+    safeText(order.payment_status),
+    safeText(order.status),
+    safeText(order.paid_at),
+    safeText(order.shipped_at),
+    safeText(order.delivered_at),
+    safeNumber(order.item_count),
+    itemsSummaryFromJson(order.items),
+    deriveSalesStage(order),
+    '',
+  ];
+
+  await upsertSheetRowSafe(env, 'Sales', 0, order.order_id, row);
+}
+
 async function syncLeadToGoogleSheetsSafe(env, phone) {
   const customer = await env.DB.prepare(
     `SELECT * FROM customers WHERE phone = ?`
   ).bind(phone).first();
-
   if (!customer) return;
 
+  const categoryMap = await getAllProductCategories(env);
+
+  const orderStats = await env.DB.prepare(`
+    SELECT
+      COUNT(*) as order_count,
+      COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_spent
+    FROM orders WHERE phone = ? OR phone = ?
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
   const firstOrder = await env.DB.prepare(`
-    SELECT source, created_at
+    SELECT source, items, created_at
     FROM orders
-    WHERE phone = ?
+    WHERE phone = ? OR phone = ?
     ORDER BY datetime(created_at) ASC
     LIMIT 1
-  `).bind(phone).first();
+  `).bind(phone, phone.replace(/^91/, '')).first();
 
-  const orderCount = safeNumber(customer.order_count);
-  const totalSpent = safeNumber(customer.total_spent);
+  const category = firstOrder ? getCategoryFromItems(firstOrder.items, categoryMap) : '';
+  const orderCount = safeNumber(orderStats?.order_count || 0);
+  const totalSpent = safeNumber(orderStats?.total_spent || 0);
   const messageCount = safeNumber(customer.message_count);
 
   let leadStatus = 'new';
@@ -779,17 +946,17 @@ async function syncLeadToGoogleSheetsSafe(env, phone) {
     safeText(customer.phone),
     safeText(customer.name),
     safeText(firstOrder?.source || ''),
+    safeText(category),
     leadStatus,
-    safeNumber(customer.message_count),
-    safeNumber(customer.order_count),
-    safeNumber(customer.total_spent),
+    messageCount,
+    orderCount,
+    totalSpent,
     safeText(customer.segment),
     safeText(customer.tier),
     labelsSummary(customer.labels),
     safeText(customer.last_seen),
     safeText(firstOrder?.created_at || ''),
-    '', // owner_note
-    '', // follow_up_needed
+    '', '',
   ];
 
   await upsertSheetRowSafe(env, 'Leads', 1, customer.phone, row);
@@ -799,57 +966,56 @@ async function syncCustomerToGoogleSheetsSafe(env, phone) {
   const customer = await env.DB.prepare(
     `SELECT * FROM customers WHERE phone = ?`
   ).bind(phone).first();
+  if (!customer) return;
 
-  if (!customer) throw new Error(`Customer not found for Sheets sync: ${phone}`);
+  const orderStats = await env.DB.prepare(`
+    SELECT
+      COUNT(*) as order_count,
+      COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_spent
+    FROM orders WHERE phone = ? OR phone = ?
+  `).bind(phone, phone.replace(/^91/, '')).first();
 
   const unpaid = await env.DB.prepare(`
     SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
     FROM orders
-    WHERE phone = ?
+    WHERE (phone = ? OR phone = ?)
       AND payment_status = 'unpaid'
       AND status != 'cancelled'
-  `).bind(phone).first();
+  `).bind(phone, phone.replace(/^91/, '')).first();
 
   const firstOrder = await env.DB.prepare(`
-    SELECT source
+    SELECT source, shipping_city, shipping_state, shipping_pincode
     FROM orders
-    WHERE phone = ?
+    WHERE phone = ? OR phone = ?
     ORDER BY datetime(created_at) ASC
     LIMIT 1
-  `).bind(phone).first();
+  `).bind(phone, phone.replace(/^91/, '')).first();
 
   let cartItems = [];
   try {
     cartItems = JSON.parse(customer.cart || '[]');
     if (!Array.isArray(cartItems)) cartItems = [];
-  } catch (_) {
-    cartItems = [];
-  }
+  } catch (_) { cartItems = []; }
 
-  const cartItemCount = cartItems.reduce((sum, item) => {
-    return sum + Number(item.qty || item.quantity || 1);
-  }, 0);
-
-  const cartValue = cartItems.reduce((sum, item) => {
-    const qty = Number(item.qty || item.quantity || 1);
-    const price = Number(item.price || 0);
-    return sum + (qty * price);
+  const cartItemCount = cartItems.reduce((s, i) => s + Number(i.qty || i.quantity || 1), 0);
+  const cartValue = cartItems.reduce((s, i) => {
+    return s + (Number(i.qty || i.quantity || 1) * Number(i.price || 0));
   }, 0);
 
   const row = [
     safeText(customer.phone),
     safeText(customer.name),
     safeText(customer.email),
-    safeText(customer.city),
-    safeText(customer.state),
-    safeText(customer.pincode),
+    safeText(customer.city || firstOrder?.shipping_city || ''),
+    safeText(customer.state || firstOrder?.shipping_state || ''),
+    safeText(customer.pincode || firstOrder?.shipping_pincode || ''),
     safeText(firstOrder?.source || ''),
     safeText(customer.segment),
     safeText(customer.tier),
     labelsSummary(customer.labels),
     safeNumber(customer.message_count),
-    safeNumber(customer.order_count),
-    safeNumber(customer.total_spent),
+    safeNumber(orderStats?.order_count || 0),
+    safeNumber(orderStats?.total_spent || 0),
     cartItemCount,
     cartValue,
     safeNumber(unpaid?.count || 0),
@@ -857,30 +1023,19 @@ async function syncCustomerToGoogleSheetsSafe(env, phone) {
     safeText(customer.first_seen),
     safeText(customer.last_seen),
     safeText(customer.last_order_at),
-    '', // owner_note
-    '', // follow_up_priority
+    '', '',
   ];
 
   await upsertSheetRowSafe(env, 'Customers', 0, customer.phone, row);
-}
-
-async function syncOrderToGoogleSheetsSafe(env, orderId) {
-  const order = await env.DB.prepare(
-    `SELECT * FROM orders WHERE order_id = ?`
-  ).bind(orderId).first();
-
-  if (!order) throw new Error(`Order not found for Sheets sync: ${orderId}`);
-
-  const row = mapOrderToSheetRow(order);
-  await upsertSheetRowSafe(env, 'Orders', 0, order.order_id, row);
 }
 
 async function syncProductToGoogleSheetsSafe(env, sku) {
   const product = await env.DB.prepare(
     `SELECT * FROM products WHERE sku = ?`
   ).bind(sku).first();
+  if (!product) return;
 
-  if (!product) throw new Error(`Product not found for Sheets sync: ${sku}`);
+  const imgs = parseProductImages(product);
 
   const row = [
     safeText(product.sku),
@@ -891,14 +1046,17 @@ async function syncProductToGoogleSheetsSafe(env, sku) {
     safeNumber(product.compare_price),
     safeNumber(product.stock),
     safeNumber(product.reserved_stock || 0),
-    safeText(product.is_active),
-    safeText(product.is_featured),
+    product.is_active ? 'Enabled' : 'Disabled',
+    product.is_featured ? 'Yes' : 'No',
     safeText(product.image_url),
     safeText(product.website_link),
     safeText(product.material),
     tagsSummary(product.tags),
     safeText(product.updated_at),
-    '', // restock_note
+    safeText(imgs.image_1),
+    safeText(imgs.image_2),
+    safeText(imgs.image_3),
+    '',
   ];
 
   await upsertSheetRowSafe(env, 'Inventory', 0, product.sku, row);
@@ -930,70 +1088,409 @@ async function syncCartToGoogleSheetsSafe(env, phone) {
   await upsertSheetRowSafe(env, 'Cart Activity', 0, cart.phone, row);
 }
 
-async function syncSalesToGoogleSheetsSafe(env, orderId) {
-  const order = await env.DB.prepare(
-    `SELECT * FROM orders WHERE order_id = ?`
-  ).bind(orderId).first();
-
-  if (!order) return;
-
-  const row = mapSalesToSheetRow(order);
-  await upsertSheetRowSafe(env, 'Sales', 0, order.order_id, row);
-}
 
 async function backfillOrdersToGoogleSheets(env) {
   const { results: orders } = await env.DB.prepare(`
-    SELECT order_id, phone, shipment_id, shiprocket_order_id, awb_number, awb_code
-    FROM orders
-    ORDER BY created_at ASC
+    SELECT * FROM orders ORDER BY created_at DESC
   `).all();
 
-  for (const order of (orders || [])) {
-    await syncOrderToGoogleSheetsSafe(env, order.order_id);
+  if (!orders || orders.length === 0) return { totalOrders: 0 };
 
-    if (order.phone) {
-      await syncCustomerToGoogleSheetsSafe(env, order.phone);
-      await syncLeadToGoogleSheetsSafe(env, order.phone);
-    }
+  const categoryMap = await getAllProductCategories(env);
+  const existing = await getSheetValues(env, 'Orders');
+  const manualIndexes = SHEET_MANUAL_COLUMNS['Orders'] || [];
 
-    await syncSalesToGoogleSheetsSafe(env, order.order_id);
-
-    const hasShipmentData =
-      (order.shipment_id && String(order.shipment_id).trim()) ||
-      (order.shiprocket_order_id && String(order.shiprocket_order_id).trim()) ||
-      (order.awb_number && String(order.awb_number).trim()) ||
-      (order.awb_code && String(order.awb_code).trim());
-
-    if (hasShipmentData) {
-      await syncShipmentToGoogleSheetsSafe(env, order.order_id);
-    }
+  const existingMap = {};
+  for (let i = 1; i < (existing || []).length; i++) {
+    const key = (existing[i] || [])[0];
+    if (key) existingMap[key] = existing[i];
   }
 
-  return { totalOrders: orders?.length || 0 };
+  const rows = [SHEET_HEADERS['Orders']];
+
+  for (const order of orders) {
+    const category = getCategoryFromItems(order.items, categoryMap);
+    const newRow = [
+      safeText(order.order_id),
+      safeText(order.created_at),
+      safeText(order.updated_at),
+      safeText(order.customer_name),
+      safeText(order.phone),
+      safeText(order.source),
+      safeText(category),
+      itemsSummaryFromJson(order.items),
+      safeNumber(order.item_count),
+      safeNumber(order.subtotal),
+      safeNumber(order.shipping_cost),
+      safeNumber(order.total),
+      safeText(order.status),
+      safeText(order.payment_status),
+      safeText(order.payment_id),
+      safeText(order.payment_method),
+      safeText(order.payment_link),
+      safeText(order.payment_link_expires),
+      safeText(order.shipping_name),
+      safeText(order.shipping_phone),
+      safeText(order.shipping_address),
+      safeText(order.shipping_city),
+      safeText(order.shipping_state),
+      safeText(order.shipping_pincode),
+      safeText(order.paid_at),
+      safeText(order.cancelled_at),
+      safeText(order.cancellation_reason),
+      safeText(order.customer_notes),
+      safeText(order.internal_notes),
+      '', '', '',
+    ];
+
+    const existingRow = existingMap[order.order_id] || [];
+    const merged = mergeSheetRowPreservingManual(existingRow, newRow, manualIndexes);
+    rows.push(merged);
+  }
+
+  const encodedRange = encodeURIComponent('Orders!A:ZZ');
+  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values: rows });
+
+  return { totalOrders: orders.length };
+}
+
+async function backfillCustomersToGoogleSheets(env) {
+  const { results: customers } = await env.DB.prepare(`
+    SELECT * FROM customers ORDER BY last_seen DESC
+  `).all();
+
+  if (!customers || customers.length === 0) return { totalCustomers: 0 };
+
+  const existing = await getSheetValues(env, 'Customers');
+  const manualIndexes = SHEET_MANUAL_COLUMNS['Customers'] || [];
+
+  const existingMap = {};
+  for (let i = 1; i < (existing || []).length; i++) {
+    const key = (existing[i] || [])[0];
+    if (key) existingMap[key] = existing[i];
+  }
+
+  const rows = [SHEET_HEADERS['Customers']];
+
+  for (const customer of customers) {
+    const orderStats = await env.DB.prepare(`
+      SELECT
+        COUNT(*) as order_count,
+        COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_spent,
+        MIN(created_at) as first_order_at
+      FROM orders WHERE phone = ? OR phone = ?
+    `).bind(customer.phone, customer.phone.replace(/^91/, '')).first();
+
+    const unpaid = await env.DB.prepare(`
+      SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
+      FROM orders
+      WHERE (phone = ? OR phone = ?)
+        AND payment_status = 'unpaid'
+        AND status != 'cancelled'
+    `).bind(customer.phone, customer.phone.replace(/^91/, '')).first();
+
+    const firstOrder = await env.DB.prepare(`
+      SELECT source, shipping_city, shipping_state, shipping_pincode
+      FROM orders
+      WHERE phone = ? OR phone = ?
+      ORDER BY datetime(created_at) ASC
+      LIMIT 1
+    `).bind(customer.phone, customer.phone.replace(/^91/, '')).first();
+
+    let cartItems = [];
+    try {
+      cartItems = JSON.parse(customer.cart || '[]');
+      if (!Array.isArray(cartItems)) cartItems = [];
+    } catch (_) { cartItems = []; }
+
+    const cartItemCount = cartItems.reduce((s, i) => s + Number(i.qty || i.quantity || 1), 0);
+    const cartValue = cartItems.reduce((s, i) => {
+      return s + (Number(i.qty || i.quantity || 1) * Number(i.price || 0));
+    }, 0);
+
+    const newRow = [
+      safeText(customer.phone),
+      safeText(customer.name),
+      safeText(customer.email),
+      safeText(customer.city || firstOrder?.shipping_city || ''),
+      safeText(customer.state || firstOrder?.shipping_state || ''),
+      safeText(customer.pincode || firstOrder?.shipping_pincode || ''),
+      safeText(firstOrder?.source || ''),
+      safeText(customer.segment),
+      safeText(customer.tier),
+      labelsSummary(customer.labels),
+      safeNumber(customer.message_count),
+      safeNumber(orderStats?.order_count || customer.order_count || 0),
+      safeNumber(orderStats?.total_spent || customer.total_spent || 0),
+      cartItemCount,
+      cartValue,
+      safeNumber(unpaid?.count || 0),
+      safeNumber(unpaid?.value || 0),
+      safeText(customer.first_seen),
+      safeText(customer.last_seen),
+      safeText(orderStats?.first_order_at || customer.last_order_at || ''),
+      '', '',
+    ];
+
+    const existingRow = existingMap[customer.phone] || [];
+    const merged = mergeSheetRowPreservingManual(existingRow, newRow, manualIndexes);
+    rows.push(merged);
+  }
+
+  const encodedRange = encodeURIComponent('Customers!A:ZZ');
+  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values: rows });
+
+  return { totalCustomers: customers.length };
+}
+
+async function backfillLeadsToGoogleSheets(env) {
+  const { results: customers } = await env.DB.prepare(`
+    SELECT * FROM customers ORDER BY last_seen DESC
+  `).all();
+
+  if (!customers || customers.length === 0) return { totalLeads: 0 };
+
+  const categoryMap = await getAllProductCategories(env);
+  const existing = await getSheetValues(env, 'Leads');
+  const manualIndexes = SHEET_MANUAL_COLUMNS['Leads'] || [];
+
+  const existingMap = {};
+  for (let i = 1; i < (existing || []).length; i++) {
+    const key = (existing[i] || [])[1];
+    if (key) existingMap[key] = existing[i];
+  }
+
+  const rows = [SHEET_HEADERS['Leads']];
+
+  for (const customer of customers) {
+    const orderStats = await env.DB.prepare(`
+      SELECT
+        COUNT(*) as order_count,
+        COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_spent,
+        MIN(created_at) as first_order_at
+      FROM orders WHERE phone = ? OR phone = ?
+    `).bind(customer.phone, customer.phone.replace(/^91/, '')).first();
+
+    const firstOrder = await env.DB.prepare(`
+      SELECT source, items, created_at
+      FROM orders
+      WHERE phone = ? OR phone = ?
+      ORDER BY datetime(created_at) ASC
+      LIMIT 1
+    `).bind(customer.phone, customer.phone.replace(/^91/, '')).first();
+
+    const category = firstOrder ? getCategoryFromItems(firstOrder.items, categoryMap) : '';
+    const orderCount = safeNumber(orderStats?.order_count || customer.order_count || 0);
+    const totalSpent = safeNumber(orderStats?.total_spent || customer.total_spent || 0);
+    const messageCount = safeNumber(customer.message_count);
+
+    let leadStatus = 'new';
+    if (orderCount > 0 || totalSpent > 0) leadStatus = 'ordered';
+    else if (messageCount >= 5) leadStatus = 'interested';
+    else if (messageCount > 0) leadStatus = 'engaged';
+
+    const newRow = [
+      safeText(customer.created_at || customer.first_seen),
+      safeText(customer.phone),
+      safeText(customer.name),
+      safeText(firstOrder?.source || ''),
+      safeText(category),
+      leadStatus,
+      messageCount,
+      orderCount,
+      totalSpent,
+      safeText(customer.segment),
+      safeText(customer.tier),
+      labelsSummary(customer.labels),
+      safeText(customer.last_seen),
+      safeText(firstOrder?.created_at || ''),
+      '', '',
+    ];
+
+    const existingRow = existingMap[customer.phone] || [];
+    const merged = mergeSheetRowPreservingManual(existingRow, newRow, manualIndexes);
+    rows.push(merged);
+  }
+
+  const encodedRange = encodeURIComponent('Leads!A:ZZ');
+  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values: rows });
+
+  return { totalLeads: customers.length };
+}
+
+async function backfillSalesToGoogleSheets(env) {
+  const { results: orders } = await env.DB.prepare(`
+    SELECT * FROM orders ORDER BY created_at DESC
+  `).all();
+
+  if (!orders || orders.length === 0) return { totalSales: 0 };
+
+  const categoryMap = await getAllProductCategories(env);
+  const existing = await getSheetValues(env, 'Sales');
+  const manualIndexes = SHEET_MANUAL_COLUMNS['Sales'] || [];
+
+  const existingMap = {};
+  for (let i = 1; i < (existing || []).length; i++) {
+    const key = (existing[i] || [])[0];
+    if (key) existingMap[key] = existing[i];
+  }
+
+  const rows = [SHEET_HEADERS['Sales']];
+
+  for (const order of orders) {
+    const category = getCategoryFromItems(order.items, categoryMap);
+    const newRow = [
+      safeText(order.order_id),
+      safeText(order.created_at),
+      safeText(order.source),
+      safeText(category),
+      safeText(order.customer_name),
+      safeText(order.phone),
+      safeNumber(order.total),
+      safeText(order.payment_status),
+      safeText(order.status),
+      safeText(order.paid_at),
+      safeText(order.shipped_at),
+      safeText(order.delivered_at),
+      safeNumber(order.item_count),
+      itemsSummaryFromJson(order.items),
+      deriveSalesStage(order),
+      '',
+    ];
+
+    const existingRow = existingMap[order.order_id] || [];
+    const merged = mergeSheetRowPreservingManual(existingRow, newRow, manualIndexes);
+    rows.push(merged);
+  }
+
+  const encodedRange = encodeURIComponent('Sales!A:ZZ');
+  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values: rows });
+
+  return { totalSales: orders.length };
 }
 
 async function backfillProductsToGoogleSheets(env) {
   const { results: products } = await env.DB.prepare(`
-    SELECT sku FROM products ORDER BY name ASC
+    SELECT * FROM products ORDER BY name ASC
   `).all();
 
-  for (const product of (products || [])) {
-    await syncProductToGoogleSheetsSafe(env, product.sku);
+  if (!products || products.length === 0) return { totalProducts: 0 };
+
+  const existing = await getSheetValues(env, 'Inventory');
+  const manualIndexes = SHEET_MANUAL_COLUMNS['Inventory'] || [];
+
+  const existingMap = {};
+  for (let i = 1; i < (existing || []).length; i++) {
+    const key = (existing[i] || [])[0];
+    if (key) existingMap[key] = existing[i];
   }
 
-  return { totalProducts: products?.length || 0 };
+  const rows = [SHEET_HEADERS['Inventory']];
+
+  for (const product of products) {
+    const imgs = parseProductImages(product);
+    const newRow = [
+      safeText(product.sku),
+      safeText(product.name),
+      safeText(product.category),
+      safeText(product.subcategory),
+      safeNumber(product.price),
+      safeNumber(product.compare_price),
+      safeNumber(product.stock),
+      safeNumber(product.reserved_stock || 0),
+      product.is_active ? 'Enabled' : 'Disabled',
+      product.is_featured ? 'Yes' : 'No',
+      safeText(product.image_url),
+      safeText(product.website_link),
+      safeText(product.material),
+      tagsSummary(product.tags),
+      safeText(product.updated_at),
+      safeText(imgs.image_1),
+      safeText(imgs.image_2),
+      safeText(imgs.image_3),
+      '',
+    ];
+
+    const existingRow = existingMap[product.sku] || [];
+    const merged = mergeSheetRowPreservingManual(existingRow, newRow, manualIndexes);
+    rows.push(merged);
+  }
+
+  const encodedRange = encodeURIComponent('Inventory!A:ZZ');
+  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values: rows });
+
+  return { totalProducts: products.length };
+}
+
+async function backfillShipmentsToGoogleSheets(env) {
+  const { results: orders } = await env.DB.prepare(`
+    SELECT * FROM orders
+    WHERE (shipment_id IS NOT NULL AND shipment_id != '')
+       OR (shiprocket_order_id IS NOT NULL AND shiprocket_order_id != '')
+       OR (awb_number IS NOT NULL AND awb_number != '')
+       OR (awb_code IS NOT NULL AND awb_code != '')
+    ORDER BY created_at DESC
+  `).all();
+
+  if (!orders || orders.length === 0) return { totalShipments: 0 };
+
+  const existing = await getSheetValues(env, 'Shipments');
+  const manualIndexes = SHEET_MANUAL_COLUMNS['Shipments'] || [];
+
+  const existingMap = {};
+  for (let i = 1; i < (existing || []).length; i++) {
+    const key = (existing[i] || [])[0];
+    if (key) existingMap[key] = existing[i];
+  }
+
+  const rows = [SHEET_HEADERS['Shipments']];
+
+  for (const order of orders) {
+    const newRow = mapShipmentToSheetRow(order);
+    const existingRow = existingMap[order.order_id] || [];
+    const merged = mergeSheetRowPreservingManual(existingRow, newRow, manualIndexes);
+    rows.push(merged);
+  }
+
+  const encodedRange = encodeURIComponent('Shipments!A:ZZ');
+  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values: rows });
+
+  return { totalShipments: orders.length };
 }
 
 async function backfillCartsToGoogleSheets(env) {
   const { results: carts } = await env.DB.prepare(`
-    SELECT phone FROM carts ORDER BY updated_at DESC
+    SELECT * FROM carts ORDER BY updated_at DESC
   `).all();
 
-  for (const cart of (carts || [])) {
-    await syncCartToGoogleSheetsSafe(env, cart.phone);
+  if (!carts || carts.length === 0) return { totalCarts: 0 };
+
+  const existing = await getSheetValues(env, 'Cart Activity');
+  const manualIndexes = SHEET_MANUAL_COLUMNS['Cart Activity'] || [];
+
+  const existingMap = {};
+  for (let i = 1; i < (existing || []).length; i++) {
+    const key = (existing[i] || [])[0];
+    if (key) existingMap[key] = existing[i];
   }
 
-  return { totalCarts: carts?.length || 0 };
+  const rows = [SHEET_HEADERS['Cart Activity']];
+
+  for (const cart of carts) {
+    const customer = await env.DB.prepare(
+      `SELECT name FROM customers WHERE phone = ?`
+    ).bind(cart.phone).first();
+
+    const newRow = mapCartToSheetRow(cart, customer?.name || '');
+    const existingRow = existingMap[cart.phone] || [];
+    const merged = mergeSheetRowPreservingManual(existingRow, newRow, manualIndexes);
+    rows.push(merged);
+  }
+
+  const encodedRange = encodeURIComponent('Cart Activity!A:ZZ');
+  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values: rows });
+
+  return { totalCarts: carts.length };
 }
 
 async function backfillOrderEventsToGoogleSheets(env) {
@@ -1003,44 +1500,78 @@ async function backfillOrderEventsToGoogleSheets(env) {
     ORDER BY created_at ASC
   `).all().catch(() => ({ results: [] }));
 
-  if (!events || events.length === 0) {
-    return { totalOrderEvents: 0 };
-  }
+  if (!events || events.length === 0) return { totalOrderEvents: 0 };
 
-  const header = [[
+  const values = [[
     'created_at', 'order_id', 'event_type', 'event_source', 'message', 'meta_json'
   ]];
 
-  const values = header.concat(events.map(event => [
-    safeText(event.created_at),
-    safeText(event.order_id),
-    safeText(event.event_type),
-    safeText(event.event_source),
-    safeText(event.message),
-    safeText(event.meta_json),
-  ]));
+  for (const event of events) {
+    values.push([
+      safeText(event.created_at),
+      safeText(event.order_id),
+      safeText(event.event_type),
+      safeText(event.event_source),
+      safeText(event.message),
+      safeText(event.meta_json),
+    ]);
+  }
 
   const encodedRange = encodeURIComponent('Order Events!A:F');
-  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, {
-    values,
-  });
+  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values });
 
   return { totalOrderEvents: events.length };
 }
 
 async function backfillAllGoogleSheets(env) {
-  const orders = await backfillOrdersToGoogleSheets(env);
-  const products = await backfillProductsToGoogleSheets(env);
-  const carts = await backfillCartsToGoogleSheets(env);
-  const events = await backfillOrderEventsToGoogleSheets(env);
-  await rebuildSourcePerformanceSheet(env);
+  let orders = { totalOrders: 0 };
+  let customers = { totalCustomers: 0 };
+  let leads = { totalLeads: 0 };
+  let sales = { totalSales: 0 };
+  let products = { totalProducts: 0 };
+  let shipments = { totalShipments: 0 };
+  let carts = { totalCarts: 0 };
+  let events = { totalOrderEvents: 0 };
+  let sourcePerf = false;
+
+  try { orders = await backfillOrdersToGoogleSheets(env); } catch (e) {
+    console.error('Backfill orders error:', e);
+  }
+  try { customers = await backfillCustomersToGoogleSheets(env); } catch (e) {
+    console.error('Backfill customers error:', e);
+  }
+  try { leads = await backfillLeadsToGoogleSheets(env); } catch (e) {
+    console.error('Backfill leads error:', e);
+  }
+  try { sales = await backfillSalesToGoogleSheets(env); } catch (e) {
+    console.error('Backfill sales error:', e);
+  }
+  try { products = await backfillProductsToGoogleSheets(env); } catch (e) {
+    console.error('Backfill products error:', e);
+  }
+  try { shipments = await backfillShipmentsToGoogleSheets(env); } catch (e) {
+    console.error('Backfill shipments error:', e);
+  }
+  try { carts = await backfillCartsToGoogleSheets(env); } catch (e) {
+    console.error('Backfill carts error:', e);
+  }
+  try { events = await backfillOrderEventsToGoogleSheets(env); } catch (e) {
+    console.error('Backfill events error:', e);
+  }
+  try { await rebuildSourcePerformanceSheet(env); sourcePerf = true; } catch (e) {
+    console.error('Backfill source perf error:', e);
+  }
 
   return {
     orders,
+    customers,
+    leads,
+    sales,
     products,
+    shipments,
     carts,
     events,
-    sourcePerformance: true,
+    sourcePerformance: sourcePerf,
     syncedAt: new Date().toISOString(),
   };
 }
@@ -1748,7 +2279,7 @@ async function handleUpdateProduct(sku, request, env) {
     `UPDATE products SET ${fields.join(', ')} WHERE sku = ?`
   ).bind(...values).run();
   try {
-    await syncProductToGoogleSheets(env, sku);
+    await syncProductToGoogleSheetsSafe(env, sku);
    } catch (e) {
     console.error('Google Sheets sync error (product update):', e);
     await appendSyncFailureToGoogleSheets(env, {
@@ -1819,7 +2350,7 @@ async function handleCreateProduct(request, env) {
   } catch (_) {}
 
   try {
-    await syncProductToGoogleSheets(env, sku);
+    await syncProductToGoogleSheetsSafe(env, sku);
   } catch (e) {
     console.error('Google Sheets sync error (product create):', e);
     await appendSyncFailureToGoogleSheets(env, {
@@ -1847,7 +2378,7 @@ async function handleUpdateStock(sku, request, env) {
   if (isNaN(stock)) return errorResponse('stock required');
   await env.DB.prepare(`UPDATE products SET stock = ?, updated_at = datetime('now') WHERE sku = ?`).bind(stock, sku).run();
   try {
-    await syncProductToGoogleSheets(env, sku);
+    await syncProductToGoogleSheetsSafe(env, sku);
    } catch (e) {
     console.error('Google Sheets sync error (stock update):', e);
     await appendSyncFailureToGoogleSheets(env, {
@@ -3113,10 +3644,10 @@ Confirm order? 👇`,
 }, 'whatsapp_bot');
 
     try {
-      await syncOrderToGoogleSheets(env, orderId);
-      await syncCustomerToGoogleSheets(env, phone);
-      await syncLeadToGoogleSheets(env, phone);
-      await syncSalesToGoogleSheets(env, orderId);
+      await syncOrderToGoogleSheetsSafe(env, orderId);
+      await syncCustomerToGoogleSheetsSafe(env, phone);
+      await syncLeadToGoogleSheetsSafe(env, phone);
+      await syncSalesToGoogleSheetsSafe(env, orderId);
       await rebuildSourcePerformanceSheet(env);
     } catch (e) {
       console.error('Google Sheets sync error (WhatsApp order):', e);
@@ -3382,6 +3913,40 @@ export default {
 
     if (path === '/health') return new Response('OK', { status: 200 });
 
+    if (path === '/api/debug/google-auth' && method === 'GET') {
+  const email = env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
+  const key = env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
+
+  return jsonResponse({
+    email: email,
+    emailLength: email.length,
+    keyExists: !!key,
+    keyLength: key.length,
+    keyFirst30: key.substring(0, 30),
+  });
+}
+
+    if (path === '/api/debug/sync-check' && method === 'POST') {
+  const incomingKey = request.headers.get('x-sync-key');
+  const storedKey = env.SYNC_API_KEY;
+
+  return jsonResponse({
+    incomingKeyExists: !!incomingKey,
+    incomingKeyLength: incomingKey ? incomingKey.length : 0,
+    incomingKeyFirst4: incomingKey ? incomingKey.substring(0, 4) : 'NONE',
+    storedKeyExists: !!storedKey,
+    storedKeyLength: storedKey ? storedKey.length : 0,
+    storedKeyFirst4: storedKey ? storedKey.substring(0, 4) : 'NONE',
+    keysMatch: incomingKey === storedKey,
+    envVarsAvailable: {
+      SYNC_API_KEY: !!env.SYNC_API_KEY,
+      GOOGLE_SHEETS_SPREADSHEET_ID: !!env.GOOGLE_SHEETS_SPREADSHEET_ID,
+      GOOGLE_SERVICE_ACCOUNT_EMAIL: !!env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: !!env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+    }
+  });
+}
+
     if (path === '/webhook' || path === '/api/webhook') {
       if (method === 'GET') return handleWebhookVerify(request, env);
       if (method === 'POST') return handleWebhookPost(request, env, ctx);
@@ -3459,10 +4024,10 @@ if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && met
 
     const phone = order.phone;
     try {
-      await syncOrderToGoogleSheets(env, orderId);
-      await syncCustomerToGoogleSheets(env, phone);
-      await syncLeadToGoogleSheets(env, phone);
-      await syncSalesToGoogleSheets(env, orderId);
+      await syncOrderToGoogleSheetsSafe(env, orderId);
+      await syncCustomerToGoogleSheetsSafe(env, phone);
+      await syncLeadToGoogleSheetsSafe(env, phone);
+      await syncSalesToGoogleSheetsSafe(env, orderId);
       await rebuildSourcePerformanceSheet(env);
     } catch (e) {
       console.error('Google Sheets sync error (payment_link.paid):', e);
@@ -3562,10 +4127,10 @@ if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && met
 
     const phone = order.phone;
     try {
-      await syncOrderToGoogleSheets(env, orderId);
-      await syncCustomerToGoogleSheets(env, phone);
-      await syncLeadToGoogleSheets(env, phone);
-      await syncSalesToGoogleSheets(env, orderId);
+      await syncOrderToGoogleSheetsSafe(env, orderId);
+      await syncCustomerToGoogleSheetsSafe(env, phone);
+      await syncLeadToGoogleSheetsSafe(env, phone);
+      await syncSalesToGoogleSheetsSafe(env, orderId);
       await rebuildSourcePerformanceSheet(env);
      } catch (e) {
       console.error('Google Sheets sync error (payment.captured):', e);
@@ -3654,10 +4219,10 @@ if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && met
 }, 'catalogue');
 
   try {
-    await syncOrderToGoogleSheets(env, orderId);
-    await syncCustomerToGoogleSheets(env, phone);
-    await syncLeadToGoogleSheets(env, phone);
-    await syncSalesToGoogleSheets(env, orderId);
+    await syncOrderToGoogleSheetsSafe(env, orderId);
+    await syncCustomerToGoogleSheetsSafe(env, phone);
+    await syncLeadToGoogleSheetsSafe(env, phone);
+    await syncSalesToGoogleSheetsSafe(env, orderId);
     await rebuildSourcePerformanceSheet(env);
   } catch (e) {
     console.error('Google Sheets sync error (catalogue order):', e);
@@ -3673,14 +4238,7 @@ if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && met
   } 
  const itemsText = items.map(i => `• ${i.name} x${i.qty} — ₹${i.price * i.qty}`).join('\n');
   
-  await logOrderEvent(env, orderId, 'order_created', 'Catalogue order created', {
-  phone,
-  customerName: name || phone,
-  total: grandTotal,
-  itemCount,
-}, 'catalogue');
-
-  await sendWhatsAppText(env, phone,
+await sendWhatsAppText(env, phone,
     `💎 *KAAPAV Order Summary*\n\nOrder ID: *${orderId}*\n\n${itemsText}\n\n` +
     `Subtotal: ₹${total}\nShipping: ₹${shipping}\n*Total: ₹${grandTotal}*\n\n` +
     `⏳ Complete payment to confirm your order.`
@@ -3708,10 +4266,10 @@ await sendWhatsAppText(env, env.OWNER_PHONE,
     await sendWhatsAppText(env, phone, `💳 *Pay here:*\n${payLink}\n\n_Link valid for 24 hours_`);
   } catch(e) { console.error('Razorpay error:', e); }
   try {
-    await syncOrderToGoogleSheets(env, orderId);
-    await syncCustomerToGoogleSheets(env, phone);
-    await syncLeadToGoogleSheets(env, phone);
-    await syncSalesToGoogleSheets(env, orderId);
+    await syncOrderToGoogleSheetsSafe(env, orderId);
+    await syncCustomerToGoogleSheetsSafe(env, phone);
+    await syncLeadToGoogleSheetsSafe(env, phone);
+    await syncSalesToGoogleSheetsSafe(env, orderId);
     await rebuildSourcePerformanceSheet(env);
   } catch (e) {
     console.error('Google Sheets sync error (manual order):', e);
@@ -3823,10 +4381,10 @@ await sendWhatsAppText(env, env.OWNER_PHONE,
     `confirm_${paymentId}`
   ));
   try {
-    await syncOrderToGoogleSheets(env, orderId);
-    await syncCustomerToGoogleSheets(env, order.phone);
-    await syncLeadToGoogleSheets(env, order.phone);
-    await syncSalesToGoogleSheets(env, orderId);
+    await syncOrderToGoogleSheetsSafe(env, orderId);
+    await syncCustomerToGoogleSheetsSafe(env, order.phone);
+    await syncLeadToGoogleSheetsSafe(env, order.phone);
+    await syncSalesToGoogleSheetsSafe(env, orderId);
     await rebuildSourcePerformanceSheet(env);
   } catch (e) {
     console.error('Google Sheets sync error (manual payment confirm):', e);
@@ -3859,6 +4417,20 @@ await sendWhatsAppText(env, env.OWNER_PHONE,
     // PUBLIC — no auth needed, must be BEFORE auth wall
     if (path === '/api/push/fcm-register' && method === 'POST') return handleRegisterFCM(request, env);
 
+        const syncKey = request.headers.get('x-sync-key');
+    const hasValidSyncKey = syncKey && syncKey === env.SYNC_API_KEY;
+
+    if (path === '/api/sync/google-sheets/full-sync' && method === 'POST') {
+      if (!hasValidSyncKey) return errorResponse('Unauthorized', 401);
+
+      try {
+        const summary = await backfillAllGoogleSheets(env);
+        return jsonResponse({ success: true, summary });
+      } catch (e) {
+        console.error('Google Sheets full sync error:', e);
+        return errorResponse('Full sync failed: ' + e.message, 500);
+      }
+    }
     
     const user = await authMiddleware(request, env);
     if (!user) return errorResponse('Unauthorized', 401);
@@ -3953,10 +4525,10 @@ if (path.match(/^\/api\/orders\/[^/]+\/details$/) && method === 'PATCH') {
   );
 
   try {
-    await syncOrderToGoogleSheets(env, orderId);
-    await syncCustomerToGoogleSheets(env, phone);
-    await syncLeadToGoogleSheets(env, phone);
-    await syncSalesToGoogleSheets(env, orderId);
+    await syncOrderToGoogleSheetsSafe(env, orderId);
+    await syncCustomerToGoogleSheetsSafe(env, phone);
+    await syncLeadToGoogleSheetsSafe(env, phone);
+    await syncSalesToGoogleSheetsSafe(env, orderId);
    } catch (e) {
     console.error('Google Sheets sync error (order details update):', e);
     await appendSyncFailureToGoogleSheets(env, {
@@ -4043,10 +4615,10 @@ if (path.match(/^\/api\/orders\/[^/]+\/payment$/) && method === 'PATCH') {
   );
 
   try {
-    await syncOrderToGoogleSheets(env, orderId);
-    await syncCustomerToGoogleSheets(env, order.phone);
-    await syncLeadToGoogleSheets(env, order.phone);
-    await syncSalesToGoogleSheets(env, orderId);
+    await syncOrderToGoogleSheetsSafe(env, orderId);
+    await syncCustomerToGoogleSheetsSafe(env, order.phone);
+    await syncLeadToGoogleSheetsSafe(env, order.phone);
+    await syncSalesToGoogleSheetsSafe(env, orderId);
     await rebuildSourcePerformanceSheet(env);
   } catch (e) {
     console.error('Google Sheets sync error (order payment update):', e);
@@ -4100,10 +4672,10 @@ if (path.match(/^\/api\/orders\/[^/]+\/cancel$/) && method === 'PATCH') {
   );
 
   try {
-    await syncOrderToGoogleSheets(env, orderId);
-    await syncCustomerToGoogleSheets(env, order.phone);
-    await syncLeadToGoogleSheets(env, order.phone);
-    await syncSalesToGoogleSheets(env, orderId);
+    await syncOrderToGoogleSheetsSafe(env, orderId);
+    await syncCustomerToGoogleSheetsSafe(env, order.phone);
+    await syncLeadToGoogleSheetsSafe(env, order.phone);
+    await syncSalesToGoogleSheetsSafe(env, orderId);
     await rebuildSourcePerformanceSheet(env);
   } catch (e) {
     console.error('Google Sheets sync error (order cancel):', e);
@@ -4139,19 +4711,19 @@ if (path.match(/^\/api\/orders\/[^/]+\/status$/) && method === 'PUT') {
   ).bind(status, orderId).run();
 
   try {
-    await syncOrderToGoogleSheets(env, orderId);
-    await syncShipmentToGoogleSheets(env, orderId);
+    await syncOrderToGoogleSheetsSafe(env, orderId);
+    await syncShipmentToGoogleSheetsSafe(env, orderId);
 
     const order = await env.DB.prepare(
       `SELECT * FROM orders WHERE order_id = ?`
     ).bind(orderId).first();
 
     if (order?.phone) {
-      await syncCustomerToGoogleSheets(env, order.phone);
-      await syncLeadToGoogleSheets(env, order.phone);
+      await syncCustomerToGoogleSheetsSafe(env, order.phone);
+      await syncLeadToGoogleSheetsSafe(env, order.phone);
     }
 
-    await syncSalesToGoogleSheets(env, orderId);
+    await syncSalesToGoogleSheetsSafe(env, orderId);
     await rebuildSourcePerformanceSheet(env);
   } catch (e) {
     console.error('Google Sheets sync error (order status update):', e);
@@ -4305,11 +4877,11 @@ if (path.match(/^\/api\/orders\/[^/]+\/ship$/) && method === 'POST') {
   shiprocketOrderId: srOrderId,
 }, 'admin');
       try {
-        await syncOrderToGoogleSheets(env, orderId);
-        await syncShipmentToGoogleSheets(env, orderId);
-        await syncCustomerToGoogleSheets(env, phone);
-        await syncLeadToGoogleSheets(env, phone);
-        await syncSalesToGoogleSheets(env, orderId);
+        await syncOrderToGoogleSheetsSafe(env, orderId);
+        await syncShipmentToGoogleSheetsSafe(env, orderId);
+        await syncCustomerToGoogleSheetsSafe(env, phone);
+        await syncLeadToGoogleSheetsSafe(env, phone);
+        await syncSalesToGoogleSheetsSafe(env, orderId);
       } catch (e) {
         console.error('Google Sheets sync error (shiprocket booked):', e);
         await appendSyncFailureToGoogleSheets(env, {
@@ -4419,11 +4991,11 @@ if (path.match(/^\/api\/orders\/[^/]+\/awb$/) && method === 'PUT') {
   courier: courier || 'Shiprocket',
 }, 'admin');
   try {
-    await syncOrderToGoogleSheets(env, orderId);
-    await syncShipmentToGoogleSheets(env, orderId);
-    await syncCustomerToGoogleSheets(env, order.phone);
-    await syncLeadToGoogleSheets(env, order.phone);
-    await syncSalesToGoogleSheets(env, orderId);
+    await syncOrderToGoogleSheetsSafe(env, orderId);
+    await syncShipmentToGoogleSheetsSafe(env, orderId);
+    await syncCustomerToGoogleSheetsSafe(env, order.phone);
+    await syncLeadToGoogleSheetsSafe(env, order.phone);
+    await syncSalesToGoogleSheetsSafe(env, orderId);
   } catch (e) {
     console.error('Google Sheets sync error (awb assigned):', e);
     await appendSyncFailureToGoogleSheets(env, {
@@ -4710,7 +5282,15 @@ if (path.match(/^\/api\/customers\/[^/]+\/orders$/) && method === 'GET') {
 
     if (path === '/api/sync/check' && method === 'GET') return handleSyncCheck(env);
     if (path === '/api/settings/test-whatsapp' && method === 'POST') {
-      const result = await sendWhatsAppText(env, env.WA_PHONE_ID, 'Test message from KAAPAV Worker ✅');
+      const body = await request.json().catch(() => ({}));
+      const phone = body.phone;
+      if (!phone) return errorResponse('phone required', 400);
+
+      const result = await sendWhatsAppText(env, phone, 'Test message from KAAPAV Worker');
+      if (result?.error) {
+        return errorResponse(result.error.message || 'WhatsApp send failed', 502);
+      }
+
       return jsonResponse({ success: true, result });
     }
 
@@ -4764,6 +5344,28 @@ try {
   console.error('30-min payment reminder error:', e);
 }
     console.log('Cron running:', new Date().toISOString());
+
+        try {
+      const nowUtc = new Date();
+      const minuteUtc = nowUtc.getUTCMinutes();
+
+      // Google Sheets reconciliation once per hour
+      if (minuteUtc < 5) {
+        await backfillAllGoogleSheets(env);
+        console.log('Google Sheets hourly reconciliation complete');
+      }
+    } catch (e) {
+      console.error('Google Sheets reconciliation error:', e);
+      await appendSyncFailureToGoogleSheets(env, {
+        destination: 'google_sheets',
+        entity_type: 'system',
+        entity_id: 'full_sync',
+        action: 'cron_reconciliation',
+        error_message: e.message,
+        retry_count: 0,
+        status: 'failed',
+      });
+    }
 
     const now = new Date();
     const hourIST = (now.getUTCHours() + 5) % 24;
