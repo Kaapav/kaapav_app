@@ -66,6 +66,7 @@ class MessageNotifier extends StateNotifier<MessageState> {
 
   MessageNotifier(this._messageApi, this._ref) : super(const MessageState());
 
+
   // ─────────────────────────────────────────────────────────────
   // FETCH MESSAGES
   // ─────────────────────────────────────────────────────────────
@@ -468,6 +469,57 @@ class MessageNotifier extends StateNotifier<MessageState> {
     }
   }
    
+    // ── EDIT MESSAGE ──
+  Future<void> editMessage(String phone, String messageId, String newText) async {
+    final currentMessages = List<Message>.from(state.getMessages(phone));
+    final index = currentMessages.indexWhere((m) => m.messageId == messageId);
+    if (index < 0) return;
+
+    currentMessages[index] = currentMessages[index].copyWith(
+      text: newText,
+      isEdited: true,
+    );
+
+    state = state.copyWith(
+      messagesByPhone: {...state.messagesByPhone, phone: currentMessages},
+    );
+
+    try {
+      await _messageApi.editMessage(phone, messageId, newText);
+    } catch (e) {
+      AppLogger.warn('Edit API not available: $e');
+    }
+  }
+
+  // ── DELETE FOR EVERYONE ──
+  Future<bool> deleteForEveryone(String phone, String messageId) async {
+    try {
+      final currentMessages = List<Message>.from(state.getMessages(phone));
+      final index = currentMessages.indexWhere((m) => m.messageId == messageId);
+      if (index < 0) return false;
+
+      currentMessages[index] = currentMessages[index].copyWith(
+        text: '🚫 This message was deleted',
+        isDeleted: true,
+      );
+
+      state = state.copyWith(
+        messagesByPhone: {...state.messagesByPhone, phone: currentMessages},
+      );
+
+      try {
+        await _messageApi.deleteForEveryone(phone, messageId);
+      } catch (e) {
+        AppLogger.warn('Delete for everyone API not available: $e');
+      }
+
+      return true;
+    } catch (e) {
+      AppLogger.error('Delete for everyone failed', e);
+      return false;
+    }
+  }
+
     // ── DELETE MESSAGE (local only) ──
   void deleteMessage(String phone, String messageId) {
     final currentMessages = List<Message>.from(state.getMessages(phone));

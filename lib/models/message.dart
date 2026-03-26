@@ -27,6 +27,8 @@ class Message {
   final String? deliveredAt;
   final String? readAt;
   final String? createdAt;
+  final bool isEdited;
+  final bool isDeleted;
 
   const Message({
     this.id,
@@ -55,6 +57,8 @@ class Message {
     this.deliveredAt,
     this.readAt,
     this.createdAt,
+    this.isEdited = false,
+    this.isDeleted = false,
   });
 
   factory Message.fromJson(Map<String, dynamic> json) {
@@ -85,6 +89,8 @@ class Message {
       deliveredAt: json['delivered_at'] as String?,
       readAt: json['read_at'] as String?,
       createdAt: json['created_at'] as String?,
+      isEdited: json['is_edited'] == 1 || json['is_edited'] == true,
+      isDeleted: json['is_deleted'] == 1 || json['is_deleted'] == true,
     );
   }
 
@@ -115,6 +121,8 @@ class Message {
         'delivered_at': deliveredAt,
         'read_at': readAt,
         'created_at': createdAt,
+        'is_edited': isEdited ? 1 : 0,
+        'is_deleted': isDeleted ? 1 : 0,
       };
 
   Message copyWith({
@@ -144,6 +152,8 @@ class Message {
     String? deliveredAt,
     String? readAt,
     String? createdAt,
+    bool? isEdited,
+    bool? isDeleted,
   }) {
     return Message(
       id: id ?? this.id,
@@ -172,6 +182,8 @@ class Message {
       deliveredAt: deliveredAt ?? this.deliveredAt,
       readAt: readAt ?? this.readAt,
       createdAt: createdAt ?? this.createdAt,
+      isEdited: isEdited ?? this.isEdited,
+      isDeleted: isDeleted ?? this.isDeleted,
     );
   }
 

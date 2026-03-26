@@ -66,7 +66,7 @@ class _ChatWindowScreenState extends ConsumerState<ChatWindowScreen>
       ref.read(chatProvider.notifier).markAsRead(widget.phone);
 
       // Fetch messages
-      ref.read(messageProvider.notifier).fetchMessages(widget.phone);
+      // ❌ REMOVED:ref.read(messageProvider.notifier).fetchMessages(widget.phone);
 
       // Start polling
       ref.read(messageProvider.notifier).startPolling(
@@ -135,6 +135,7 @@ class _ChatWindowScreenState extends ConsumerState<ChatWindowScreen>
     await _uploadAndSend(file, 'audio');
   }
 
+  
   Future<void> _handleCamera() async {
   final image = await MediaService.takePhoto();
   if (image == null) {
@@ -450,27 +451,131 @@ class _ChatWindowScreenState extends ConsumerState<ChatWindowScreen>
   }
 
   // -- DELETE MESSAGE (local only) --
-  void _handleDelete(Message message) {
+    void _handleDelete(Message message) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete message?'),
-        content: const Text('This will remove the message from your view.'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(children: [
+          Icon(Icons.delete_outline, color: KaapavTheme.error, size: 24),
+          SizedBox(width: 8),
+          Text('Delete Message'),
+        ]),
+        content: const Text('Choose how to delete this message.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: KaapavTheme.gray)),
+          ),
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
               ref.read(messageProvider.notifier).deleteMessage(widget.phone, message.messageId);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Message deleted')),
+                const SnackBar(
+                  content: Row(children: [
+                    Icon(Icons.delete, color: Colors.white, size: 18),
+                    SizedBox(width: 8),
+                    Text('Deleted for you'),
+                  ]),
+                  backgroundColor: KaapavTheme.gold,
+                ),
               );
             },
-            child: const Text('Delete', style: TextStyle(color: KaapavTheme.error)),
+            child: const Text('Delete for Me', style: TextStyle(color: KaapavTheme.error)),
           ),
+          if (message.isOutgoing && _canDeleteForEveryone(message))
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _deleteForEveryone(message);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: KaapavTheme.error,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Delete for Everyone',
+                  style: TextStyle(color: Colors.white, fontSize: 13)),
+            ),
         ],
       ),
     );
+  }
+
+
+    Future<void> _deleteSelected() async {
+    if (_selectedIds.isEmpty) return;
+    final count = _selectedIds.length;
+    final messages = ref.read(messagesForPhoneProvider(widget.phone));
+    final selectedMsgs = messages.where((m) => _selectedIds.contains(m.messageId)).toList();
+    final hasOutgoing = selectedMsgs.any((m) => m.isOutgoing && _canDeleteForEveryone(m));
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(children: [
+          const Icon(Icons.delete_outline, color: KaapavTheme.error, size: 24),
+          const SizedBox(width: 8),
+          Text('Delete $count Message${count > 1 ? 's' : ''}'),
+        ]),
+        content: const Text('Choose how to delete selected messages.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: KaapavTheme.gray)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'me'),
+            child: const Text('Delete for Me', style: TextStyle(color: KaapavTheme.error)),
+          ),
+          if (hasOutgoing)
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, 'everyone'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: KaapavTheme.error,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Delete for Everyone',
+                  style: TextStyle(color: Colors.white, fontSize: 13)),
+            ),
+        ],
+      ),
+    );
+
+    if (result == null) return;
+    int deleted = 0;
+
+    if (result == 'everyone') {
+      for (final msg in selectedMsgs) {
+        if (msg.isOutgoing && _canDeleteForEveryone(msg)) {
+          await ref.read(messageProvider.notifier).deleteForEveryone(widget.phone, msg.messageId);
+        } else {
+          ref.read(messageProvider.notifier).deleteMessage(widget.phone, msg.messageId);
+        }
+        deleted++;
+      }
+    } else {
+      for (final id in _selectedIds) {
+        ref.read(messageProvider.notifier).deleteMessage(widget.phone, id);
+        deleted++;
+      }
+    }
+
+    setState(() { _isSelecting = false; _selectedIds.clear(); });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(children: [
+            const Icon(Icons.delete, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Text('$deleted message(s) deleted${result == 'everyone' ? ' for everyone' : ''}'),
+          ]),
+          backgroundColor: KaapavTheme.gold,
+        ),
+      );
+    }
   }
 
   // -- EXPORT CHAT --
@@ -501,9 +606,288 @@ class _ChatWindowScreenState extends ConsumerState<ChatWindowScreen>
     await Share.share(buffer.toString(), subject: 'Chat with $name');
   }
 
+    void _showDisappearingOptions() {
+    final currentDuration = ref.read(chatProvider).disappearingSettings[widget.phone];
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                width: 40, height: 4,
+                decoration: BoxDecoration(color: KaapavTheme.border, borderRadius: BorderRadius.circular(2)),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                child: Row(children: [
+                  Icon(Icons.timer, color: KaapavTheme.gold, size: 24),
+                  SizedBox(width: 10),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Disappearing Messages', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                    Text('Messages will be deleted after the selected time',
+                        style: TextStyle(fontSize: 12, color: KaapavTheme.gray)),
+                  ])),
+                ]),
+              ),
+              const Divider(),
+              _DisappearingOption(label: 'Off', subtitle: 'Messages won\'t disappear',
+                icon: Icons.timer_off_outlined, isSelected: currentDuration == null,
+                onTap: () { Navigator.pop(ctx); _setDisappearing(null); }),
+              _DisappearingOption(label: '24 Hours', subtitle: 'Messages disappear after 1 day',
+                icon: Icons.hourglass_bottom, isSelected: currentDuration == '24h',
+                onTap: () { Navigator.pop(ctx); _setDisappearing('24h'); }),
+              _DisappearingOption(label: '7 Days', subtitle: 'Messages disappear after 1 week',
+                icon: Icons.calendar_today, isSelected: currentDuration == '7d',
+                onTap: () { Navigator.pop(ctx); _setDisappearing('7d'); }),
+              _DisappearingOption(label: '90 Days', subtitle: 'Messages disappear after 3 months',
+                icon: Icons.calendar_month, isSelected: currentDuration == '90d',
+                onTap: () { Navigator.pop(ctx); _setDisappearing('90d'); }),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _setDisappearing(String? duration) {
+    ref.read(chatProvider.notifier).setDisappearing(widget.phone, duration);
+    final label = duration == null ? 'off'
+        : duration == '24h' ? '24 hours'
+        : duration == '7d' ? '7 days' : '90 days';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(children: [
+          Icon(duration == null ? Icons.timer_off : Icons.timer, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Text('Disappearing messages ${duration == null ? 'turned off' : 'set to $label'}'),
+        ]),
+        backgroundColor: KaapavTheme.gold,
+      ),
+    );
+  }
+
   void _handleButtonClick(String buttonId, String buttonTitle) {
     _handleSend(buttonTitle);
   }
+ 
+    void _handleEdit(Message message) {
+  final controller = TextEditingController(text: message.text ?? '');
+
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Row(children: [
+        Icon(Icons.edit, color: KaapavTheme.gold, size: 22),
+        SizedBox(width: 8),
+        Text('Edit Message'),
+      ]),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        maxLines: 5,
+        minLines: 1,
+        decoration: InputDecoration(
+          hintText: 'Edit your message…',
+          filled: true,
+          fillColor: KaapavTheme.gold.withValues(alpha: 0.05),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: KaapavTheme.border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: KaapavTheme.gold),
+          ),
+          contentPadding: const EdgeInsets.all(12),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancel', style: TextStyle(color: KaapavTheme.gray)),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            final newText = controller.text.trim();
+            if (newText.isEmpty || newText == message.text) {
+              Navigator.pop(ctx);
+              return;
+            }
+            Navigator.pop(ctx);
+            _executeEdit(message, newText);
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: KaapavTheme.gold,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          child: const Text('Save', style: TextStyle(color: Colors.white)),
+        ),
+      ],
+        ),
+  ).then((_) => controller.dispose());
+}
+
+Future<void> _executeEdit(Message message, String newText) async {
+  ref.read(messageProvider.notifier).editMessage(
+    widget.phone,
+    message.messageId,
+    newText,
+  );
+
+  if (mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(children: [
+          Icon(Icons.edit, color: Colors.white, size: 18),
+          SizedBox(width: 8),
+          Text('Message edited'),
+        ]),
+        backgroundColor: KaapavTheme.gold,
+      ),
+    );
+  }
+}
+
+    /// Forward a single message (from long-press menu)
+void _handleForward(Message message) {
+  _showForwardPicker([message]);
+}
+
+/// Forward selected messages (from selection mode)
+void _forwardSelected() {
+  if (_selectedIds.isEmpty) return;
+  final allMsgs = ref.read(messagesForPhoneProvider(widget.phone));
+  final selected = allMsgs
+      .where((m) => _selectedIds.contains(m.messageId))
+      .toList()
+    ..sort((a, b) => (a.timestamp ?? '').compareTo(b.timestamp ?? ''));
+
+  _showForwardPicker(selected);
+}
+
+/// Show the chat picker sheet
+void _showForwardPicker(List<Message> messages) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _ForwardChatPicker(
+      messages: messages,
+      currentPhone: widget.phone,
+      isDark: Theme.of(context).brightness == Brightness.dark,
+      onForward: (targetPhones) => _executeForward(messages, targetPhones),
+    ),
+  );
+}
+
+/// Actually send forwarded messages
+Future<void> _executeForward(
+    List<Message> messages, List<String> targetPhones) async {
+  Navigator.pop(context); // close picker
+
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Row(children: [
+        const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+                strokeWidth: 2, color: Colors.white)),
+        const SizedBox(width: 12),
+        Text(
+            'Forwarding ${messages.length} message(s) to ${targetPhones.length} chat(s)…'),
+      ]),
+      duration: const Duration(seconds: 10),
+      backgroundColor: KaapavTheme.gold,
+    ),
+  );
+
+  int successCount = 0;
+  int failCount = 0;
+
+  for (final phone in targetPhones) {
+    for (final msg in messages) {
+      try {
+        bool sent = false;
+
+        if (msg.messageType == 'image' &&
+            msg.mediaUrl != null &&
+            msg.mediaUrl!.isNotEmpty) {
+          sent = await ref
+              .read(messageProvider.notifier)
+              .sendImage(phone, msg.mediaUrl!);
+        } else if (msg.messageType == 'document' &&
+            msg.mediaUrl != null &&
+            msg.mediaUrl!.isNotEmpty) {
+          sent = await ref.read(messageProvider.notifier).sendDocument(
+                phone,
+                msg.mediaUrl!,
+                filename: msg.mediaCaption ?? 'document',
+              );
+        } else if (msg.messageType == 'video' &&
+            msg.mediaUrl != null &&
+            msg.mediaUrl!.isNotEmpty) {
+          sent = await ref.read(messageProvider.notifier).sendDocument(
+                phone,
+                msg.mediaUrl!,
+                filename: msg.mediaCaption ?? 'video.mp4',
+              );
+        } else {
+          final forwardText = msg.text ?? msg.displayText;
+          if (forwardText.isNotEmpty) {
+            sent = await ref
+                .read(messageProvider.notifier)
+                .sendText(phone, forwardText);
+          }
+        }
+
+        if (sent) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch (e) {
+        failCount++;
+      }
+    }
+  }
+
+  setState(() {
+    _isSelecting = false;
+    _selectedIds.clear();
+  });
+
+  if (!mounted) return;
+
+  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Row(children: [
+        Icon(
+          failCount == 0 ? Icons.check_circle : Icons.warning_amber,
+          color: Colors.white,
+          size: 18,
+        ),
+        const SizedBox(width: 8),
+        Text(failCount == 0
+            ? '✅ Forwarded $successCount message(s)'
+            : '⚠️ $successCount sent, $failCount failed'),
+      ]),
+      backgroundColor:
+          failCount == 0 ? const Color(0xFF10B981) : KaapavTheme.warning,
+    ),
+  );
+}
 
     void _showMessageOptions(Message message) {
     HapticFeedback.mediumImpact();
@@ -612,7 +996,30 @@ class _ChatWindowScreenState extends ConsumerState<ChatWindowScreen>
                 _handleShareMessage(message);
               },
             ),
+          // -- Forward --
+          ListTile(
+            leading: const Icon(Icons.forward, color: KaapavTheme.gold),
+            title: const Text('Forward'),
+            onTap: () {
+              Navigator.pop(context);
+              _handleForward(message);
+            },
+          ),
 
+          // -- Edit (outgoing text only, within 15 min) --
+          if (message.isOutgoing &&
+              message.messageType == 'text' &&
+              message.text != null &&
+              !message.isFailed &&
+              _canEdit(message))
+            ListTile(
+              leading: const Icon(Icons.edit, color: KaapavTheme.gold),
+              title: const Text('Edit'),
+              onTap: () {
+                Navigator.pop(context);
+                _handleEdit(message);
+              },
+            ),
             // -- Delete --
             ListTile(
               leading: const Icon(Icons.delete_outline, color: KaapavTheme.error),
@@ -623,6 +1030,19 @@ class _ChatWindowScreenState extends ConsumerState<ChatWindowScreen>
               },
             ),
 
+	     // -- Select --
+ListTile(
+  leading: const Icon(Icons.check_circle_outline, color: KaapavTheme.gold),
+  title: const Text('Select'),
+  onTap: () {
+    Navigator.pop(context);
+    setState(() {
+      _isSelecting = true;
+      _selectedIds.add(message.messageId);
+    });
+  },
+),	
+            
             // -- Retry (failed only) --
             if (message.isFailed)
               ListTile(
@@ -754,35 +1174,109 @@ floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
 
     // Selection mode AppBar
     if (_isSelecting) {
-      return AppBar(
-        backgroundColor: KaapavTheme.gold,
-        leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
-          onPressed: () => setState(() { _isSelecting = false; _selectedIds.clear(); }),
-        ),
-        title: Text('${_selectedIds.length} selected', style: const TextStyle(color: Colors.white)),
-        actions: [
-          IconButton(icon: const Icon(Icons.star, color: Colors.white), tooltip: 'Star',
-            onPressed: () {
-              for (final id in _selectedIds) { ref.read(messageProvider.notifier).starMessage(widget.phone, id); }
-              setState(() { _isSelecting = false; _selectedIds.clear(); });
-            }),
-          IconButton(icon: const Icon(Icons.delete, color: Colors.white), tooltip: 'Delete',
-            onPressed: () {
-              for (final id in _selectedIds) { ref.read(messageProvider.notifier).deleteMessage(widget.phone, id); }
-              setState(() { _isSelecting = false; _selectedIds.clear(); });
-            }),
-          IconButton(icon: const Icon(Icons.share, color: Colors.white), tooltip: 'Share',
-            onPressed: () {
-              final msgs = ref.read(messagesForPhoneProvider(widget.phone));
-              final selected = msgs.where((m) => _selectedIds.contains(m.messageId));
-              final text = selected.map((m) => m.displayText).join('\n');
-              Share.share(text);
-              setState(() { _isSelecting = false; _selectedIds.clear(); });
-            }),
-        ],
-      );
-    }
+  final allMessages = ref.read(messagesForPhoneProvider(widget.phone));
+  final allSelected = _selectedIds.length == allMessages.length && allMessages.isNotEmpty;
+
+  return AppBar(
+    backgroundColor: KaapavTheme.dark,
+    leading: IconButton(
+      icon: const Icon(Icons.close, color: Colors.white),
+      onPressed: () => setState(() { _isSelecting = false; _selectedIds.clear(); }),
+    ),
+    title: Text(
+      '${_selectedIds.length} selected',
+      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+    ),
+    actions: [
+      IconButton(
+        icon: Icon(allSelected ? Icons.deselect : Icons.select_all, color: Colors.white),
+        tooltip: allSelected ? 'Deselect All' : 'Select All',
+        onPressed: () {
+          setState(() {
+            if (allSelected) {
+              _selectedIds.clear();
+              _isSelecting = false;
+            } else {
+              _selectedIds.addAll(allMessages.map((m) => m.messageId));
+            }
+          });
+        },
+      ),
+      IconButton(
+        icon: const Icon(Icons.copy, color: Colors.white),
+        tooltip: 'Copy',
+        onPressed: () {
+          final msgs = ref.read(messagesForPhoneProvider(widget.phone));
+          final selected = msgs
+              .where((m) => _selectedIds.contains(m.messageId))
+              .toList()
+            ..sort((a, b) => (a.timestamp ?? '').compareTo(b.timestamp ?? ''));
+          final text = selected.map((m) {
+            final dir = m.isOutgoing ? 'You' : (ref.read(currentChatProvider)?.customerName ?? widget.phone);
+            return '[$dir] ${m.displayText}';
+          }).join('\n\n');
+          Clipboard.setData(ClipboardData(text: text));
+          setState(() { _isSelecting = false; _selectedIds.clear(); });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(children: [
+                Icon(Icons.copy, color: Colors.white, size: 18),
+                SizedBox(width: 8),
+                Text('Messages copied'),
+              ]),
+              backgroundColor: KaapavTheme.gold,
+            ),
+          );
+        },
+      ),
+      IconButton(
+        icon: const Icon(Icons.bookmark_outline, color: Colors.white),
+        tooltip: 'Save',
+        onPressed: () {
+          for (final id in _selectedIds) {
+            ref.read(messageProvider.notifier).starMessage(widget.phone, id);
+          }
+          final count = _selectedIds.length;
+          setState(() { _isSelecting = false; _selectedIds.clear(); });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(children: [
+                const Icon(Icons.bookmark, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                Text('$count message(s) saved'),
+              ]),
+              backgroundColor: KaapavTheme.gold,
+            ),
+          );
+        },
+      ),
+      IconButton(
+        icon: const Icon(Icons.share, color: Colors.white),
+        tooltip: 'Share',
+        onPressed: () {
+          final msgs = ref.read(messagesForPhoneProvider(widget.phone));
+          final selected = msgs
+              .where((m) => _selectedIds.contains(m.messageId))
+              .toList()
+            ..sort((a, b) => (a.timestamp ?? '').compareTo(b.timestamp ?? ''));
+          final text = selected.map((m) => m.displayText).join('\n\n');
+          Share.share(text);
+          setState(() { _isSelecting = false; _selectedIds.clear(); });
+        },
+      ),
+      IconButton(
+        icon: const Icon(Icons.forward, color: Colors.white),
+        tooltip: 'Forward',
+        onPressed: () => _forwardSelected(),
+      ),
+      IconButton(
+        icon: const Icon(Icons.delete_outline, color: Color(0xFFFF6B6B)),
+        tooltip: 'Delete',
+        onPressed: () => _deleteSelected(),
+      ),
+    ],
+  );
+}
 
     // Search mode AppBar
     if (_isSearching) {
@@ -853,13 +1347,88 @@ floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
           ),
         PopupMenuButton<String>(
           icon: const Icon(Icons.more_vert),
-          onSelected: (value) {
+                    onSelected: (value) async {
             switch (value) {
               case 'star': ref.read(chatProvider.notifier).toggleStar(widget.phone); break;
               case 'refresh': ref.read(messageProvider.notifier).fetchMessages(widget.phone, refresh: true); break;
               case 'export': _handleExportChat(); break;
               case 'select': setState(() => _isSelecting = true); break;
               case 'starred': Navigator.push(context, MaterialPageRoute(builder: (_) => const StarredMessagesScreen())); break;
+              case 'mute':
+                ref.read(chatProvider.notifier).toggleMute(widget.phone);
+                final isMuted = ref.read(chatProvider).mutedChats.contains(widget.phone);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Row(children: [
+                      Icon(isMuted ? Icons.notifications_off : Icons.notifications_active, color: Colors.white, size: 18),
+                      const SizedBox(width: 8),
+                      Text(isMuted ? 'Notifications muted' : 'Notifications unmuted'),
+                    ]),
+                    backgroundColor: KaapavTheme.gold,
+                  ));
+                }
+                break;
+              case 'pin':
+                ref.read(chatProvider.notifier).togglePin(widget.phone);
+                final isPinned = ref.read(chatProvider).pinnedChats.contains(widget.phone);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Row(children: [
+                      Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined, color: Colors.white, size: 18),
+                      const SizedBox(width: 8),
+                      Text(isPinned ? 'Chat pinned' : 'Chat unpinned'),
+                    ]),
+                    backgroundColor: KaapavTheme.gold,
+                  ));
+                }
+                break;
+                        case 'block':
+                final isBlocked = ref.read(currentChatProvider)?.isBlocked ?? false;
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    title: Row(children: [
+                      Icon(isBlocked ? Icons.check_circle_outline : Icons.block,
+                          color: isBlocked ? KaapavTheme.gold : KaapavTheme.error, size: 24),
+                      const SizedBox(width: 8),
+                      Text(isBlocked ? 'Unblock Contact?' : 'Block Contact?'),
+                    ]),
+                    content: Text(isBlocked
+                        ? 'You will start receiving messages again.'
+                        : 'Blocked contacts cannot send you messages.'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Cancel', style: TextStyle(color: KaapavTheme.gray))),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isBlocked ? KaapavTheme.gold : KaapavTheme.error,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: Text(isBlocked ? 'Unblock' : 'Block',
+                            style: const TextStyle(color: Colors.white)),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirm == true) {
+                  ref.read(chatProvider.notifier).toggleBlock(widget.phone);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Row(children: [
+                        Icon(isBlocked ? Icons.check_circle : Icons.block, color: Colors.white, size: 18),
+                        const SizedBox(width: 8),
+                        Text(isBlocked ? 'Contact unblocked' : 'Contact blocked'),
+                      ]),
+                      backgroundColor: isBlocked ? KaapavTheme.gold : KaapavTheme.error,
+                    ));
+                  }
+                }
+                break;
+              case 'disappearing':
+                _showDisappearingOptions();
+                break;
             }
           },
           itemBuilder: (context) => [
@@ -871,20 +1440,62 @@ floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
             const PopupMenuItem(value: 'starred', child: Row(children: [Icon(Icons.star, size: 20), SizedBox(width: 12), Text('Starred Messages')])),
             const PopupMenuItem(value: 'refresh', child: Row(children: [Icon(Icons.refresh, size: 20), SizedBox(width: 12), Text('Refresh')])),
             const PopupMenuItem(value: 'export', child: Row(children: [Icon(Icons.upload_file, size: 20), SizedBox(width: 12), Text('Export Chat')])),
+            PopupMenuItem(
+              value: 'mute',
+              child: Row(children: [
+                Icon(
+                  ref.read(chatProvider).mutedChats.contains(widget.phone)
+                      ? Icons.notifications_active : Icons.notifications_off_outlined,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Text(ref.read(chatProvider).mutedChats.contains(widget.phone)
+                    ? 'Unmute Notifications' : 'Mute Notifications'),
+              ]),
+            ),
+            PopupMenuItem(
+              value: 'pin',
+              child: Row(children: [
+                Icon(
+                  ref.read(chatProvider).pinnedChats.contains(widget.phone)
+                      ? Icons.push_pin : Icons.push_pin_outlined,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Text(ref.read(chatProvider).pinnedChats.contains(widget.phone)
+                    ? 'Unpin Chat' : 'Pin Chat'),
+              ]),
+            ),
+            PopupMenuItem(value: 'disappearing', child: Row(children: [
+              Icon(Icons.timer_outlined, size: 20,
+                  color: ref.read(chatProvider).disappearingSettings[widget.phone] != null ? KaapavTheme.gold : null),
+              const SizedBox(width: 12),
+              Text(ref.read(chatProvider).disappearingSettings[widget.phone] != null
+                  ? 'Disappearing: ON' : 'Disappearing Messages'),
+            ])),
+            PopupMenuItem(
+              value: 'block',
+              child: Row(children: [
+                Icon(Icons.block, size: 20, color: chat?.isBlocked == true ? KaapavTheme.gold : KaapavTheme.error),
+                const SizedBox(width: 12),
+                Text(chat?.isBlocked == true ? 'Unblock Contact' : 'Block Contact',
+                    style: TextStyle(color: chat?.isBlocked == true ? KaapavTheme.gold : KaapavTheme.error)),
+              ]),
+            ),
           ],
         ),
       ],
     );
   }
-  
-    Widget _buildLoadingState() {
+
+  Widget _buildLoadingState() {
     return const Center(
       child: CircularProgressIndicator(
         valueColor: AlwaysStoppedAnimation(KaapavTheme.gold),
       ),
     );
   }
-        
+
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -1080,6 +1691,39 @@ floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     }
   }
 
+    bool _canDeleteForEveryone(Message message) {
+    if (message.timestamp == null) return false;
+    final sentTime = Formatters.parseDate(message.timestamp);
+    if (sentTime == null) return false;
+    return DateTime.now().difference(sentTime).inHours < 1;
+  }
+
+  Future<void> _deleteForEveryone(Message message) async {
+    final success = await ref.read(messageProvider.notifier).deleteForEveryone(
+      widget.phone, message.messageId,
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(children: [
+            Icon(success ? Icons.check_circle : Icons.error_outline, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Text(success ? 'Deleted for everyone' : 'Failed to delete'),
+          ]),
+          backgroundColor: success ? const Color(0xFF10B981) : KaapavTheme.error,
+        ),
+      );
+    }
+  }
+
+  bool _canEdit(Message message) {
+  if (message.timestamp == null) return false;
+  final sentTime = Formatters.parseDate(message.timestamp);
+  if (sentTime == null) return false;
+  final diff = DateTime.now().difference(sentTime);
+  return diff.inMinutes <= 15; // WhatsApp allows ~15 min edit window
+}
+
   String _getInitials(String name) {
     final parts = name.trim().split(' ');
     if (parts.isEmpty) return '?';
@@ -1109,6 +1753,41 @@ class _AttachOption extends StatelessWidget {
         child: Icon(icon, color: color),
       ),
       title: Text(label),
+      onTap: onTap,
+    );
+  }
+}
+
+
+class _DisappearingOption extends StatelessWidget {
+  final String label;
+  final String subtitle;
+  final IconData icon;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _DisappearingOption({
+    required this.label,
+    required this.subtitle,
+    required this.icon,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: CircleAvatar(
+        radius: 20,
+        backgroundColor: isSelected ? KaapavTheme.gold : KaapavTheme.gold.withValues(alpha: 0.1),
+        child: Icon(icon, color: isSelected ? Colors.white : KaapavTheme.gold, size: 20),
+      ),
+      title: Text(label, style: TextStyle(
+        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+        color: isSelected ? KaapavTheme.gold : null,
+      )),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12, color: KaapavTheme.gray)),
+      trailing: isSelected ? const Icon(Icons.check_circle, color: KaapavTheme.gold, size: 22) : null,
       onTap: onTap,
     );
   }
@@ -1195,7 +1874,7 @@ class _ChatProductPickerState extends State<_ChatProductPicker> {
   }
 }
 
-  @override
+   @override
   Widget build(BuildContext context) {
     final bg = widget.isDark ? const Color(0xFF0F0C07) : Colors.white;
     final border = widget.isDark ? const Color(0xFF251D0A) : const Color(0xFFE5E7EB);
@@ -1329,3 +2008,327 @@ class _ChatProductPickerState extends State<_ChatProductPicker> {
     );
   }
 }
+
+ // ═══════════════════════════════════════════════════════════════
+// 🟢 ForwardChatPicker
+// ═══════════════════════════════════════════════════════════════
+
+class _ForwardChatPicker extends ConsumerStatefulWidget {
+  final List<Message> messages;
+  final String currentPhone;
+  final bool isDark;
+  final void Function(List<String> targetPhones) onForward;
+
+  const _ForwardChatPicker({
+    required this.messages,
+    required this.currentPhone,
+    required this.isDark,
+    required this.onForward,
+  });
+
+  @override
+  ConsumerState<_ForwardChatPicker> createState() => _ForwardChatPickerState();
+}
+
+class _ForwardChatPickerState extends ConsumerState<_ForwardChatPicker> {
+  final _searchCtrl = TextEditingController();
+  final Set<String> _selected = {};
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchCtrl.addListener(() {
+      setState(() => _query = _searchCtrl.text.toLowerCase());
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final chatState = ref.watch(chatProvider);
+    final allChats = chatState.chats
+        .where((c) => c.phone != widget.currentPhone)
+        .toList();
+
+    final filtered = _query.isEmpty
+        ? allChats
+        : allChats.where((c) {
+            return c.customerName.toLowerCase().contains(_query) ||
+                c.phone.toLowerCase().contains(_query);
+          }).toList();
+
+    final bg = widget.isDark ? const Color(0xFF0F0C07) : Colors.white;
+    final border =
+        widget.isDark ? const Color(0xFF251D0A) : const Color(0xFFE5E7EB);
+    final msgCount = widget.messages.length;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      maxChildSize: 0.95,
+      minChildSize: 0.4,
+      builder: (_, scrollCtrl) => Container(
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius:
+              const BorderRadius.vertical(top: Radius.circular(20)),
+          border: Border(top: BorderSide(color: KaapavTheme.gold)),
+        ),
+        child: Column(
+          children: [
+            // ── Handle ──
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 10),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+
+            // ── Header ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+              child: Row(
+                children: [
+                  const Icon(Icons.forward,
+                      color: KaapavTheme.gold, size: 22),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Forward to…',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          '$msgCount message${msgCount > 1 ? 's' : ''}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: KaapavTheme.gray,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+
+            // ── Search ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: TextField(
+                controller: _searchCtrl,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: widget.isDark
+                      ? const Color(0xFFF2E8D0)
+                      : const Color(0xFF1A1A1A),
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Search chats…',
+                  hintStyle: const TextStyle(
+                      fontSize: 12, color: Color(0xFF9CA3AF)),
+                  prefixIcon: const Icon(Icons.search,
+                      size: 18, color: Color(0xFF9CA3AF)),
+                  filled: true,
+                  fillColor: widget.isDark
+                      ? const Color(0xFF1A1208)
+                      : const Color(0xFFF9F6EF),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide:
+                        const BorderSide(color: KaapavTheme.gold),
+                  ),
+                ),
+              ),
+            ),
+
+            // ── Selected chips ──
+            if (_selected.isNotEmpty)
+              Container(
+                height: 42,
+                padding: const EdgeInsets.only(bottom: 6),
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  children: _selected.map((phone) {
+                    final chat = allChats
+                        .where((c) => c.phone == phone)
+                        .firstOrNull;
+                    final name = chat?.customerName ?? phone;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: Chip(
+                        label: Text(name,
+                            style: const TextStyle(
+                                fontSize: 11, color: Colors.white)),
+                        backgroundColor: KaapavTheme.gold,
+                        deleteIconColor: Colors.white,
+                        onDeleted: () =>
+                            setState(() => _selected.remove(phone)),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize:
+                            MaterialTapTargetSize.shrinkWrap,
+                        padding: EdgeInsets.zero,
+                        labelPadding:
+                            const EdgeInsets.only(left: 8, right: 2),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+
+            const Divider(height: 1),
+
+            // ── Chat list ──
+            Expanded(
+              child: filtered.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.search_off,
+                              size: 48, color: border),
+                          const SizedBox(height: 8),
+                          const Text('No chats found',
+                              style:
+                                  TextStyle(color: KaapavTheme.gray)),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      controller: scrollCtrl,
+                      itemCount: filtered.length,
+                      itemBuilder: (_, i) {
+                        final chat = filtered[i];
+                        final isOn =
+                            _selected.contains(chat.phone);
+                        final initials =
+                            _initials(chat.customerName);
+
+                        return ListTile(
+                          onTap: () {
+                            setState(() {
+                              if (isOn) {
+                                _selected.remove(chat.phone);
+                              } else {
+                                _selected.add(chat.phone);
+                              }
+                            });
+                          },
+                          leading: CircleAvatar(
+                            radius: 22,
+                            backgroundColor: isOn
+                                ? KaapavTheme.gold
+                                : const Color(0xFFE5E7EB),
+                            child: isOn
+                                ? const Icon(Icons.check,
+                                    color: Colors.white, size: 20)
+                                : Text(
+                                    initials,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                      color: widget.isDark
+                                          ? const Color(0xFFF2E8D0)
+                                          : const Color(0xFF1A1A1A),
+                                    ),
+                                  ),
+                          ),
+                          title: Text(
+                            chat.customerName,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: isOn
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                            ),
+                          ),
+                          subtitle: Text(
+                            chat.phone,
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: KaapavTheme.gray),
+                          ),
+                          trailing: isOn
+                              ? const Icon(Icons.check_circle,
+                                  color: KaapavTheme.gold, size: 22)
+                              : null,
+                        );
+                      },
+                    ),
+            ),
+
+            // ── Send button ──
+            if (_selected.isNotEmpty)
+              SafeArea(
+                child: Padding(
+                  padding:
+                      const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      onPressed: () =>
+                          widget.onForward(_selected.toList()),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: KaapavTheme.gold,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 0,
+                      ),
+                      icon: const Icon(Icons.send, size: 18),
+                      label: Text(
+                        'Forward to ${_selected.length} chat${_selected.length > 1 ? 's' : ''}',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _initials(String name) {
+    final parts = name.trim().split(' ');
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts[0][0].toUpperCase();
+    return '${parts[0][0]}${parts.last[0]}'.toUpperCase();
+  }
+}  

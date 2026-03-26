@@ -43,6 +43,15 @@ async function logOrderEvent(env, orderId, eventType, message, meta = {}, source
   } catch (e) {
     console.error('logOrderEvent error:', e);
 
+   await syncOrderEventToSupabase(env, {
+      created_at: createdAt,
+      order_id: orderId,
+      event_type: eventType,
+      event_source: source,
+      message: message || '',
+      meta_json: JSON.stringify(meta || {}),
+    });
+
     await appendSyncFailureToGoogleSheets(env, {
       destination: 'google_sheets',
       entity_type: 'order_event',
@@ -1576,6 +1585,739 @@ async function backfillAllGoogleSheets(env) {
   };
 }
 
+// ═══════════════════ SUPABASE ═══════════════════
+
+function isSupabaseReady(env) {
+  return !!(env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY);
+}
+
+async function supabaseRequest(env, method, table, body = null, query = '') {
+  if (!isSupabaseReady(env)) {
+    throw new Error('Supabase env vars missing');
+  }
+
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${table}${query}`, {
+    method,
+    headers: {
+      'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+      'apikey': env.SUPABASE_SERVICE_KEY,
+      'Content-Type': 'application/json',
+      'Prefer': body
+        ? 'resolution=merge-duplicates,return=representation'
+        : 'return=representation',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const text = await res.text();
+  let json = null;
+  try { json = text ? JSON.parse(text) : null; } catch (_) { json = text; }
+
+  if (!res.ok) {
+    throw new Error(`Supabase ${method} ${table}${query} failed: ${text}`);
+  }
+
+  return json;
+}
+
+async function upsertSupabaseRows(env, table, rows, onConflict) {
+  if (!rows || rows.length === 0) return [];
+  return await supabaseRequest(
+    env,
+    'POST',
+    table,
+    rows,
+    `?on_conflict=${encodeURIComponent(onConflict)}`
+  );
+}
+
+// ── MAPPERS: REAL TABLES ──────────────────────────────────────
+
+function mapOrderToSupabase(order, category = '') {
+  return {
+    order_id: safeText(order.order_id),
+    phone: safeText(order.phone),
+    customer_name: safeText(order.customer_name),
+    items: safeText(order.items),
+    item_count: safeNumber(order.item_count),
+    subtotal: safeNumber(order.subtotal),
+    discount: safeNumber(order.discount),
+    discount_code: safeText(order.discount_code),
+    shipping_cost: safeNumber(order.shipping_cost),
+    tax: safeNumber(order.tax),
+    total: safeNumber(order.total),
+    shipping_name: safeText(order.shipping_name),
+    shipping_phone: safeText(order.shipping_phone),
+    shipping_address: safeText(order.shipping_address),
+    shipping_city: safeText(order.shipping_city),
+    shipping_state: safeText(order.shipping_state),
+    shipping_pincode: safeText(order.shipping_pincode),
+    status: safeText(order.status),
+    payment_status: safeText(order.payment_status),
+    payment_method: safeText(order.payment_method),
+    payment_id: safeText(order.payment_id),
+    payment_link: safeText(order.payment_link),
+    payment_link_expires: safeText(order.payment_link_expires),
+    paid_at: safeText(order.paid_at),
+    courier: safeText(order.courier),
+    tracking_id: safeText(order.tracking_id),
+    tracking_url: safeText(order.tracking_url),
+    shipment_id: safeText(order.shipment_id),
+    awb_number: safeText(order.awb_number),
+    shiprocket_order_id: safeText(order.shiprocket_order_id),
+    awb_code: safeText(order.awb_code),
+    confirmed_at: safeText(order.confirmed_at),
+    shipped_at: safeText(order.shipped_at),
+    delivered_at: safeText(order.delivered_at),
+    cancelled_at: safeText(order.cancelled_at),
+    customer_notes: safeText(order.customer_notes),
+    internal_notes: safeText(order.internal_notes),
+    cancellation_reason: safeText(order.cancellation_reason),
+    source: safeText(order.source),
+    confirmation_sent: safeNumber(order.confirmation_sent),
+    shipping_sent: safeNumber(order.shipping_sent),
+    delivery_sent: safeNumber(order.delivery_sent),
+    review_sent: safeNumber(order.review_sent),
+    return_requested: safeNumber(order.return_requested),
+    return_reason: safeText(order.return_reason),
+    return_requested_at: safeText(order.return_requested_at),
+    created_at: safeText(order.created_at),
+    updated_at: safeText(order.updated_at),
+
+    // derived helper fields used in reporting
+    category: safeText(category),
+    items_summary: itemsSummaryFromJson(order.items),
+  };
+}
+
+function mapCustomerToSupabase(customer, orderStats = {}, unpaid = {}, firstOrder = {}) {
+  let cartItems = [];
+  try {
+    cartItems = JSON.parse(customer.cart || '[]');
+    if (!Array.isArray(cartItems)) cartItems = [];
+  } catch (_) { cartItems = []; }
+
+  const cartItemCount = cartItems.reduce((sum, item) => {
+    return sum + Number(item.qty || item.quantity || 1);
+  }, 0);
+
+  const cartValue = cartItems.reduce((sum, item) => {
+    const qty = Number(item.qty || item.quantity || 1);
+    const price = Number(item.price || 0);
+    return sum + (qty * price);
+  }, 0);
+
+  return {
+    phone: safeText(customer.phone),
+    name: safeText(customer.name),
+    email: safeText(customer.email),
+    address: safeText(customer.address),
+    city: safeText(customer.city || firstOrder?.shipping_city || ''),
+    state: safeText(customer.state || firstOrder?.shipping_state || ''),
+    pincode: safeText(customer.pincode || firstOrder?.shipping_pincode || ''),
+    segment: safeText(customer.segment),
+    tier: safeText(customer.tier),
+    labels: safeText(customer.labels),
+    message_count: safeNumber(customer.message_count),
+    order_count: safeNumber(orderStats?.order_count || customer.order_count || 0),
+    total_spent: safeNumber(orderStats?.total_spent || customer.total_spent || 0),
+    cart: safeText(customer.cart),
+    cart_updated_at: safeText(customer.cart_updated_at),
+    language: safeText(customer.language),
+    opted_in: safeNumber(customer.opted_in),
+    first_seen: safeText(customer.first_seen),
+    last_seen: safeText(customer.last_seen),
+    last_order_at: safeText(customer.last_order_at),
+    push_subscription: safeText(customer.push_subscription),
+    created_at: safeText(customer.created_at),
+    updated_at: safeText(customer.updated_at),
+
+    // derived helper fields
+    source: safeText(firstOrder?.source || ''),
+    labels_summary: labelsSummary(customer.labels),
+    cart_item_count: cartItemCount,
+    cart_value: cartValue,
+    unpaid_order_count: safeNumber(unpaid?.count || 0),
+    unpaid_order_value: safeNumber(unpaid?.value || 0),
+  };
+}
+
+function mapProductToSupabase(product) {
+  const imgs = parseProductImages(product);
+
+  return {
+    sku: safeText(product.sku),
+    name: safeText(product.name),
+    description: safeText(product.description),
+    price: safeNumber(product.price),
+    compare_price: safeNumber(product.compare_price),
+    cost_price: safeNumber(product.cost_price),
+    category: safeText(product.category),
+    subcategory: safeText(product.subcategory),
+    tags: safeText(product.tags),
+    stock: safeNumber(product.stock),
+    reserved_stock: safeNumber(product.reserved_stock),
+    track_inventory: safeNumber(product.track_inventory),
+    image_url: safeText(product.image_url),
+    images: safeText(product.images),
+    video_url: safeText(product.video_url),
+    has_variants: safeNumber(product.has_variants),
+    variants: safeText(product.variants),
+    wa_product_id: safeText(product.wa_product_id),
+    view_count: safeNumber(product.view_count),
+    order_count: safeNumber(product.order_count),
+    is_active: safeNumber(product.is_active),
+    is_featured: safeNumber(product.is_featured),
+    website_link: safeText(product.website_link),
+    material: safeText(product.material),
+    created_at: safeText(product.created_at),
+    updated_at: safeText(product.updated_at),
+
+    // derived helper fields
+    tags_summary: tagsSummary(product.tags),
+    image_1: safeText(imgs.image_1),
+    image_2: safeText(imgs.image_2),
+    image_3: safeText(imgs.image_3),
+  };
+}
+
+function mapInventoryToSupabase(product) {
+  const imgs = parseProductImages(product);
+
+  return {
+    sku: safeText(product.sku),
+    name: safeText(product.name),
+    category: safeText(product.category),
+    subcategory: safeText(product.subcategory),
+    price: safeNumber(product.price),
+    compare_price: safeNumber(product.compare_price),
+    stock: safeNumber(product.stock),
+    reserved_stock: safeNumber(product.reserved_stock || 0),
+    status: product.is_active ? 'Enabled' : 'Disabled',
+    is_featured: product.is_featured ? 'Yes' : 'No',
+    image_url: safeText(product.image_url),
+    website_link: safeText(product.website_link),
+    material: safeText(product.material),
+    tags_summary: tagsSummary(product.tags),
+    updated_at: safeText(product.updated_at),
+    image_1: safeText(imgs.image_1),
+    image_2: safeText(imgs.image_2),
+    image_3: safeText(imgs.image_3),
+    restock_note: '',
+  };
+}
+
+function mapCartToSupabase(cart, customerName = '') {
+  return {
+    phone: safeText(cart.phone),
+    items: safeText(cart.items),
+    item_count: safeNumber(cart.item_count),
+    total: safeNumber(cart.total),
+    status: safeText(cart.status),
+    reminder_count: safeNumber(cart.reminder_count),
+    last_reminder_at: safeText(cart.last_reminder_at),
+    created_at: safeText(cart.created_at),
+    updated_at: safeText(cart.updated_at),
+    converted_at: safeText(cart.converted_at),
+
+    // derived helper fields
+    customer_name: safeText(customerName),
+    items_summary: itemsSummaryFromJson(cart.items),
+  };
+}
+
+function mapOrderEventToSupabase(event) {
+  return {
+    order_id: safeText(event.order_id),
+    event_type: safeText(event.event_type),
+    event_source: safeText(event.event_source),
+    message: safeText(event.message),
+    meta_json: safeText(event.meta_json),
+    created_at: safeText(event.created_at),
+  };
+}
+
+// ── MAPPERS: DERIVED REPORTING TABLES ──────────────────────────
+
+function mapLeadToSupabase(customer, firstOrder = {}, category = '', orderStats = {}) {
+  const orderCount = safeNumber(orderStats?.order_count || customer.order_count || 0);
+  const totalSpent = safeNumber(orderStats?.total_spent || customer.total_spent || 0);
+  const messageCount = safeNumber(customer.message_count);
+
+  let lead_status = 'new';
+  if (orderCount > 0 || totalSpent > 0) lead_status = 'ordered';
+  else if (messageCount >= 5) lead_status = 'interested';
+  else if (messageCount > 0) lead_status = 'engaged';
+
+  return {
+    phone: safeText(customer.phone),
+    created_at: safeText(customer.created_at || customer.first_seen),
+    name: safeText(customer.name),
+    source: safeText(firstOrder?.source || ''),
+    category: safeText(category),
+    lead_status: safeText(lead_status),
+    message_count: messageCount,
+    order_count: orderCount,
+    total_spent: totalSpent,
+    segment: safeText(customer.segment),
+    tier: safeText(customer.tier),
+    labels: safeText(customer.labels),
+    labels_summary: labelsSummary(customer.labels),
+    last_seen: safeText(customer.last_seen),
+    first_order_at: safeText(firstOrder?.created_at || ''),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function mapSalesToSupabase(order, category = '') {
+  return {
+    order_id: safeText(order.order_id),
+    created_at: safeText(order.created_at),
+    updated_at: safeText(order.updated_at),
+    source: safeText(order.source),
+    category: safeText(category),
+    customer_name: safeText(order.customer_name),
+    phone: safeText(order.phone),
+    total: safeNumber(order.total),
+    payment_status: safeText(order.payment_status),
+    status: safeText(order.status),
+    paid_at: safeText(order.paid_at),
+    shipped_at: safeText(order.shipped_at),
+    delivered_at: safeText(order.delivered_at),
+    item_count: safeNumber(order.item_count),
+    items_summary: itemsSummaryFromJson(order.items),
+    sales_stage: deriveSalesStage(order),
+  };
+}
+
+function mapShipmentToSupabase(order) {
+  return {
+    order_id: safeText(order.order_id),
+    customer_name: safeText(order.customer_name),
+    phone: safeText(order.phone),
+    status: safeText(order.status),
+    payment_status: safeText(order.payment_status),
+    shiprocket_order_id: safeText(order.shiprocket_order_id),
+    shipment_id: safeText(order.shipment_id),
+    courier: safeText(order.courier),
+    awb_number: safeText(order.awb_number),
+    awb_code: safeText(order.awb_code),
+    tracking_id: safeText(order.tracking_id),
+    tracking_url: safeText(order.tracking_url),
+    shipping_city: safeText(order.shipping_city),
+    shipping_state: safeText(order.shipping_state),
+    shipping_pincode: safeText(order.shipping_pincode),
+    paid_at: safeText(order.paid_at),
+    shipped_at: safeText(order.shipped_at),
+    delivered_at: safeText(order.delivered_at),
+    updated_at: safeText(order.updated_at),
+  };
+}
+
+function mapCartActivityToSupabase(cart, customerName = '') {
+  return {
+    phone: safeText(cart.phone),
+    customer_name: safeText(customerName),
+    item_count: safeNumber(cart.item_count),
+    total: safeNumber(cart.total),
+    items_summary: itemsSummaryFromJson(cart.items),
+    status: safeText(cart.status),
+    reminder_count: safeNumber(cart.reminder_count),
+    last_reminder_at: safeText(cart.last_reminder_at),
+    created_at: safeText(cart.created_at),
+    updated_at: safeText(cart.updated_at),
+    converted_at: safeText(cart.converted_at),
+  };
+}
+
+// ── PER ENTITY SYNC ────────────────────────────────────────────
+
+async function syncOrderToSupabase(env, orderId) {
+  if (!isSupabaseReady(env)) return;
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) return;
+
+  const categoryMap = await getAllProductCategories(env);
+  const category = getCategoryFromItems(order.items, categoryMap);
+
+  await upsertSupabaseRows(env, 'orders', [mapOrderToSupabase(order, category)], 'order_id');
+}
+
+async function syncCustomerToSupabase(env, phone) {
+  if (!isSupabaseReady(env)) return;
+
+  const customer = await env.DB.prepare(
+    `SELECT * FROM customers WHERE phone = ?`
+  ).bind(phone).first();
+
+  if (!customer) return;
+
+  const orderStats = await env.DB.prepare(`
+    SELECT
+      COUNT(*) as order_count,
+      COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_spent
+    FROM orders WHERE phone = ? OR phone = ?
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  const unpaid = await env.DB.prepare(`
+    SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
+    FROM orders
+    WHERE (phone = ? OR phone = ?)
+      AND payment_status = 'unpaid'
+      AND status != 'cancelled'
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  const firstOrder = await env.DB.prepare(`
+    SELECT source, shipping_city, shipping_state, shipping_pincode
+    FROM orders
+    WHERE phone = ? OR phone = ?
+    ORDER BY datetime(created_at) ASC
+    LIMIT 1
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  await upsertSupabaseRows(
+    env,
+    'customers',
+    [mapCustomerToSupabase(customer, orderStats, unpaid, firstOrder)],
+    'phone'
+  );
+}
+
+async function syncProductToSupabase(env, sku) {
+  if (!isSupabaseReady(env)) return;
+
+  const product = await env.DB.prepare(
+    `SELECT * FROM products WHERE sku = ?`
+  ).bind(sku).first();
+
+  if (!product) return;
+
+  await upsertSupabaseRows(env, 'products', [mapProductToSupabase(product)], 'sku');
+}
+
+async function syncCartToSupabase(env, phone) {
+  if (!isSupabaseReady(env)) return;
+
+  const cart = await env.DB.prepare(
+    `SELECT * FROM carts WHERE phone = ?`
+  ).bind(phone).first();
+
+  if (!cart) return;
+
+  const customer = await env.DB.prepare(
+    `SELECT name FROM customers WHERE phone = ?`
+  ).bind(phone).first();
+
+  await upsertSupabaseRows(env, 'carts', [mapCartToSupabase(cart, customer?.name || '')], 'phone');
+  await upsertSupabaseRows(env, 'cart_activity', [mapCartActivityToSupabase(cart, customer?.name || '')], 'phone');
+}
+
+async function syncOrderEventToSupabase(env, eventRow) {
+  if (!isSupabaseReady(env)) return;
+
+  await upsertSupabaseRows(
+    env,
+    'order_events',
+    [mapOrderEventToSupabase(eventRow)],
+    'order_id,event_type,created_at'
+  );
+}
+
+async function syncLeadToSupabase(env, phone) {
+  if (!isSupabaseReady(env)) return;
+
+  const customer = await env.DB.prepare(
+    `SELECT * FROM customers WHERE phone = ?`
+  ).bind(phone).first();
+  if (!customer) return;
+
+  const categoryMap = await getAllProductCategories(env);
+
+  const orderStats = await env.DB.prepare(`
+    SELECT
+      COUNT(*) as order_count,
+      COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_spent
+    FROM orders WHERE phone = ? OR phone = ?
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  const firstOrder = await env.DB.prepare(`
+    SELECT source, items, created_at
+    FROM orders
+    WHERE phone = ? OR phone = ?
+    ORDER BY datetime(created_at) ASC
+    LIMIT 1
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  const category = firstOrder ? getCategoryFromItems(firstOrder.items, categoryMap) : '';
+
+  await upsertSupabaseRows(
+    env,
+    'leads',
+    [mapLeadToSupabase(customer, firstOrder, category, orderStats)],
+    'phone'
+  );
+}
+
+async function syncSalesToSupabase(env, orderId) {
+  if (!isSupabaseReady(env)) return;
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+  if (!order) return;
+
+  const categoryMap = await getAllProductCategories(env);
+  const category = getCategoryFromItems(order.items, categoryMap);
+
+  await upsertSupabaseRows(env, 'sales', [mapSalesToSupabase(order, category)], 'order_id');
+}
+
+async function syncInventoryToSupabase(env, sku) {
+  if (!isSupabaseReady(env)) return;
+
+  const product = await env.DB.prepare(
+    `SELECT * FROM products WHERE sku = ?`
+  ).bind(sku).first();
+
+  if (!product) return;
+
+  await upsertSupabaseRows(env, 'inventory', [mapInventoryToSupabase(product)], 'sku');
+}
+
+async function syncShipmentToSupabase(env, orderId) {
+  if (!isSupabaseReady(env)) return;
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+  if (!order) return;
+
+  await upsertSupabaseRows(env, 'shipments', [mapShipmentToSupabase(order)], 'order_id');
+}
+
+// ── WRAPPERS ───────────────────────────────────────────────────
+
+async function syncOrderEverywhere(env, orderId, phone = null) {
+  await syncOrderToGoogleSheetsSafe(env, orderId);
+  await syncSalesToGoogleSheetsSafe(env, orderId);
+
+  await syncOrderToSupabase(env, orderId);
+  await syncSalesToSupabase(env, orderId);
+
+  const resolvedPhone = phone || (await env.DB.prepare(
+    `SELECT phone FROM orders WHERE order_id = ?`
+  ).bind(orderId).first())?.phone;
+
+  if (resolvedPhone) {
+    await syncCustomerToGoogleSheetsSafe(env, resolvedPhone);
+    await syncLeadToGoogleSheetsSafe(env, resolvedPhone);
+
+    await syncCustomerToSupabase(env, resolvedPhone);
+    await syncLeadToSupabase(env, resolvedPhone);
+  }
+}
+
+async function syncShipmentEverywhere(env, orderId, phone = null) {
+  await syncShipmentToGoogleSheetsSafe(env, orderId);
+  await syncShipmentToSupabase(env, orderId);
+
+  await syncOrderToGoogleSheetsSafe(env, orderId);
+  await syncSalesToGoogleSheetsSafe(env, orderId);
+
+  await syncOrderToSupabase(env, orderId);
+  await syncSalesToSupabase(env, orderId);
+
+  const resolvedPhone = phone || (await env.DB.prepare(
+    `SELECT phone FROM orders WHERE order_id = ?`
+  ).bind(orderId).first())?.phone;
+
+  if (resolvedPhone) {
+    await syncCustomerToGoogleSheetsSafe(env, resolvedPhone);
+    await syncLeadToGoogleSheetsSafe(env, resolvedPhone);
+
+    await syncCustomerToSupabase(env, resolvedPhone);
+    await syncLeadToSupabase(env, resolvedPhone);
+  }
+}
+
+async function syncProductEverywhere(env, sku) {
+  await syncProductToGoogleSheetsSafe(env, sku);
+  await syncProductToSupabase(env, sku);
+  await syncInventoryToSupabase(env, sku);
+}
+
+async function syncCartEverywhere(env, phone) {
+  await syncCartToGoogleSheetsSafe(env, phone);
+  await syncCartToSupabase(env, phone);
+}
+
+// ── FULL BACKFILL ──────────────────────────────────────────────
+
+async function backfillAllSupabase(env) {
+  if (!isSupabaseReady(env)) {
+    throw new Error('Supabase env vars missing');
+  }
+
+  const categoryMap = await getAllProductCategories(env);
+
+  const [
+    ordersRes,
+    customersRes,
+    productsRes,
+    cartsRes,
+    eventsRes,
+  ] = await Promise.all([
+    env.DB.prepare(`SELECT * FROM orders ORDER BY created_at DESC`).all(),
+    env.DB.prepare(`SELECT * FROM customers ORDER BY last_seen DESC`).all(),
+    env.DB.prepare(`SELECT * FROM products ORDER BY name ASC`).all(),
+    env.DB.prepare(`SELECT * FROM carts ORDER BY updated_at DESC`).all(),
+    env.DB.prepare(`
+      SELECT created_at, order_id, event_type, event_source, message, meta_json
+      FROM order_events
+      ORDER BY created_at ASC
+    `).all().catch(() => ({ results: [] })),
+  ]);
+
+  const orders = ordersRes?.results || [];
+  const customers = customersRes?.results || [];
+  const products = productsRes?.results || [];
+  const carts = cartsRes?.results || [];
+  const events = eventsRes?.results || [];
+
+  const orderRows = orders.map(order => {
+    const category = getCategoryFromItems(order.items, categoryMap);
+    return mapOrderToSupabase(order, category);
+  });
+
+  const salesRows = orders.map(order => {
+    const category = getCategoryFromItems(order.items, categoryMap);
+    return mapSalesToSupabase(order, category);
+  });
+
+  const shipmentRows = orders
+    .filter(order =>
+      (order.shipment_id != null && order.shipment_id !== '') ||
+      (order.shiprocket_order_id != null && order.shiprocket_order_id !== '') ||
+      (order.awb_number != null && order.awb_number !== '') ||
+      (order.awb_code != null && order.awb_code !== '')
+    )
+    .map(order => mapShipmentToSupabase(order));
+
+  const customerRows = [];
+  const leadRows = [];
+
+  for (const customer of customers) {
+    const phone = customer.phone;
+
+    const orderStats = await env.DB.prepare(`
+      SELECT
+        COUNT(*) as order_count,
+        COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_spent
+      FROM orders WHERE phone = ? OR phone = ?
+    `).bind(phone, phone.replace(/^91/, '')).first();
+
+    const unpaid = await env.DB.prepare(`
+      SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
+      FROM orders
+      WHERE (phone = ? OR phone = ?)
+        AND payment_status = 'unpaid'
+        AND status != 'cancelled'
+    `).bind(phone, phone.replace(/^91/, '')).first();
+
+    const firstOrder = await env.DB.prepare(`
+      SELECT source, shipping_city, shipping_state, shipping_pincode, items, created_at
+      FROM orders
+      WHERE phone = ? OR phone = ?
+      ORDER BY datetime(created_at) ASC
+      LIMIT 1
+    `).bind(phone, phone.replace(/^91/, '')).first();
+
+    customerRows.push(
+      mapCustomerToSupabase(customer, orderStats, unpaid, firstOrder)
+    );
+
+    const category = firstOrder ? getCategoryFromItems(firstOrder.items, categoryMap) : '';
+    leadRows.push(
+      mapLeadToSupabase(customer, firstOrder, category, orderStats)
+    );
+  }
+
+  const productRows = products.map(product => mapProductToSupabase(product));
+  const inventoryRows = products.map(product => mapInventoryToSupabase(product));
+
+  const cartRows = [];
+  const cartActivityRows = [];
+
+  for (const cart of carts) {
+    const customer = await env.DB.prepare(
+      `SELECT name FROM customers WHERE phone = ?`
+    ).bind(cart.phone).first();
+
+    cartRows.push(mapCartToSupabase(cart, customer?.name || ''));
+    cartActivityRows.push(mapCartActivityToSupabase(cart, customer?.name || ''));
+  }
+
+  const eventRows = events.map(event => mapOrderEventToSupabase(event));
+
+  if (orderRows.length) {
+    await upsertSupabaseRows(env, 'orders', orderRows, 'order_id');
+  }
+
+  if (customerRows.length) {
+    await upsertSupabaseRows(env, 'customers', customerRows, 'phone');
+  }
+
+  if (productRows.length) {
+    await upsertSupabaseRows(env, 'products', productRows, 'sku');
+  }
+
+  if (inventoryRows.length) {
+    await upsertSupabaseRows(env, 'inventory', inventoryRows, 'sku');
+  }
+
+  if (cartRows.length) {
+    await upsertSupabaseRows(env, 'carts', cartRows, 'phone');
+  }
+
+  if (eventRows.length) {
+    await upsertSupabaseRows(env, 'order_events', eventRows, 'order_id,event_type,created_at');
+  }
+
+  if (leadRows.length) {
+    await upsertSupabaseRows(env, 'leads', leadRows, 'phone');
+  }
+
+  if (salesRows.length) {
+    await upsertSupabaseRows(env, 'sales', salesRows, 'order_id');
+  }
+
+  if (shipmentRows.length) {
+    await upsertSupabaseRows(env, 'shipments', shipmentRows, 'order_id');
+  }
+
+  if (cartActivityRows.length) {
+    await upsertSupabaseRows(env, 'cart_activity', cartActivityRows, 'phone');
+  }
+
+  return {
+    orders: orderRows.length,
+    customers: customerRows.length,
+    products: productRows.length,
+    inventory: inventoryRows.length,
+    carts: cartRows.length,
+    orderEvents: eventRows.length,
+    leads: leadRows.length,
+    sales: salesRows.length,
+    shipments: shipmentRows.length,
+    cartActivity: cartActivityRows.length,
+    syncedAt: new Date().toISOString(),
+  };
+}
+
 async function sendFCMNotification(env, phone, name, text, messageId) {
   try {
     if (messageId) {
@@ -2740,6 +3482,7 @@ async function handleGetDashboardOps(env) {
     return errorResponse('Failed to load dashboard ops', 500);
   }
 }
+
 
 // ═══════════════════════════════════════════════════════════════
 // AUTORESPONDER — KAAPAV MENU SYSTEM
@@ -3912,6 +4655,33 @@ export default {
     const method = request.method;
 
     if (path === '/health') return new Response('OK', { status: 200 });
+    
+    if (path === '/api/debug/supabase-check' && method === 'GET') {
+  const url = env.SUPABASE_URL || '';
+  const key = env.SUPABASE_SERVICE_KEY || '';
+
+  let testResult = 'not tested';
+  try {
+    const res = await fetch(`${url}/rest/v1/orders?limit=1`, {
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'apikey': key,
+      },
+    });
+    testResult = `status: ${res.status}`;
+  } catch (e) {
+    testResult = `error: ${e.message}`;
+  }
+
+  return jsonResponse({
+    urlExists: !!url,
+    urlLength: url.length,
+    keyExists: !!key,
+    keyLength: key.length,
+    connectionTest: testResult,
+  });
+}
+
 
     if (path === '/api/debug/google-auth' && method === 'GET') {
   const email = env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
@@ -4401,6 +5171,7 @@ await sendWhatsAppText(env, env.OWNER_PHONE,
   return jsonResponse({ success: true, orderId, amount });
 }
 
+
     if (path === '/api/auth/login' && method === 'POST') return handleLogin(request, env);
     if (path === '/api/auth/me' && method === 'GET') {
       const user = await authMiddleware(request, env);
@@ -4419,6 +5190,26 @@ await sendWhatsAppText(env, env.OWNER_PHONE,
 
         const syncKey = request.headers.get('x-sync-key');
     const hasValidSyncKey = syncKey && syncKey === env.SYNC_API_KEY;
+
+    if (path === '/api/sync/supabase/full-sync' && method === 'POST') {
+
+  if (!hasValidSyncKey) return errorResponse('Unauthorized', 401);
+
+  try {
+
+    const summary = await backfillAllSupabase(env);
+
+    return jsonResponse({ success: true, summary });
+
+  } catch (e) {
+
+    console.error('Supabase full sync error:', e);
+
+    return errorResponse('Supabase sync failed: ' + e.message, 500);
+
+  }
+
+}
 
     if (path === '/api/sync/google-sheets/full-sync' && method === 'POST') {
       if (!hasValidSyncKey) return errorResponse('Unauthorized', 401);
@@ -4452,6 +5243,29 @@ await sendWhatsAppText(env, env.OWNER_PHONE,
     }
 
     if (path === '/api/messages/send' && method === 'POST') return handleSendMessage(request, env);
+    // DELETE message
+if (path.match(/^\/api\/messages\/[^/]+$/) && method === 'DELETE') {
+  const messageId = decodeURIComponent(path.split('/')[3]);
+  await env.DB.prepare('DELETE FROM messages WHERE message_id = ?').bind(messageId).run();
+  return jsonResponse({ success: true });
+}
+
+// SAVE message (bookmark)
+if (path.match(/^\/api\/messages\/[^/]+\/save$/) && method === 'POST') {
+  const messageId = decodeURIComponent(path.split('/')[3]);
+  await env.DB.prepare(
+    `UPDATE messages SET is_saved = 1, updated_at = datetime('now') WHERE message_id = ?`
+  ).bind(messageId).run();
+  return jsonResponse({ success: true });
+}
+
+// GET saved messages
+if (path === '/api/messages/saved' && method === 'GET') {
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM messages WHERE is_saved = 1 ORDER BY timestamp DESC LIMIT 100`
+  ).all();
+  return jsonResponse({ success: true, messages: results });
+}
     if (path === '/api/orders' && method === 'GET') return handleGetOrders(request, env);
      
     // GET single order

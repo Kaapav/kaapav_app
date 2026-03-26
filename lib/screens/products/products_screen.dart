@@ -2252,7 +2252,7 @@ class _ToggleRow extends StatelessWidget {
     );
   }
 }
-
+// ignore: unused_element
 class _FormImagePreview extends StatelessWidget {
   final String imageUrl;
   final bool isDark;

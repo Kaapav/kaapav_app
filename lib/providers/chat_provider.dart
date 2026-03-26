@@ -28,6 +28,7 @@ class ChatState {
   final DateTime? lastSync;
   final Set<String> pinnedChats;
   final Set<String> mutedChats;
+  final Map<String, String?> disappearingSettings;
 
     ChatState({
     this.chats = const [],
@@ -41,6 +42,7 @@ class ChatState {
     this.lastSync,
     Set<String>? pinnedChats,
     Set<String>? mutedChats,
+    this.disappearingSettings = const {},
   })  : pinnedChats = pinnedChats ?? {},
         mutedChats = mutedChats ?? {};
 
@@ -56,6 +58,7 @@ class ChatState {
     DateTime? lastSync,
     Set<String>? pinnedChats,
     Set<String>? mutedChats,
+    Map<String, String?>? disappearingSettings,
     bool clearCurrentChat = false,
     bool clearCustomer = false,
     bool clearError = false,
@@ -72,6 +75,7 @@ class ChatState {
       lastSync: lastSync ?? this.lastSync,
       pinnedChats: pinnedChats ?? this.pinnedChats,
       mutedChats: mutedChats ?? this.mutedChats,
+      disappearingSettings: disappearingSettings ?? this.disappearingSettings,
     );
   }
 
@@ -94,6 +98,7 @@ class ChatState {
 class ChatNotifier extends StateNotifier<ChatState> {
   final ChatApi _chatApi;
   Timer? _autoRefreshTimer;
+
 
   ChatNotifier(this._chatApi) : super(ChatState());
 
@@ -132,6 +137,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
     AppLogger.info('🚫 ${newValue ? "Blocked" : "Unblocked"} $phone');
   }
 
+  
+  void setDisappearing(String phone, String? duration) {
+    final updated = Map<String, String?>.from(state.disappearingSettings);
+    if (duration == null) {
+      updated.remove(phone);
+    } else {
+      updated[phone] = duration;
+    }
+    state = state.copyWith(disappearingSettings: updated);
+    AppLogger.info('⏱️ Disappearing ${duration ?? "off"} for $phone');
+  }
 
   // ─────────────────────────────────────────────────────────────
   // FETCH CHATS (aliased as loadChats)

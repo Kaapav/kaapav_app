@@ -251,4 +251,27 @@ class MessageApi {
       cacheTTL: const Duration(minutes: 2),
     );
   }
+
+  Future<Response> editMessage(String phone, String messageId, String newText) {
+    return _client.post(
+      ApiEndpoints.sendMessage,
+      data: {
+        'phone': phone,
+        'type': 'edit',
+        'messageId': messageId,
+        'text': newText,
+      },
+    );
+  }
+
+  Future<Response> deleteForEveryone(String phone, String messageId) {
+    return _client.post(
+      ApiEndpoints.sendMessage,
+      data: {
+        'phone': phone,
+        'type': 'delete',
+        'messageId': messageId,
+      },
+    );
+  }
 }

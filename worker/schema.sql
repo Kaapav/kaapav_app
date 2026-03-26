@@ -492,9 +492,14 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
 ('currency', 'INR'),
 ('timezone', 'Asia/Kolkata');
 
-INSERT OR IGNORE INTO settings (key, value) VALUES ('sync_mode', 'd1_only');
-INSERT OR IGNORE INTO settings (key, value) VALUES ('sync_google_sheets_enabled', 'false');
-INSERT OR IGNORE INTO settings (key, value) VALUES ('sync_supabase_enabled', 'false');
+INSERT OR REPLACE INTO settings (key, value, updated_at)
+VALUES ('sync_google_sheets_enabled', 'true', datetime('now'));
+
+INSERT OR REPLACE INTO settings (key, value, updated_at)
+VALUES ('sync_mode', 'd1_google_sheets', datetime('now'));
+
+INSERT OR REPLACE INTO settings (key, value, updated_at)
+VALUES ('sync_supabase_enabled', 'true', datetime('now'));
 
 -- ═══════════════════════════════════════════════
 -- FAQ DATA — 40 Questions
@@ -1279,3 +1284,8 @@ ALTER TABLE orders ADD COLUMN return_reason TEXT;
 ALTER TABLE orders ADD COLUMN return_requested_at TEXT;
 ALTER TABLE orders ADD COLUMN review_sent INTEGER DEFAULT 0;
 ALTER TABLE products ADD COLUMN reserved_stock INTEGER DEFAULT 0;
+ALTER TABLE messages ADD COLUMN is_saved INTEGER DEFAULT 0;
+
+
+
+

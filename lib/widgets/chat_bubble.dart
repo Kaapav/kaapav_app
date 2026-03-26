@@ -22,6 +22,9 @@ class ChatBubble extends StatefulWidget {
   final Function(String buttonId, String buttonTitle)? onButtonClick;
   final Function(Message message)? onRetry;
   final Function(Message message)? onLongPress;
+  final bool isSelectionMode;
+  final bool isSelected;
+  final Function(Message message)? onSelect;
 
   const ChatBubble({
     super.key,
@@ -29,6 +32,9 @@ class ChatBubble extends StatefulWidget {
     this.onButtonClick,
     this.onRetry,
     this.onLongPress,
+    this.isSelectionMode = false,
+    this.isSelected = false,
+    this.onSelect,
   });
 
   @override
@@ -58,28 +64,67 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
   bool get isIncoming => message.isIncoming;
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Row(
-        mainAxisAlignment: isOutgoing ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Flexible(
+Widget build(BuildContext context) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    child: Row(
+      mainAxisAlignment: isOutgoing ? MainAxisAlignment.end : MainAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        // Selection checkbox
+        if (widget.isSelectionMode)
+          GestureDetector(
+            onTap: () => widget.onSelect?.call(message),
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: widget.isSelected ? KaapavTheme.gold : Colors.transparent,
+                  border: Border.all(
+                    color: widget.isSelected ? KaapavTheme.gold : KaapavTheme.grayLight,
+                    width: 2,
+                  ),
+                ),
+                child: widget.isSelected
+                    ? const Icon(Icons.check, size: 16, color: Colors.white)
+                    : null,
+              ),
+            ),
+          ),
+
+        Flexible(
           child: GestureDetector(
-              onDoubleTap: () {
-                HapticFeedback.lightImpact();
-                _showReactionPicker(context);
-              },
-              onLongPress: () {
-                HapticFeedback.mediumImpact();
-                widget.onLongPress?.call(message);
-              },
+            onTap: widget.isSelectionMode
+                ? () => widget.onSelect?.call(message)
+                : null,
+            onDoubleTap: widget.isSelectionMode
+                ? null
+                : () {
+                    HapticFeedback.lightImpact();
+                    _showReactionPicker(context);
+                  },
+            onLongPress: widget.isSelectionMode
+                ? null
+                : () {
+                    HapticFeedback.mediumImpact();
+                    widget.onLongPress?.call(message);
+                  },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              decoration: BoxDecoration(
+                color: widget.isSelected
+                    ? KaapavTheme.gold.withValues(alpha: 0.08)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(16),
+              ),
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width * 0.75,
+                  maxWidth: MediaQuery.of(context).size.width * (widget.isSelectionMode ? 0.68 : 0.75),
                 ),
-                              child: Column(
+                child: Column(
                   crossAxisAlignment: isOutgoing ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -103,12 +148,45 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
               ),
             ),
           ),
-         ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _buildBubbleContent() {
+    // Deleted message
+    if (message.isDeleted) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: isOutgoing ? KaapavTheme.gold.withValues(alpha: 0.15) : KaapavTheme.white,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(isOutgoing ? 16 : 4),
+            bottomRight: Radius.circular(isOutgoing ? 4 : 16),
+          ),
+          border: Border.all(color: KaapavTheme.border.withValues(alpha: 0.5)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.block, size: 15, color: KaapavTheme.grayLight.withValues(alpha: 0.7)),
+            const SizedBox(width: 6),
+            Text(
+              'This message was deleted',
+              style: TextStyle(
+                fontSize: 14,
+                fontStyle: FontStyle.italic,
+                color: KaapavTheme.grayLight.withValues(alpha: 0.7),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     // Check for button message (autoresponder)
     final buttons = _parseButtons();
     if (buttons != null && buttons.isNotEmpty) {
@@ -237,36 +315,131 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
   // -----------------------------------------------------------
 
   Widget _buildRichText(String text, {required Color textColor, Color? linkColor}) {
-    final urlRegex = RegExp(
-      r'(https?://[^\s<>"\)]+|www\.[^\s<>"\)]+)',
-      caseSensitive: false,
-    );
+  final lines = text.split('\n');
+  final children = <Widget>[];
 
-    final matches = urlRegex.allMatches(text).toList();
+  for (int i = 0; i < lines.length; i++) {
+    final line = lines[i];
 
-    if (matches.isEmpty) {
-      return Text(text, style: TextStyle(fontSize: 15, height: 1.4, color: textColor));
+    // Separator line (═══ or ━━━ or ───)
+    if (RegExp(r'^[═━─]{3,}$').hasMatch(line.trim())) {
+      children.add(Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Container(
+          height: 1.5,
+          decoration: BoxDecoration(
+            gradient: KaapavTheme.goldGradient,
+            borderRadius: BorderRadius.circular(1),
+          ),
+        ),
+      ));
+      continue;
     }
 
-    final spans = <TextSpan>[];
-    int lastEnd = 0;
+    // Empty line = spacing
+    if (line.trim().isEmpty) {
+      children.add(const SizedBox(height: 6));
+      continue;
+    }
 
-    for (final match in matches) {
-      // Text before link
-      if (match.start > lastEnd) {
-        spans.add(TextSpan(
-          text: text.substring(lastEnd, match.start),
-          style: TextStyle(fontSize: 15, height: 1.4, color: textColor),
-        ));
-      }
+    // Parse inline formatting
+    children.add(RichText(
+      text: TextSpan(
+        children: _parseInlineFormatting(line, textColor, linkColor),
+      ),
+    ));
+  }
 
-      // Link
-      final url = match.group(0)!;
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    mainAxisSize: MainAxisSize.min,
+    children: children,
+  );
+}
+
+List<TextSpan> _parseInlineFormatting(String text, Color textColor, Color? linkColor) {
+  final spans = <TextSpan>[];
+  // Regex matches: *bold*, _italic_, ~strikethrough~, ```mono```, URLs
+  final regex = RegExp(
+    r'(\*[^*]+\*)'        // *bold*
+    r'|(_[^_]+_)'         // _italic_
+    r'|(~[^~]+~)'         // ~strikethrough~
+    r'|(```[^`]+```)'     // ```monospace```
+    r'|(https?://[^\s<>")\]]+|www\.[^\s<>")\]]+)', // URLs
+    caseSensitive: false,
+  );
+
+  final matches = regex.allMatches(text).toList();
+
+  if (matches.isEmpty) {
+    spans.add(TextSpan(
+      text: text,
+      style: TextStyle(fontSize: 15, height: 1.5, color: textColor),
+    ));
+    return spans;
+  }
+
+  int lastEnd = 0;
+
+  for (final match in matches) {
+    // Text before match
+    if (match.start > lastEnd) {
+      spans.add(TextSpan(
+        text: text.substring(lastEnd, match.start),
+        style: TextStyle(fontSize: 15, height: 1.5, color: textColor),
+      ));
+    }
+
+    final matched = match.group(0)!;
+
+    // Bold *text*
+    if (matched.startsWith('*') && matched.endsWith('*')) {
+      spans.add(TextSpan(
+        text: matched.substring(1, matched.length - 1),
+        style: TextStyle(
+          fontSize: 15, height: 1.5, color: textColor,
+          fontWeight: FontWeight.w700,
+        ),
+      ));
+    }
+    // Italic _text_
+    else if (matched.startsWith('_') && matched.endsWith('_')) {
+      spans.add(TextSpan(
+        text: matched.substring(1, matched.length - 1),
+        style: TextStyle(
+          fontSize: 15, height: 1.5, color: textColor,
+          fontStyle: FontStyle.italic,
+        ),
+      ));
+    }
+    // Strikethrough ~text~
+    else if (matched.startsWith('~') && matched.endsWith('~')) {
+      spans.add(TextSpan(
+        text: matched.substring(1, matched.length - 1),
+        style: TextStyle(
+          fontSize: 15, height: 1.5, color: textColor,
+          decoration: TextDecoration.lineThrough,
+        ),
+      ));
+    }
+    // Monospace ```text```
+    else if (matched.startsWith('```') && matched.endsWith('```')) {
+      spans.add(TextSpan(
+        text: matched.substring(3, matched.length - 3),
+        style: TextStyle(
+          fontSize: 14, height: 1.5, color: textColor,
+          fontFamily: 'monospace',
+          backgroundColor: textColor.withValues(alpha: 0.08),
+        ),
+      ));
+    }
+    // URL
+    else {
+      final url = matched;
       spans.add(TextSpan(
         text: url,
         style: TextStyle(
-          fontSize: 15,
-          height: 1.4,
+          fontSize: 15, height: 1.5,
           color: linkColor ?? (isOutgoing ? Colors.white : const Color(0xFF1A73E8)),
           decoration: TextDecoration.underline,
           decorationColor: linkColor ?? (isOutgoing ? Colors.white70 : const Color(0xFF1A73E8)),
@@ -277,20 +450,21 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
             launchUrl(Uri.parse(fullUrl), mode: LaunchMode.externalApplication);
           },
       ));
-
-      lastEnd = match.end;
     }
 
-    // Text after last link
-    if (lastEnd < text.length) {
-      spans.add(TextSpan(
-        text: text.substring(lastEnd),
-        style: TextStyle(fontSize: 15, height: 1.4, color: textColor),
-      ));
-    }
-
-    return RichText(text: TextSpan(children: spans));
+    lastEnd = match.end;
   }
+
+  // Text after last match
+  if (lastEnd < text.length) {
+    spans.add(TextSpan(
+      text: text.substring(lastEnd),
+      style: TextStyle(fontSize: 15, height: 1.5, color: textColor),
+    ));
+  }
+
+  return spans;
+}
 
 
   // -----------------------------------------------------------
@@ -370,95 +544,167 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
   // -----------------------------------------------------------
 
   Widget _buildButtonMessage(List<Map<String, dynamic>> buttons) {
-    final displayText = _getDisplayText();
+  final displayText = _getDisplayText();
 
-    return Container(
-      decoration: BoxDecoration(
-        color: KaapavTheme.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: KaapavTheme.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+  // Parse header from text (first line if separator follows)
+  String? header;
+  String bodyText = displayText;
+
+  final lines = displayText.split('\n');
+  if (lines.length > 2) {
+    // Check if text has separator pattern
+    final sepIndex = lines.indexWhere((l) => RegExp(r'^[═━─]{3,}$').hasMatch(l.trim()));
+    if (sepIndex >= 0 && sepIndex < 3) {
+      // Find header between separators
+      for (int i = 0; i < lines.length; i++) {
+        final line = lines[i].trim();
+        if (line.isNotEmpty && !RegExp(r'^[═━─]{3,}$').hasMatch(line)) {
+          header = line.replaceAll('*', '');
+          break;
+        }
+      }
+    }
+  }
+
+  // Extract footer text if exists
+  String? footerText;
+  if (message.text != null) {
+    try {
+      final parsed = jsonDecode(message.text!);
+      if (parsed is Map && parsed['interactive']?['footer']?['text'] != null) {
+        footerText = parsed['interactive']['footer']['text'].toString();
+      }
+    } catch (_) {}
+  }
+
+  return Container(
+    decoration: BoxDecoration(
+      color: KaapavTheme.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: KaapavTheme.border),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.08),
+          blurRadius: 12,
+          offset: const Offset(0, 4),
+        ),
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Gold accent bar
+        Container(
+          height: 4,
+          decoration: const BoxDecoration(
+            gradient: KaapavTheme.goldGradient,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Gold accent bar
+        ),
+
+        // Header (if found)
+        if (header != null)
           Container(
-            height: 4,
-            decoration: const BoxDecoration(
-              gradient: KaapavTheme.goldGradient,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-            ),
-          ),
-
-          // Message body
-          if (displayText.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.all(16),
-                            child: _buildRichText(
-                displayText,
-                textColor: KaapavTheme.dark,
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+            child: Text(
+              header,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: KaapavTheme.dark,
               ),
             ),
+          ),
 
-          // Buttons
-          Container(
-            decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: KaapavTheme.border)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: buttons.asMap().entries.map((entry) {
-                final idx = entry.key;
-                final btn = entry.value;
-                return _buildButton(btn, idx, idx > 0);
-              }).toList(),
+        // Separator after header
+        if (header != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Container(
+              height: 1.5,
+              decoration: BoxDecoration(
+                gradient: KaapavTheme.goldGradient,
+                borderRadius: BorderRadius.circular(1),
+              ),
             ),
           ),
 
-          // Footer
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: const BoxDecoration(
-              color: Color(0xFFFAFAFA),
-              border: Border(top: BorderSide(color: KaapavTheme.border)),
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                if (message.isAutoReply)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: KaapavTheme.cream,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text(
-                      '?? Auto',
-                      style: TextStyle(fontSize: 10, color: KaapavTheme.grayLight),
-                    ),
-                  )
-                else
-                  const SizedBox.shrink(),
-                Text(
-                  _formatTime(),
-                  style: const TextStyle(fontSize: 11, color: KaapavTheme.grayLight),
-                ),
-              ],
+        // Message body
+        if (bodyText.isNotEmpty)
+          Padding(
+            padding: EdgeInsets.fromLTRB(16, header != null ? 0 : 14, 16, 14),
+            child: _buildRichText(
+              bodyText,
+              textColor: KaapavTheme.dark,
             ),
           ),
-        ],
-      ),
-    );
-  }
+
+        // Footer text
+        if (footerText != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Text(
+              footerText,
+              style: TextStyle(
+                fontSize: 13,
+                color: KaapavTheme.grayLight,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+
+        // Buttons
+        Container(
+          decoration: const BoxDecoration(
+            border: Border(top: BorderSide(color: KaapavTheme.border)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: buttons.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final btn = entry.value;
+              return _buildButton(btn, idx, idx > 0);
+            }).toList(),
+          ),
+        ),
+
+        // Timestamp footer
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: const BoxDecoration(
+            color: Color(0xFFFAFAFA),
+            border: Border(top: BorderSide(color: KaapavTheme.border)),
+            borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              if (message.isAutoReply)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: KaapavTheme.cream,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    '🤖 Auto',
+                    style: TextStyle(fontSize: 10, color: KaapavTheme.grayLight),
+                  ),
+                )
+              else
+                const SizedBox.shrink(),
+              Text(
+                _formatTime(),
+                style: const TextStyle(fontSize: 11, color: KaapavTheme.grayLight),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _buildButton(Map<String, dynamic> btn, int index, bool showBorder) {
     final title = btn['title']?.toString() ??
@@ -1185,6 +1431,8 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
     );
   }
 
+
+ 
     void _showReactionPicker(BuildContext context) {
     final emojis = ['??', '??', '??', '??', '??', '??'];
     showDialog(
@@ -1249,6 +1497,16 @@ class _ChatBubbleState extends State<ChatBubble> with SingleTickerProviderStateM
             ),
           ),
           const SizedBox(width: 4),
+        ],
+
+        // Edited indicator
+        if (message.isEdited) ...[
+          Icon(Icons.edit, size: 11,
+              color: isOutgoing ? Colors.white.withValues(alpha: 0.6) : KaapavTheme.grayLight),
+          const SizedBox(width: 2),
+          Text('edited ',
+              style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic,
+                  color: isOutgoing ? Colors.white.withValues(alpha: 0.6) : KaapavTheme.grayLight)),
         ],
 
         // Timestamp

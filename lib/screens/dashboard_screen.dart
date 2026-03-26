@@ -205,7 +205,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     if (ops == null) {
       sourceCount.clear();
       for (final o in orders) {
-        final source = (o.source ?? 'unknown').trim().toLowerCase();
+       final source = o.source.trim().toLowerCase();
         sourceCount[source] = (sourceCount[source] ?? 0) + 1;
       }
     }
