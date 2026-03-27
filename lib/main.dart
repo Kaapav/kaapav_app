@@ -23,21 +23,22 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 @pragma('vm:entry-point')
 Future<void> firebaseBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  debugPrint('🔥 BACKGROUND HANDLER FIRED: ${message.data}');
+  debugPrint('🔥 BACKGROUND: ${message.data}');
 
+  // Android already auto-shows notification payload — skip to avoid duplicate
+  if (message.notification != null) {
+    debugPrint('🔥 System already displayed — skipping');
+    return;
+  }
+
+  // Data-only message — show manually
   final plugin = FlutterLocalNotificationsPlugin();
-  
   const android = AndroidInitializationSettings('@mipmap/ic_launcher');
   const settings = InitializationSettings(android: android);
   await plugin.initialize(settings);
 
-  final title = message.notification?.title ?? 
-                message.data['title'] ?? 
-                'New Message';
-  final body = message.notification?.body ?? 
-               message.data['body'] ?? 
-               message.data['message'] ?? 
-               '';
+  final title = message.data['title'] ?? 'New Message';
+  final body = message.data['body'] ?? message.data['message'] ?? '';
 
   await plugin.show(
     message.hashCode,
@@ -57,8 +58,8 @@ Future<void> firebaseBackgroundHandler(RemoteMessage message) async {
       ),
     ),
     payload: jsonEncode(message.data),
-  ); 
-} 
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════
 // MAIN

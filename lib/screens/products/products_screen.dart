@@ -1787,10 +1787,10 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
     _featured = p?.isFeatured ?? false;
     _tags = List<String>.from(p?.tags ?? []);
 
-    _images = [
+_images = {
       if ((p?.imageUrl ?? '').isNotEmpty) p!.imageUrl!,
       ...(p?.images ?? <String>[]),
-    ].toSet().toList();
+    }.toList();
   }
 
   @override

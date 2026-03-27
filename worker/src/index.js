@@ -3218,34 +3218,74 @@ function toBool(value, fallback = false) {
   return fallback;
 }
 
+async function checkGoogleSheetsHealth(env) {
+  try {
+    if (
+      !env.GOOGLE_SHEETS_SPREADSHEET_ID ||
+      !env.GOOGLE_SERVICE_ACCOUNT_EMAIL ||
+      !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+    ) {
+      return false;
+    }
+
+    const encodedRange = encodeURIComponent('Orders!A1:A2');
+    await googleSheetsRequest(env, 'GET', `/values/${encodedRange}`, null);
+    return true;
+  } catch (e) {
+    console.error('Google Sheets health check failed:', e);
+    return false;
+  }
+}
+
+async function checkSupabaseHealth(env) {
+  try {
+    if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) return false;
+
+    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/orders?select=order_id&limit=1`, {
+      headers: {
+        'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+        'apikey': env.SUPABASE_SERVICE_KEY,
+      },
+    });
+
+    return res.ok;
+  } catch (e) {
+    console.error('Supabase health check failed:', e);
+    return false;
+  }
+}
+
+
 async function handleGetDashboardOps(env) {
   try {
     const today = new Date().toISOString().slice(0, 10);
 
     const [
-      paidSummary,
-      unpaidSummary,
-      todayPaidSummary,
-      todayUnpaidSummary,
-      readyForShiprocketRow,
-      shiprocketBookedRow,
-      awbAddedRow,
-      lowStockRow,
-      outOfStockRow,
-      totalProductsRow,
-      sourceRows,
-      todayOrdersRow,
-      todayPaidOrdersRow,
-      todayUnpaidOrdersRow,
-      todayReadyToShipRow,
-      todayShippedRow,
-      syncMode,
-      sheetsEnabledRaw,
-      supabaseEnabledRaw,
-      pendingQueueRow,
-      failedQueueRow,
-      lastSyncSuccessRow,
-      lastSyncFailureRow,
+  paidSummary,
+  unpaidSummary,
+  todayPaidSummary,
+  todayUnpaidSummary,
+  readyForShiprocketRow,
+  shiprocketBookedRow,
+  awbAddedRow,
+  lowStockRow,
+  outOfStockRow,
+  totalProductsRow,
+  sourceRows,
+  todayOrdersRow,
+  todayPaidOrdersRow,
+  todayUnpaidOrdersRow,
+  todayReadyToShipRow,
+  todayShippedRow,
+  syncMode,
+  sheetsEnabledRaw,
+  supabaseEnabledRaw,
+  pendingQueueRow,
+  failedQueueRow,
+  lastSyncSuccessRow,
+  lastSyncFailureRow,
+  googleSheetsLive,
+  supabaseLive,
     ] = await Promise.all([
       env.DB.prepare(`
         SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
@@ -3458,14 +3498,14 @@ async function handleGetDashboardOps(env) {
         },
 
         syncHealth: {
-          d1Live: true,
-          googleSheetsConnected: toBool(sheetsEnabledRaw, false),
-          supabaseConnected: toBool(supabaseEnabledRaw, false),
-          pendingQueue: Number(pendingQueueRow?.count || 0),
-          failedQueue: Number(failedQueueRow?.count || 0),
-          mode: syncMode || 'd1_only',
-          lastSuccess: lastSyncSuccessRow?.created_at || null,
-          lastFailure: lastSyncFailureRow?.created_at || null,
+  d1Live: true,
+  googleSheetsConnected: googleSheetsLive,
+  supabaseConnected: supabaseLive,
+  pendingQueue: Number(pendingQueueRow?.count || 0),
+  failedQueue: Number(failedQueueRow?.count || 0),
+  mode: syncMode || 'd1_only',
+  lastSuccess: lastSyncSuccessRow?.created_at || null,
+  lastFailure: lastSyncFailureRow?.created_at || null,
         },
 
         todayOps: {
