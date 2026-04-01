@@ -1,6 +1,8 @@
 // lib/screens/orders/order_detail_screen.dart
 
 import 'dart:convert';
+import 'package:path_provider/path_provider.dart';
+import 'package:open_filex/open_filex.dart';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kaapav_app/config/theme.dart';
 import 'package:share_plus/share_plus.dart';
+
 
 import '../../providers/order_provider.dart';
 import '../../widgets/toast.dart';
@@ -268,6 +271,36 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       KaapavToast.success(context, 'WhatsApp sent!');
     } catch (_) {
       KaapavToast.error(context, 'Failed to send');
+    }
+  }
+
+  Future<void> _downloadInvoice(String orderId) async {
+    try {
+      KaapavToast.success(context, 'Downloading invoice...');
+
+      final dir = await getTemporaryDirectory();
+      final path = '${dir.path}/Invoice_$orderId.pdf';
+
+      final ok = await ref.read(orderProvider.notifier).downloadInvoicePdf(orderId, path);
+      if (!ok) {
+        if (mounted) KaapavToast.error(context, 'Failed to download');
+        return;
+      }
+
+      await OpenFilex.open(path);
+      if (mounted) KaapavToast.success(context, 'Invoice downloaded!');
+    } catch (e) {
+      if (mounted) KaapavToast.error(context, 'Download failed: $e');
+    }
+  }
+
+  Future<void> _sendInvoiceToCustomer(String orderId) async {
+    try {
+      await ref.read(orderProvider.notifier).sendInvoice(orderId);
+      if (!mounted) return;
+      KaapavToast.success(context, 'Invoice sent to customer on WhatsApp!');
+    } catch (_) {
+      if (mounted) KaapavToast.error(context, 'Failed to send invoice');
     }
   }
 
@@ -1244,7 +1277,40 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
           ),
 
           const SizedBox(height: 12),
-          _SectionHeader(title: 'WhatsApp', icon: Icons.chat_rounded),
+          // ── INVOICE ────────────────────────────────────────────────
+_SectionHeader(title: 'Invoice', icon: Icons.receipt_long_rounded),
+const SizedBox(height: 8),
+Row(children: [
+  Expanded(
+    child: OutlinedButton.icon(
+      onPressed: () => _downloadInvoice(order.orderId),
+      icon: const Icon(Icons.download_rounded, size: 16),
+      label: const Text('Download PDF', style: TextStyle(fontSize: 12)),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: KaapavTheme.gold,
+        side: const BorderSide(color: KaapavTheme.gold),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+      ),
+    ),
+  ),
+  const SizedBox(width: 8),
+  Expanded(
+    child: OutlinedButton.icon(
+      onPressed: () => _sendInvoiceToCustomer(order.orderId),
+      icon: const Icon(Icons.send_rounded, size: 16),
+      label: const Text('Send to Customer', style: TextStyle(fontSize: 12)),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: const Color(0xFF10B981),
+        side: const BorderSide(color: Color(0xFF10B981)),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+      ),
+    ),
+  ),
+]),
+const SizedBox(height: 12),
+
+// ── WHATSAPP RESEND ────────────────────────────────────────
+_SectionHeader(title: 'WhatsApp', icon: Icons.chat_rounded),
           const SizedBox(height: 8),
           Row(
             children: [

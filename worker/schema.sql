@@ -466,7 +466,14 @@ CREATE TABLE IF NOT EXISTS return_requests (
 -- ═══════════════════════════════════════════════
 
 INSERT OR IGNORE INTO users (user_id, email, password_hash, name, role)
-VALUES ('admin', 'admin@kaapav.com', 'pin_auth', 'KAAPAV Admin', 'admin');
+VALUES ('admin', 'kaapavin@gmail.com', 'pin_auth', 'KAAPAV Admin', 'admin');
+
+INSERT OR REPLACE INTO settings (key, value, updated_at)
+VALUES (
+  'invoice_logo_url',
+  'https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/kaapav_logo.jpg',
+  datetime('now')
+);
 
 INSERT OR IGNORE INTO labels (name, color, description) VALUES
 ('VIP', '#FFD700', 'VIP customers'),

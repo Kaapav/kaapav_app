@@ -18,7 +18,8 @@ dependencies:
   gal: ^2.3.0
   open_filex: ^4.5.0
   video_player: ^2.8.0  
-
+  http: ^1.2.0
+  
   # State Management
   flutter_riverpod: ^2.5.1
 

@@ -1,15 +1,4 @@
--- ═══════════════════════════════════════════════
--- KAAPAV SUPABASE SCHEMA
--- Mirror + Reporting Tables
--- Based strictly on D1 schema + Sheets headers
--- ═══════════════════════════════════════════════
-
--- Optional
 create extension if not exists pgcrypto;
-
--- ──────────────────────────────────────────────
--- RAW MIRROR TABLES
--- ──────────────────────────────────────────────
 
 create table if not exists public.orders (
   order_id text primary key,
@@ -60,8 +49,6 @@ create table if not exists public.orders (
   return_requested_at text,
   created_at text,
   updated_at text,
-
-  -- derived helper fields
   category text,
   items_summary text
 );
@@ -90,8 +77,6 @@ create table if not exists public.customers (
   push_subscription text,
   created_at text,
   updated_at text,
-
-  -- derived helper fields
   source text,
   labels_summary text,
   cart_item_count integer default 0,
@@ -127,8 +112,6 @@ create table if not exists public.products (
   material text,
   created_at text,
   updated_at text,
-
-  -- derived helper fields
   tags_summary text,
   image_1 text,
   image_2 text,
@@ -146,8 +129,6 @@ create table if not exists public.carts (
   created_at text,
   updated_at text,
   converted_at text,
-
-  -- helper field
   customer_name text,
   items_summary text
 );
@@ -164,10 +145,6 @@ create table if not exists public.order_events (
 
 create unique index if not exists order_events_unique_idx
 on public.order_events(order_id, event_type, created_at);
-
--- ──────────────────────────────────────────────
--- REPORTING TABLES (MATCH SHEETS)
--- ──────────────────────────────────────────────
 
 create table if not exists public.leads (
   phone text primary key,
@@ -272,10 +249,36 @@ create table if not exists public.cart_activity (
   follow_up_needed text
 );
 
--- Optional helpful indexes
 create index if not exists idx_orders_phone on public.orders(phone);
 create index if not exists idx_orders_status on public.orders(status);
 create index if not exists idx_orders_payment_status on public.orders(payment_status);
 create index if not exists idx_customers_last_seen on public.customers(last_seen);
 create index if not exists idx_products_category on public.products(category);
 create index if not exists idx_shipments_status on public.shipments(status);
+
+alter table public.orders disable row level security;
+alter table public.customers disable row level security;
+alter table public.products disable row level security;
+alter table public.inventory disable row level security;
+alter table public.carts disable row level security;
+alter table public.order_events disable row level security;
+alter table public.leads disable row level security;
+alter table public.sales disable row level security;
+alter table public.shipments disable row level security;
+alter table public.cart_activity disable row level security;
+
+grant usage on schema public to service_role, anon, authenticated;
+grant all on all tables in schema public to service_role;
+grant all on all sequences in schema public to service_role;
+
+select
+  (select count(*) from public.orders) as orders,
+  (select count(*) from public.customers) as customers,
+  (select count(*) from public.products) as products,
+  (select count(*) from public.carts) as carts,
+  (select count(*) from public.order_events) as order_events,
+  (select count(*) from public.leads) as leads,
+  (select count(*) from public.sales) as sales,
+  (select count(*) from public.inventory) as inventory,
+  (select count(*) from public.shipments) as shipments,
+  (select count(*) from public.cart_activity) as cart_activity;

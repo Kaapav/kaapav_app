@@ -3,7 +3,9 @@
 // ORDER STATE MANAGEMENT
 // ═══════════════════════════════════════════════════════════
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/order.dart';
 import '../services/api/order_api.dart';
@@ -251,6 +253,38 @@ class OrderNotifier extends StateNotifier<OrderState> {
       return events;
     } catch (_) {
       return [];
+    }
+  }
+
+  // ── Send Invoice ─────────────────────────────────────────
+  Future<bool> sendInvoice(String orderId) async {
+    try {
+      final response = await _api.sendInvoice(orderId);
+      final data = response.data as Map<String, dynamic>;
+      return data['success'] == true;
+    } catch (e) {
+      debugPrint('Send invoice error: $e');
+      return false;
+    }
+  }
+
+  // ── Download Invoice PDF ─────────────────────────────────
+  Future<bool> downloadInvoicePdf(String orderId, String savePath) async {
+    try {
+      final response = await ApiClient.instance.dio.get<List<int>>(
+        '/api/orders/$orderId/invoice-pdf',
+        options: Options(responseType: ResponseType.bytes),
+      );
+
+      final bytes = response.data;
+      if (bytes == null || bytes.isEmpty) return false;
+
+      final file = File(savePath);
+      await file.writeAsBytes(bytes, flush: true);
+      return true;
+    } catch (e) {
+      debugPrint('Download invoice error: $e');
+      return false;
     }
   }
 

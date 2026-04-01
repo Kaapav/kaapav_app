@@ -206,6 +206,12 @@ class OrderApi {
     return _client.post('/api/orders/$orderId/payment-link');
   }
 
+  // ── Send invoice to customer ─────────────────────────────────
+  Future<Response> sendInvoice(String orderId) {
+    return _client.post('/api/orders/$orderId/invoice', data: {});
+  }
+
+ 
   // ── Send WhatsApp notification ───────────────────────────────
   // Worker route:
   // POST /api/orders/:id/send-notification

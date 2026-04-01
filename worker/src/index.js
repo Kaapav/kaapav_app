@@ -1,3 +1,4 @@
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
@@ -2630,6 +2631,802 @@ async function createShiprocketOrder(env, { order, customer, items }) {
   return data;
 }
 
+function getJpegDimensions(bytes) {
+  let i = 0;
+  while (i < bytes.length - 9) {
+    if (bytes[i] === 0xFF) {
+      const marker = bytes[i + 1];
+      if (
+        marker === 0xC0 || marker === 0xC1 || marker === 0xC2 || marker === 0xC3 ||
+        marker === 0xC5 || marker === 0xC6 || marker === 0xC7 ||
+        marker === 0xC9 || marker === 0xCA || marker === 0xCB ||
+        marker === 0xCD || marker === 0xCE || marker === 0xCF
+      ) {
+        const height = (bytes[i + 5] << 8) | bytes[i + 6];
+        const width  = (bytes[i + 7] << 8) | bytes[i + 8];
+        return { width, height };
+      }
+      if (
+        marker !== 0xD8 && marker !== 0xD9 &&
+        marker !== 0x01 && !(marker >= 0xD0 && marker <= 0xD7)
+      ) {
+        const length = (bytes[i + 2] << 8) | bytes[i + 3];
+        if (length < 2) break;
+        i += 2 + length;
+        continue;
+      }
+    }
+    i++;
+  }
+  return null;
+}
+
+// ═══════════════════ PNG DECODER ═══════════════════
+
+async function decodePngToRGB(png) {
+  if (png[0] !== 0x89 || png[1] !== 0x50 || png[2] !== 0x4E || png[3] !== 0x47) return null;
+
+  let pos = 8, w = 0, h = 0, bd = 0, ct = 0;
+  const idats = [];
+  let plte = null, trns = null;
+
+  while (pos + 8 <= png.length) {
+    const cl = (png[pos] << 24) | (png[pos + 1] << 16) | (png[pos + 2] << 8) | png[pos + 3];
+    const tp = String.fromCharCode(png[pos + 4], png[pos + 5], png[pos + 6], png[pos + 7]);
+    const dp = pos + 8;
+
+    if (tp === 'IHDR') {
+      w = (png[dp] << 24) | (png[dp + 1] << 16) | (png[dp + 2] << 8) | png[dp + 3];
+      h = (png[dp + 4] << 24) | (png[dp + 5] << 16) | (png[dp + 6] << 8) | png[dp + 7];
+      bd = png[dp + 8]; ct = png[dp + 9];
+    } else if (tp === 'PLTE') { plte = png.slice(dp, dp + cl); }
+    else if (tp === 'tRNS') { trns = png.slice(dp, dp + cl); }
+    else if (tp === 'IDAT') { idats.push(png.slice(dp, dp + cl)); }
+    else if (tp === 'IEND') { break; }
+
+    pos = dp + cl + 4;
+  }
+
+  if (!w || !h || bd !== 8) return null;
+
+  const tl = idats.reduce((s, c) => s + c.length, 0);
+  const comp = new Uint8Array(tl);
+  let o = 0;
+  for (const c of idats) { comp.set(c, o); o += c.length; }
+
+  let raw;
+  try {
+    const ds = new DecompressionStream('deflate');
+    const wr = ds.writable.getWriter();
+    const rd = ds.readable.getReader();
+    wr.write(comp); wr.close();
+    const ps = [];
+    while (true) { const { done, value } = await rd.read(); if (done) break; ps.push(value); }
+    const rl = ps.reduce((s, p) => s + p.length, 0);
+    raw = new Uint8Array(rl); o = 0;
+    for (const p of ps) { raw.set(p, o); o += p.length; }
+  } catch (e) {
+    console.error('PNG decompress error:', e);
+    return null;
+  }
+
+  let ch;
+  if (ct === 0) ch = 1;
+  else if (ct === 2) ch = 3;
+  else if (ct === 3) ch = 1;
+  else if (ct === 4) ch = 2;
+  else if (ct === 6) ch = 4;
+  else return null;
+
+  const bpp = ch, rowLen = w * bpp;
+  const pix = new Uint8Array(w * h * bpp);
+  const prev = new Uint8Array(rowLen);
+
+  for (let row = 0; row < h; row++) {
+    const ft = raw[row * (rowLen + 1)];
+    const rs = row * (rowLen + 1) + 1;
+    const cur = new Uint8Array(rowLen);
+
+    for (let i = 0; i < rowLen; i++) {
+      const x = raw[rs + i];
+      const a = i >= bpp ? cur[i - bpp] : 0;
+      const b = prev[i];
+      const c = i >= bpp ? prev[i - bpp] : 0;
+
+      if (ft === 0) cur[i] = x;
+      else if (ft === 1) cur[i] = (x + a) & 0xFF;
+      else if (ft === 2) cur[i] = (x + b) & 0xFF;
+      else if (ft === 3) cur[i] = (x + ((a + b) >> 1)) & 0xFF;
+      else if (ft === 4) {
+        const p2 = a + b - c;
+        const pa = Math.abs(p2 - a), pb = Math.abs(p2 - b), pc = Math.abs(p2 - c);
+        cur[i] = (x + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c)) & 0xFF;
+      } else cur[i] = x;
+    }
+
+    pix.set(cur, row * rowLen);
+    prev.set(cur);
+  }
+
+  const rgb = new Uint8Array(w * h * 3);
+  for (let i = 0; i < w * h; i++) {
+    let r, g, b2;
+    if (ct === 6) {
+      const al = pix[i * 4 + 3] / 255;
+      r = Math.round(pix[i * 4] * al + 255 * (1 - al));
+      g = Math.round(pix[i * 4 + 1] * al + 255 * (1 - al));
+      b2 = Math.round(pix[i * 4 + 2] * al + 255 * (1 - al));
+    } else if (ct === 2) {
+      r = pix[i * 3]; g = pix[i * 3 + 1]; b2 = pix[i * 3 + 2];
+    } else if (ct === 0) {
+      r = g = b2 = pix[i];
+    } else if (ct === 4) {
+      const al = pix[i * 2 + 1] / 255;
+      r = g = b2 = Math.round(pix[i * 2] * al + 255 * (1 - al));
+    } else if (ct === 3 && plte) {
+      const idx = pix[i];
+      r = plte[idx * 3]; g = plte[idx * 3 + 1]; b2 = plte[idx * 3 + 2];
+      if (trns && idx < trns.length) {
+        const al = trns[idx] / 255;
+        r = Math.round(r * al + 255 * (1 - al));
+        g = Math.round(g * al + 255 * (1 - al));
+        b2 = Math.round(b2 * al + 255 * (1 - al));
+      }
+    } else { r = g = b2 = 0; }
+
+    rgb[i * 3] = r; rgb[i * 3 + 1] = g; rgb[i * 3 + 2] = b2;
+  }
+
+  return { width: w, height: h, rgb };
+}
+
+function downsampleRGB(rgb, srcW, srcH, maxDim) {
+  if (srcW <= maxDim && srcH <= maxDim) return { rgb, width: srcW, height: srcH };
+  const scale = maxDim / Math.max(srcW, srcH);
+  const dstW = Math.max(1, Math.round(srcW * scale));
+  const dstH = Math.max(1, Math.round(srcH * scale));
+  const out = new Uint8Array(dstW * dstH * 3);
+  for (let dy = 0; dy < dstH; dy++) {
+    for (let dx = 0; dx < dstW; dx++) {
+      const sx = Math.min(Math.floor(dx / scale), srcW - 1);
+      const sy = Math.min(Math.floor(dy / scale), srcH - 1);
+      const si = (sy * srcW + sx) * 3;
+      const di = (dy * dstW + dx) * 3;
+      out[di] = rgb[si]; out[di + 1] = rgb[si + 1]; out[di + 2] = rgb[si + 2];
+    }
+  }
+  return { rgb: out, width: dstW, height: dstH };
+}
+
+// ═══════════════════ DEFAULT LOGO URL ═══════════════════
+const DEFAULT_LOGO_URL = 'https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/kaapav_logo.jpg';
+
+// ═══════════════════ PDF INVOICE ═══════════════════
+
+function formatPhoneDisplay(phone) {
+  const d = String(phone || '').replace(/\D/g, '');
+  if (d.startsWith('91') && d.length >= 12) return `+91 ${d.slice(2, 7)} ${d.slice(7, 12)}`;
+  if (d.length === 10) return `+91 ${d.slice(0, 5)} ${d.slice(5)}`;
+  return phone || '-';
+}
+
+function generateInvoicePDF(order, items, settings, logoData = null) {
+  const ops = [];
+  const W = 595, H = 842;
+  const M = 42, R = W - M;
+  let y = H - 40;
+
+  function esc(s) {
+    return String(s || '')
+      .replace(/\\/g, '\\\\')
+      .replace(/\(/g, '\\(')
+      .replace(/\)/g, '\\)')
+      .replace(/[^\x20-\x7E]/g, '');
+  }
+  function txt(s, x, yy, sz = 10, bold = false) {
+    ops.push(`BT /${bold ? 'F2' : 'F1'} ${sz} Tf ${x} ${yy} Td (${esc(s)}) Tj ET`);
+  }
+  function txtRight(s, xRight, yy, sz = 10, bold = false) {
+    const approx = String(s || '').length * sz * (bold ? 0.58 : 0.50);
+    txt(s, xRight - approx, yy, sz, bold);
+  }
+  function line(x1, y1, x2, y2, w = 0.5) {
+    ops.push(`${w} w ${x1} ${y1} m ${x2} ${y2} l S`);
+  }
+  function rect(x, yy, w, h, lw = 0.5) {
+    ops.push(`${lw} w ${x} ${yy} ${w} ${h} re S`);
+  }
+  function fill(x, yy, w, h) {
+    ops.push(`${x} ${yy} ${w} ${h} re f`);
+  }
+
+  function gold() { ops.push('0.74 0.58 0.18 rg'); }
+  function goldStroke() { ops.push('0.74 0.58 0.18 RG'); }
+  function darkGold() { ops.push('0.50 0.38 0.11 rg'); }
+  function cream() { ops.push('0.990 0.978 0.950 rg'); }
+  function warm() { ops.push('0.973 0.958 0.922 rg'); }
+  function white() { ops.push('1 1 1 rg'); }
+  function dark() { ops.push('0.11 0.11 0.11 rg'); }
+  function gray() { ops.push('0.42 0.44 0.48 rg'); }
+  function green() { ops.push('0.08 0.67 0.46 rg'); }
+  function amber() { ops.push('0.92 0.62 0.07 rg'); }
+  function reset() { ops.push('0 0 0 rg'); ops.push('0 0 0 RG'); }
+
+  function wrapText(text, maxChars) {
+    const words = String(text || '').split(/\s+/);
+    const lines = [];
+    let cur = '';
+    for (const w of words) {
+      const next = cur ? `${cur} ${w}` : w;
+      if (next.length > maxChars) {
+        if (cur) lines.push(cur);
+        cur = w;
+      } else {
+        cur = next;
+      }
+    }
+    if (cur) lines.push(cur);
+    return lines.length ? lines : ['-'];
+  }
+
+  const businessName = settings.business_name || 'KAAPAV Fashion Jewellery';
+  const supportLine = '+91 9148330016(WhatsApp Chat Only)';
+  const emailLine = settings.business_email || 'care.kaapav@gmail.com';
+
+  const customerName = order.customer_name || '-';
+  const customerPhone = formatPhoneDisplay(order.phone);
+  const shipName = order.shipping_name || order.customer_name || '-';
+  const shipPhone = formatPhoneDisplay(order.shipping_phone || order.phone);
+  const paymentStatus = String(order.payment_status || 'pending').toUpperCase();
+  const paymentMethod = order.payment_method || 'Online';
+
+  let invoiceDate = '-';
+  try {
+    const dt = new Date(order.created_at);
+    const mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    invoiceDate = `${dt.getDate()} ${mo[dt.getMonth()]} ${dt.getFullYear()}`;
+  } catch (_) {}
+
+  // outer frame
+  goldStroke();
+  rect(26, 24, 543, 794, 1.0);
+  rect(30, 28, 535, 786, 0.25);
+  reset();
+
+  // top accent
+  gold();
+  fill(30, H - 34, 535, 2);
+
+  // header area
+  cream();
+  fill(30, H - 118, 535, 84);
+  goldStroke();
+  line(30, H - 118, 565, H - 118, 0.6);
+  reset();
+
+  // ═══════════════════ LOGO ═══════════════════
+  const logoTileX = M + 2;
+  const logoTileY = H - 108;
+  const logoTileW = 78;
+  const logoTileH = 70;
+
+  white();
+  fill(logoTileX, logoTileY, logoTileW, logoTileH);
+  goldStroke();
+  rect(logoTileX, logoTileY, logoTileW, logoTileH, 0.45);
+
+if (logoData) {
+  ops.push(`q 62 0 0 62 ${logoTileX + 8} ${logoTileY + 8} cm /Logo Do Q`);
+} else {
+  darkGold();
+  txt('K', logoTileX + 28, logoTileY + 24, 32, true);
+}
+
+  // brand text
+  const brandX = logoTileX + logoTileW + 12;
+  darkGold();
+  txt(businessName, brandX, H - 60, 17, true);
+  gray();
+  txt('💎 Simple Luxury — Crafted for You', brandX, H - 76, 8, false);
+
+  // invoice title
+  darkGold();
+  txtRight('INVOICE', R - 4, H - 58, 22, true);
+  gray();
+  txtRight('Premium Order Receipt', R - 4, H - 75, 8, false);
+  dark();
+
+  y = H - 142;
+
+  goldStroke();
+  line(M, y, R, y, 0.45);
+  reset();
+  y -= 18;
+
+  // meta
+  darkGold(); txt('Invoice No', M, y, 8, true); dark();
+  txt(order.order_id || '-', M + 56, y, 9, true);
+  darkGold(); txt('Date', R - 128, y, 8, true); dark();
+  txt(invoiceDate, R - 92, y, 9);
+  y -= 15;
+
+  darkGold(); txt('Payment', M, y, 8, true);
+  if (paymentStatus === 'PAID') green(); else amber();
+  txt(paymentStatus, M + 54, y, 9, true);
+  dark();
+  darkGold(); txt('Method', R - 128, y, 8, true); dark();
+  txt(paymentMethod, R - 92, y, 9);
+  y -= 14;
+
+  if (order.payment_id) {
+    gray(); txt(`Payment ID: ${order.payment_id}`, M, y, 7); dark();
+    y -= 12;
+  }
+
+  y -= 2;
+  goldStroke();
+  line(M, y, R, y, 0.45);
+  reset();
+  y -= 22;
+
+  // address cards
+  const addrGap = 18;
+  const colW = (R - M - addrGap) / 2;
+  const cardH = 92;
+
+  warm(); fill(M, y - cardH, colW, cardH);
+  gold(); fill(M, y - 3, colW, 3);
+  goldStroke(); rect(M, y - cardH, colW, cardH, 0.35);
+
+  darkGold(); txt('BILLED TO', M + 12, y - 16, 7.5, true); dark();
+  txt(customerName, M + 12, y - 34, 10.5, true);
+  gray(); txt(customerPhone, M + 12, y - 48, 8); dark();
+
+  const billLines = wrapText(
+    [order.shipping_address, order.shipping_city, order.shipping_state, order.shipping_pincode]
+      .filter(Boolean).join(', '), 33
+  );
+  let billY = y - 62;
+  for (const l of billLines.slice(0, 3)) {
+    gray(); txt(l, M + 12, billY, 7.2); dark();
+    billY -= 10;
+  }
+
+  const sx = M + colW + addrGap;
+  warm(); fill(sx, y - cardH, colW, cardH);
+  gold(); fill(sx, y - 3, colW, 3);
+  goldStroke(); rect(sx, y - cardH, colW, cardH, 0.35);
+
+  darkGold(); txt('SHIPPED TO', sx + 12, y - 16, 7.5, true); dark();
+  txt(shipName, sx + 12, y - 34, 10.5, true);
+  gray(); txt(shipPhone, sx + 12, y - 48, 8); dark();
+
+  const shipLines = wrapText(
+    [order.shipping_address, order.shipping_city, order.shipping_state, order.shipping_pincode]
+      .filter(Boolean).join(', '), 33
+  );
+  let shipY = y - 62;
+  for (const l of shipLines.slice(0, 3)) {
+    gray(); txt(l, sx + 12, shipY, 7.2); dark();
+    shipY -= 10;
+  }
+
+  y -= cardH + 26;
+
+  // ORDER SUMMARY
+  darkGold(); txt('ORDER SUMMARY', M, y, 7.5, true); dark();
+  y -= 12;
+
+  // table header
+  gold();
+  fill(M, y - 18, R - M, 18);
+  white();
+  txt('#', M + 8, y - 13, 7, true);
+  txt('Description', M + 28, y - 13, 7, true);
+  txt('Qty', R - 145, y - 13, 7, true);
+  txt('Price', R - 105, y - 13, 7, true);
+  txt('Amount', R - 55, y - 13, 7, true);
+  dark();
+  y -= 28;
+
+  let itemSubtotal = 0;
+
+  for (let i = 0; i < items.length && i < 12; i++) {
+    const item = items[i] || {};
+    const qty = Number(item.qty || item.quantity || 1);
+    const price = Number(item.price || 0);
+    const total = qty * price;
+    itemSubtotal += total;
+
+    const nameLines = wrapText(item.name || item.sku || 'Product', 34);
+    const rowH = Math.max(17, nameLines.length * 10 + 4);
+
+    if (i % 2 === 0) {
+      cream();
+      fill(M, y - rowH + 6, R - M, rowH);
+      dark();
+    }
+
+    txt(String(i + 1), M + 10, y, 8);
+    txt(nameLines[0], M + 28, y, 8.4);
+    txt(String(qty), R - 140, y, 8);
+    txt(`Rs.${price}`, R - 110, y, 8);
+    txtRight(`Rs.${total}`, R - 5, y, 8.4, true);
+
+    for (let j = 1; j < nameLines.length; j++) {
+      y -= 10;
+      gray(); txt(nameLines[j], M + 28, y, 7); dark();
+    }
+
+    y -= 17;
+  }
+
+  goldStroke();
+  line(M, y + 5, R, y + 5, 0.55);
+  reset();
+
+  // ═══════════════════ TOTALS + PAID ═══════════════════
+  // Anchor totals — never float higher than y=310 from bottom
+  y -= 20;
+  if (y > 310) y = 310;
+
+  const subtotal = Number(order.subtotal || itemSubtotal || 0);
+  const discount = Number(order.discount || 0);
+  const shipping = Number(order.shipping_cost || 0);
+  const grandTotal = Number(order.total || (subtotal - discount + shipping) || 0);
+
+  const totalsW = 228;
+  const totalsX = R - totalsW;
+
+  // Calculate box height
+  let rowsH = 14; // subtotal
+  if (discount > 0) rowsH += 14;
+  if (order.discount_code) rowsH += 10;
+  rowsH += 14; // shipping
+
+  const boxPadTop = 14;
+  const barGap = 10;
+  const barH = 30;
+  const boxPadBot = 10;
+  const boxH = boxPadTop + rowsH + barGap + barH + boxPadBot;
+  const boxTop = y;
+  const boxBot = boxTop - boxH;
+
+  cream();
+  fill(totalsX, boxBot, totalsW, boxH);
+  goldStroke();
+  rect(totalsX, boxBot, totalsW, boxH, 0.35);
+
+  let ty = boxTop - boxPadTop;
+
+  gray(); txt('Subtotal', totalsX + 14, ty, 9); dark();
+  txtRight(`Rs.${subtotal.toFixed(0)}`, totalsX + totalsW - 14, ty, 9, true);
+  ty -= 14;
+
+  if (discount > 0) {
+    gray(); txt('Discount', totalsX + 14, ty, 9); green();
+    txtRight(`-Rs.${discount.toFixed(0)}`, totalsX + totalsW - 14, ty, 9, true);
+    dark(); ty -= 14;
+  }
+  if (order.discount_code) {
+    gray(); txt(`Code: ${order.discount_code}`, totalsX + 14, ty, 7);
+    ty -= 10;
+  }
+
+  gray(); txt('Shipping', totalsX + 14, ty, 9); dark();
+  txtRight(shipping > 0 ? `Rs.${shipping.toFixed(0)}` : 'FREE', totalsX + totalsW - 14, ty, 9, true);
+  ty -= (14 + barGap);
+
+  // TOTAL bar
+  const totalBarY = ty - 15;
+  gold();
+  fill(totalsX + 8, totalBarY, totalsW - 16, barH);
+  white();
+  txt('TOTAL', totalsX + 16, totalBarY + 10, 13, true);
+  txtRight(`Rs.${grandTotal.toFixed(0)}`, totalsX + totalsW - 16, totalBarY + 10, 13, true);
+  dark();
+
+  // PAID badge — same vertical line as TOTAL bar
+  if ((order.payment_status || '').toLowerCase() === 'paid') {
+    gold(); fill(M, totalBarY, 86, barH);
+    white(); txt('PAID', M + 16, totalBarY + 10, 13, true);
+    dark();
+    txt('Thank you for your payment.', M + 100, totalBarY + 10, 9);
+  }
+
+  y = boxBot - 20;
+
+  // TERMS
+  goldStroke();
+  line(M, y, R, y, 0.28);
+  reset();
+  y -= 13;
+
+  darkGold(); txt('TERMS & CONDITIONS', M, y, 6.8, true); dark();
+  y -= 11;
+
+  const terms = [
+    '7-day easy return policy on eligible orders.',
+    'Items must be unused, unworn and in original packaging.',
+    'Rs.60 reverse shipping may be deducted from refund.',
+    'Full policy: www.kaapav.com/return-policy'
+  ];
+
+  for (const t of terms) {
+    gold(); txt('-', M + 2, y, 7, true);
+    gray(); txt(t, M + 12, y, 6.7);
+    dark();
+    y -= 10;
+  }
+
+  y -= 8;
+
+  // contact
+  goldStroke();
+  line(M, y, R, y, 0.28);
+  reset();
+  y -= 14;
+
+  darkGold(); txt('VISIT', M, y, 7, true); dark();
+  txt('www.kaapav.com', M + 34, y, 7.3);
+  darkGold(); txt('SALES & SUPPORT', M + 178, y, 7, true); dark();
+  txt(supportLine, M + 286, y, 7.0);
+  y -= 14;
+  darkGold(); txt('EMAIL', M, y, 7, true); dark();
+  txt(emailLine, M + 34, y, 7.2);
+
+  // footer
+  gold();
+  fill(30, 28, 535, 34);
+  ops.push('0.60 0.45 0.12 rg');
+  fill(30, 60, 535, 2);
+  white();
+  txt('Thank you for shopping with KAAPAV!', W / 2 - 118, 44, 9.5, true);
+  txt('💎 Simple Luxury — Crafted for You   |  Visit:www.kaapav.com', W / 2 - 122, 32, 6.7);
+
+  // ═══════════════════ BUILD PDF ═══════════════════
+  const stream = ops.join('\n');
+  const objs = [];
+
+  objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>');
+
+  let logoObjNum = null;
+  if (logoData) {
+    logoObjNum = objs.length + 1;
+    if (logoData.type === 'jpeg') {
+      objs.push(
+        `<< /Type /XObject /Subtype /Image /Width ${logoData.width} /Height ${logoData.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter [/ASCIIHexDecode /DCTDecode] /Length ${logoData.hex.length} >>\nstream\n${logoData.hex}\nendstream`
+      );
+    } else {
+      objs.push(
+        `<< /Type /XObject /Subtype /Image /Width ${logoData.width} /Height ${logoData.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /ASCIIHexDecode /Length ${logoData.hex.length} >>\nstream\n${logoData.hex}\nendstream`
+      );
+    }
+  }
+
+  const contentObjNum = objs.length + 1;
+  objs.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+
+  const pageObjNum = objs.length + 1;
+  const pagesObjNum = objs.length + 2;
+
+  let resources = '<< /Font << /F1 1 0 R /F2 2 0 R >>';
+  if (logoObjNum) resources += ` /XObject << /Logo ${logoObjNum} 0 R >>`;
+  resources += ' >>';
+
+  objs.push(`<< /Type /Page /Parent ${pagesObjNum} 0 R /MediaBox [0 0 ${W} ${H}] /Contents ${contentObjNum} 0 R /Resources ${resources} >>`);
+  objs.push(`<< /Type /Pages /Kids [${pageObjNum} 0 R] /Count 1 >>`);
+
+  const catalogObjNum = objs.length + 1;
+  objs.push(`<< /Type /Catalog /Pages ${pagesObjNum} 0 R >>`);
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [];
+  for (let i = 0; i < objs.length; i++) {
+    offsets.push(pdf.length);
+    pdf += `${i + 1} 0 obj\n${objs[i]}\nendobj\n`;
+  }
+
+  const xrefPos = pdf.length;
+  pdf += `xref\n0 ${objs.length + 1}\n`;
+  pdf += `0000000000 65535 f \n`;
+  for (const off of offsets) {
+    pdf += `${String(off).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objs.length + 1} /Root ${catalogObjNum} 0 R >>\n`;
+  pdf += `startxref\n${xrefPos}\n%%EOF`;
+
+  return new TextEncoder().encode(pdf);
+}
+
+// ═══════════════════ SEND INVOICE (SINGLE FUNCTION) ═══════════════════
+
+async function generateAndSendInvoice(env, orderId) {
+  try {
+    const order = await env.DB.prepare(
+      `SELECT * FROM orders WHERE order_id = ?`
+    ).bind(orderId).first();
+
+    if (!order) {
+      console.error('generateAndSendInvoice: order not found', orderId);
+      return false;
+    }
+
+    const alreadySent = await env.KV.get(`invoice_sent:${orderId}`);
+    if (alreadySent) return true;
+
+    let items = [];
+    try { items = JSON.parse(order.items || '[]'); } catch { items = []; }
+
+    const { results: sr } = await env.DB.prepare(
+      `SELECT key, value FROM settings`
+    ).all();
+    const settings = {};
+    (sr || []).forEach(r => { settings[r.key] = r.value; });
+
+    // ═══════════════════ FETCH LOGO ═══════════════════
+    let logoData = null;
+    // Use setting > env var > hardcoded default
+    const logoUrl = settings.invoice_logo_url || env.INVOICE_LOGO_URL || DEFAULT_LOGO_URL;
+
+    try {
+      console.log('Fetching invoice logo from:', logoUrl);
+      const logoRes = await fetch(logoUrl);
+      if (logoRes.ok) {
+        const logoBytes = new Uint8Array(await logoRes.arrayBuffer());
+        console.log('Logo fetched OK, size:', logoBytes.length, 'bytes, header:', 
+          logoBytes[0].toString(16), logoBytes[1].toString(16), logoBytes[2].toString(16));
+
+        // JPEG
+        if (logoBytes[0] === 0xFF && logoBytes[1] === 0xD8 && logoBytes[2] === 0xFF) {
+	// REPLACE WITH (fallback dims if parser fails):
+        const dims = getJpegDimensions(logoBytes) || { width: 150, height: 150 };
+        const hex = Array.from(logoBytes).map(b => b.toString(16).padStart(2, '0')).join('') + '>';
+        logoData = { hex, width: dims.width, height: dims.height, type: 'jpeg' };
+        console.log('JPEG logo ready:', dims.width, 'x', dims.height);
+        }
+        // PNG
+        else if (logoBytes[0] === 0x89 && logoBytes[1] === 0x50 && logoBytes[2] === 0x4E && logoBytes[3] === 0x47) {
+          console.log('PNG logo detected, decoding to RGB...');
+          const decoded = await decodePngToRGB(logoBytes);
+          if (decoded) {
+            const ds = downsampleRGB(decoded.rgb, decoded.width, decoded.height, 150);
+            const hex = Array.from(ds.rgb).map(b => b.toString(16).padStart(2, '0')).join('') + '>';
+            logoData = { hex, width: ds.width, height: ds.height, type: 'raw' };
+            console.log('PNG logo ready:', ds.width, 'x', ds.height);
+          } else {
+            console.error('PNG decode failed');
+          }
+        } else {
+          console.error('Unknown image format, bytes:', logoBytes[0], logoBytes[1], logoBytes[2], logoBytes[3]);
+        }
+      } else {
+        console.error('Logo fetch HTTP error:', logoRes.status, logoRes.statusText);
+      }
+    } catch (e) {
+      console.error('Invoice logo fetch error:', e.message || e);
+    }
+
+    console.log('Logo data ready:', logoData ? `${logoData.type} ${logoData.width}x${logoData.height}` : 'NONE (fallback K)');
+
+    // Generate PDF
+    const pdfBytes = generateInvoicePDF(order, items, settings, logoData);
+
+    // Upload to R2
+    const fileName = `invoices/Invoice_${orderId}_${Date.now()}.pdf`;
+    await env.MEDIA.put(fileName, pdfBytes, {
+      httpMetadata: { contentType: 'application/pdf' },
+    });
+
+    const pdfUrl = `https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/${fileName}`;
+
+    // Send via WhatsApp
+    const name = order.customer_name || 'Customer';
+    const waResult = await sendWhatsAppDocument(
+      env,
+      order.phone,
+      pdfUrl,
+      `KAAPAV_Invoice_${orderId}.pdf`,
+      `📄 *Your KAAPAV Invoice*\n\n` +
+      `Hi ${name.split(' ')[0]}! Here's your invoice.\n\n` +
+      `Order: *${orderId}*\n` +
+      `Amount: Rs.${order.total || 0}\n` +
+      `Status: ${(order.payment_status || 'pending').toUpperCase()}\n\n` +
+      `💎 KAAPAV Fashion Jewellery\n` +
+      `www.kaapav.com`
+    );
+
+    if (waResult?.error) {
+      console.error('Invoice WA send error:', waResult.error);
+      return false;
+    }
+
+    await env.KV.put(`invoice_sent:${orderId}`, '1', { expirationTtl: 86400 * 90 });
+
+    await logOrderEvent(
+      env, orderId, 'invoice_sent',
+      `Invoice sent to customer via WhatsApp`,
+      { pdfUrl }, 'system'
+    );
+
+    return true;
+  } catch (e) {
+    console.error('generateAndSendInvoice error:', e);
+    return false;
+  }
+}
+
+// ═══════════════════ SOURCE CHECK ═══════════════════
+function isWhatsAppOrder(source) {
+  const s = (source || '').toLowerCase();
+  return s === 'whatsapp' || s === 'catalogue' || s === 'manual';
+}
+
+// ═══════════════════ STOCK DEDUCTION ═══════════════════
+async function deductStockForOrder(env, orderId) {
+  try {
+    const order = await env.DB.prepare(`SELECT * FROM orders WHERE order_id = ?`).bind(orderId).first();
+    if (!order) return;
+    const items = JSON.parse(order.items || '[]');
+    for (const item of items) {
+      if (!item.sku) continue;
+      await env.DB.prepare(`
+        UPDATE products SET stock = MAX(0, stock - ?), order_count = order_count + ?, updated_at = datetime('now') WHERE sku = ?
+      `).bind(item.qty || 1, item.qty || 1, item.sku).run();
+
+      const product = await env.DB.prepare(`SELECT name, stock FROM products WHERE sku = ?`).bind(item.sku).first();
+      if (product && product.stock <= 5) {
+        await sendWhatsAppText(env, env.OWNER_PHONE,
+          `⚠️ *Low Stock Alert!*\n\nProduct: *${product.name}*\nSKU: ${item.sku}\nRemaining: *${product.stock}*\n\n${product.stock === 0 ? '❌ OUT OF STOCK!' : '⚠️ Restock soon.'}`
+        );
+      }
+      try { await syncProductToGoogleSheetsSafe(env, item.sku); } catch (e) { console.error('Stock sync error:', e); }
+    }
+    console.log(`Stock deducted for order ${orderId}`);
+  } catch (e) { console.error('Stock deduction error:', e); }
+}
+
+// ═══════════════════ DUPLICATE ORDER CHECK ═══════════════════
+async function checkDuplicateOrder(env, phone, items) {
+  try {
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { results } = await env.DB.prepare(`
+      SELECT order_id, items FROM orders
+      WHERE phone = ? AND created_at > ? AND status IN ('pending', 'confirmed')
+      ORDER BY created_at DESC LIMIT 5
+    `).bind(phone, fiveMinAgo).all();
+
+    if (!results || results.length === 0) return null;
+
+    const newSkus = (items || []).map(i => i.sku).sort().join(',');
+    for (const existing of results) {
+      try {
+        const existingItems = JSON.parse(existing.items || '[]');
+        const existingSkus = existingItems.map(i => i.sku).sort().join(',');
+        if (newSkus === existingSkus) return existing.order_id;
+      } catch {}
+    }
+    return null;
+  } catch { return null; }
+}
+
+// ═══════════════════ RAZORPAY REFUND ═══════════════════
+async function processRazorpayRefund(env, paymentId, amount, orderId) {
+  const auth = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`);
+  const res = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}/refund`, {
+    method: 'POST',
+    headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      amount: Math.round(amount * 100),
+      notes: { order_id: orderId, reason: 'Customer return/refund' },
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.description || 'Razorpay refund failed');
+  return data;
+}
+
 // ═══════════════════ WEBHOOK HANDLERS ═══════════════════
 async function handleWebhookVerify(request, env) {
   const url = new URL(request.url);
@@ -3664,6 +4461,17 @@ class AutoResponder {
     if (already) return;
     await this.env.KV.put(dedupeKey, '1', { expirationTtl: 86400 });
 
+    // Check if bot is disabled for this chat (admin manually chatting)
+    try {
+      const chat = await this.env.DB.prepare(
+        `SELECT is_bot_enabled FROM chats WHERE phone = ?`
+      ).bind(phone).first();
+      if (chat && chat.is_bot_enabled === 0) {
+        console.log(`Bot disabled for ${phone}, skipping autoresponder`);
+        return;
+      }
+    } catch {}
+
     // ── 0. Order state machine — check first ─────────────────────
     const convState = await getConvState(phone, this.env);
     if (convState && convState.state.startsWith('order_')) {
@@ -4393,10 +5201,21 @@ Confirm order? 👇`,
       );
       break;
 
-   case 'order_confirm':
-  if (input === 'order_yes' || /yes|confirm|haan|ha/.test(lower)) {
-    const cart = data.cart || [];
-    const total = cart.reduce((s, i) => s + (i.price * (i.qty || 1)), 0);
+      case 'order_confirm':
+        if (input === 'order_yes' || /yes|confirm|haan|ha/.test(lower)) {
+          const cart = data.cart || [];
+
+          // Duplicate order check
+          const dupeOrderId = await checkDuplicateOrder(env, phone, cart);
+          if (dupeOrderId) {
+            await clearConvState(phone, env);
+            await sendWhatsAppText(env, phone,
+              `⚠️ *Duplicate Order Detected*\n\nYou already have a recent order *${dupeOrderId}* with the same items.\n\nPlease complete payment for that order first, or wait 5 minutes to place a new one.\n\n💎 KAAPAV Fashion Jewellery`
+            );
+            return;
+          }
+
+          const total = cart.reduce((s, i) => s + (i.price * (i.qty || 1)), 0);
     const shipping = total >= 498 ? 0 : 60;
     const grand = total + shipping;
     const orderId = await generateOrderId(env);
@@ -4695,34 +5514,18 @@ export default {
     const method = request.method;
 
     if (path === '/health') return new Response('OK', { status: 200 });
-    
-    if (path === '/api/debug/supabase-check' && method === 'GET') {
-  const url = env.SUPABASE_URL || '';
-  const key = env.SUPABASE_SERVICE_KEY || '';
 
-  let testResult = 'not tested';
+if (path === '/api/debug/run-supabase-sync' && method === 'GET') {
+  const key = url.searchParams.get('key');
+  if (!key || key !== env.SYNC_API_KEY) return errorResponse('Unauthorized', 401);
   try {
-    const res = await fetch(`${url}/rest/v1/orders?limit=1`, {
-      headers: {
-        'Authorization': `Bearer ${key}`,
-        'apikey': key,
-      },
-    });
-    testResult = `status: ${res.status}`;
+    const summary = await backfillAllSupabase(env);
+    return jsonResponse({ success: true, summary });
   } catch (e) {
-    testResult = `error: ${e.message}`;
+    console.error('Supabase debug sync error:', e);
+    return errorResponse('Supabase sync failed: ' + e.message, 500);
   }
-
-  return jsonResponse({
-    urlExists: !!url,
-    urlLength: url.length,
-    keyExists: !!key,
-    keyLength: key.length,
-    connectionTest: testResult,
-  });
 }
-
-
     if (path === '/api/debug/google-auth' && method === 'GET') {
   const email = env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
   const key = env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
@@ -4733,6 +5536,81 @@ export default {
     keyExists: !!key,
     keyLength: key.length,
     keyFirst30: key.substring(0, 30),
+  });
+}
+
+if (path === '/api/debug/supabase-check' && method === 'GET') {
+  const url = env.SUPABASE_URL || '';
+  const key = env.SUPABASE_SERVICE_KEY || '';
+  let testResult = 'not tested';
+  let ordersCount = null;
+  let customersCount = null;
+  let productsCount = null;
+
+  try {
+    const res = await fetch(`${url}/rest/v1/orders?select=order_id`, {
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'apikey': key,
+      },
+    });
+    testResult = `status: ${res.status}`;
+
+    const ordersRes = await fetch(`${url}/rest/v1/orders?select=count`, {
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'apikey': key,
+        'Prefer': 'count=exact',
+      },
+    });
+    ordersCount = ordersRes.headers.get('content-range');
+
+    const customersRes = await fetch(`${url}/rest/v1/customers?select=count`, {
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'apikey': key,
+        'Prefer': 'count=exact',
+      },
+    });
+    customersCount = customersRes.headers.get('content-range');
+
+    const productsRes = await fetch(`${url}/rest/v1/products?select=count`, {
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'apikey': key,
+        'Prefer': 'count=exact',
+      },
+    });
+    productsCount = productsRes.headers.get('content-range');
+
+  } catch (e) {
+    testResult = `error: ${e.message}`;
+  }
+
+  return jsonResponse({
+    urlExists: !!url,
+    urlLength: url.length,
+    urlValue: url,
+    keyExists: !!key,
+    keyLength: key.length,
+    connectionTest: testResult,
+    ordersCount,
+    customersCount,
+    productsCount,
+  });
+}
+
+if (path === '/api/debug/supabase-env' && method === 'GET') {
+  return jsonResponse({
+    envSeenByWorker: {
+      SUPABASE_URL: !!env.SUPABASE_URL,
+      SUPABASE_URL_LENGTH: (env.SUPABASE_URL || '').length,
+      SUPABASE_SERVICE_KEY: !!env.SUPABASE_SERVICE_KEY,
+      SUPABASE_SERVICE_KEY_LENGTH: (env.SUPABASE_SERVICE_KEY || '').length,
+      SYNC_API_KEY: !!env.SYNC_API_KEY,
+      SYNC_API_KEY_LENGTH: (env.SYNC_API_KEY || '').length,
+    },
+    isSupabaseReady: !!(env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY),
   });
 }
 
@@ -4757,6 +5635,409 @@ export default {
   });
 }
 
+// ═══ DEBUG: Supabase write test ═══
+if (path === '/api/debug/supabase-write-test' && method === 'GET') {
+  if (!isSupabaseReady(env)) {
+    return jsonResponse({ error: 'Supabase not configured' });
+  }
+
+  const action = url.searchParams.get('action') || 'test';
+
+  // ═══ ACTION: diagnose — find exactly what's failing ═══
+  if (action === 'diagnose') {
+    const results = { steps: [] };
+
+    // Step 1: Read one real order from D1
+    const order = await env.DB.prepare('SELECT * FROM orders LIMIT 1').first();
+    if (!order) return jsonResponse({ error: 'No orders in D1' });
+    results.steps.push({
+      step: '1_d1_read',
+      ok: true,
+      order_id: order.order_id,
+      phone: order.phone,
+    });
+
+    // Step 2: Map it using the same mapper as backfill
+    const categoryMap = await getAllProductCategories(env);
+    const category = getCategoryFromItems(order.items, categoryMap);
+    const mapped = mapOrderToSupabase(order, category);
+    results.steps.push({
+      step: '2_mapped',
+      ok: true,
+      field_count: Object.keys(mapped).length,
+      order_id: mapped.order_id,
+      phone: mapped.phone,
+      status: mapped.status,
+    });
+
+    // Step 3: Upsert using EXACT same method as backfill
+    try {
+      const upsertRes = await fetch(
+        `${env.SUPABASE_URL}/rest/v1/orders?on_conflict=order_id`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+            'apikey': env.SUPABASE_SERVICE_KEY,
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=merge-duplicates,return=representation',
+          },
+          body: JSON.stringify([mapped]),
+        }
+      );
+      const upsertBody = await upsertRes.text();
+      results.steps.push({
+        step: '3_upsert',
+        ok: upsertRes.ok,
+        status: upsertRes.status,
+        body_length: upsertBody.length,
+        body_preview: upsertBody.substring(0, 500),
+        is_empty_array: upsertBody === '[]',
+      });
+    } catch (e) {
+      results.steps.push({
+        step: '3_upsert',
+        ok: false,
+        error: e.message,
+      });
+    }
+
+    // Step 4: Read it back from Supabase
+    try {
+      const readRes = await fetch(
+        `${env.SUPABASE_URL}/rest/v1/orders?order_id=eq.${encodeURIComponent(order.order_id)}&select=order_id,phone,status,total`,
+        {
+          headers: {
+            'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+            'apikey': env.SUPABASE_SERVICE_KEY,
+          },
+        }
+      );
+      const readBody = await readRes.text();
+      results.steps.push({
+        step: '4_readback',
+        ok: readRes.ok,
+        status: readRes.status,
+        body: readBody,
+        found: readBody !== '[]',
+      });
+    } catch (e) {
+      results.steps.push({
+        step: '4_readback',
+        ok: false,
+        error: e.message,
+      });
+    }
+
+    // Step 5: Count total rows in Supabase orders table
+    try {
+      const countRes = await fetch(
+        `${env.SUPABASE_URL}/rest/v1/orders?select=order_id`,
+        {
+          headers: {
+            'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+            'apikey': env.SUPABASE_SERVICE_KEY,
+            'Range': '0-0',
+            'Prefer': 'count=exact',
+          },
+        }
+      );
+      const range = countRes.headers.get('content-range');
+      results.steps.push({
+        step: '5_count',
+        content_range: range,
+        status: countRes.status,
+      });
+    } catch (e) {
+      results.steps.push({
+        step: '5_count',
+        error: e.message,
+      });
+    }
+
+    // Step 6: Show Supabase URL (first 35 chars) for verification
+    results.supabase_url_preview = (env.SUPABASE_URL || '').substring(0, 35) + '...';
+
+    return jsonResponse(results);
+  }
+
+  // ═══ ACTION: backfill — with FULL error reporting ═══
+  if (action === 'backfill') {
+    const errors = [];
+    const counts = { d1: {}, supabase: {} };
+
+    try {
+      const categoryMap = await getAllProductCategories(env);
+
+      // ── ORDERS ──
+      const { results: d1Orders } = await env.DB.prepare(
+        'SELECT * FROM orders ORDER BY created_at DESC'
+      ).all();
+      counts.d1.orders = (d1Orders || []).length;
+
+      if (d1Orders && d1Orders.length > 0) {
+        const orderRows = d1Orders.map(o => mapOrderToSupabase(o, getCategoryFromItems(o.items, categoryMap)));
+        try {
+          const res = await fetch(
+            `${env.SUPABASE_URL}/rest/v1/orders?on_conflict=order_id`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+                'apikey': env.SUPABASE_SERVICE_KEY,
+                'Content-Type': 'application/json',
+                'Prefer': 'resolution=merge-duplicates,return=representation',
+              },
+              body: JSON.stringify(orderRows),
+            }
+          );
+          const body = await res.text();
+          let parsed = [];
+          try { parsed = JSON.parse(body); } catch {}
+          counts.supabase.orders = Array.isArray(parsed) ? parsed.length : 0;
+          if (!res.ok) errors.push({ table: 'orders', status: res.status, body: body.substring(0, 300) });
+          if (res.ok && counts.supabase.orders === 0) errors.push({ table: 'orders', issue: 'GOT 201 BUT 0 ROWS RETURNED', body: body.substring(0, 300) });
+        } catch (e) {
+          errors.push({ table: 'orders', error: e.message });
+        }
+      }
+
+      // ── CUSTOMERS ──
+      const { results: d1Customers } = await env.DB.prepare(
+        'SELECT * FROM customers ORDER BY last_seen DESC'
+      ).all();
+      counts.d1.customers = (d1Customers || []).length;
+
+      if (d1Customers && d1Customers.length > 0) {
+        const customerRows = [];
+        for (const c of d1Customers) {
+          const phone = c.phone;
+          const orderStats = await env.DB.prepare(`
+            SELECT COUNT(*) as order_count,
+            COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_spent
+            FROM orders WHERE phone = ? OR phone = ?
+          `).bind(phone, phone.replace(/^91/, '')).first();
+          const unpaid = await env.DB.prepare(`
+            SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
+            FROM orders WHERE (phone = ? OR phone = ?) AND payment_status = 'unpaid' AND status != 'cancelled'
+          `).bind(phone, phone.replace(/^91/, '')).first();
+          const firstOrder = await env.DB.prepare(`
+            SELECT source, shipping_city, shipping_state, shipping_pincode
+            FROM orders WHERE phone = ? OR phone = ?
+            ORDER BY datetime(created_at) ASC LIMIT 1
+          `).bind(phone, phone.replace(/^91/, '')).first();
+          customerRows.push(mapCustomerToSupabase(c, orderStats, unpaid, firstOrder));
+        }
+        try {
+          const res = await fetch(
+            `${env.SUPABASE_URL}/rest/v1/customers?on_conflict=phone`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+                'apikey': env.SUPABASE_SERVICE_KEY,
+                'Content-Type': 'application/json',
+                'Prefer': 'resolution=merge-duplicates,return=representation',
+              },
+              body: JSON.stringify(customerRows),
+            }
+          );
+          const body = await res.text();
+          let parsed = [];
+          try { parsed = JSON.parse(body); } catch {}
+          counts.supabase.customers = Array.isArray(parsed) ? parsed.length : 0;
+          if (!res.ok) errors.push({ table: 'customers', status: res.status, body: body.substring(0, 300) });
+        } catch (e) {
+          errors.push({ table: 'customers', error: e.message });
+        }
+      }
+
+      // ── PRODUCTS (batch by 50) ──
+      const { results: d1Products } = await env.DB.prepare(
+        'SELECT * FROM products ORDER BY name ASC'
+      ).all();
+      counts.d1.products = (d1Products || []).length;
+      counts.supabase.products = 0;
+
+      if (d1Products && d1Products.length > 0) {
+        const productRows = d1Products.map(p => mapProductToSupabase(p));
+        // Batch in groups of 50
+        for (let i = 0; i < productRows.length; i += 50) {
+          const batch = productRows.slice(i, i + 50);
+          try {
+            const res = await fetch(
+              `${env.SUPABASE_URL}/rest/v1/products?on_conflict=sku`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+                  'apikey': env.SUPABASE_SERVICE_KEY,
+                  'Content-Type': 'application/json',
+                  'Prefer': 'resolution=merge-duplicates,return=representation',
+                },
+                body: JSON.stringify(batch),
+              }
+            );
+            const body = await res.text();
+            let parsed = [];
+            try { parsed = JSON.parse(body); } catch {}
+            counts.supabase.products += Array.isArray(parsed) ? parsed.length : 0;
+            if (!res.ok) errors.push({ table: 'products', batch: `${i}-${i + batch.length}`, status: res.status, body: body.substring(0, 300) });
+          } catch (e) {
+            errors.push({ table: 'products', batch: `${i}-${i + 50}`, error: e.message });
+          }
+        }
+      }
+
+      // ── INVENTORY ──
+      counts.supabase.inventory = 0;
+      if (d1Products && d1Products.length > 0) {
+        const invRows = d1Products.map(p => mapInventoryToSupabase(p));
+        for (let i = 0; i < invRows.length; i += 50) {
+          const batch = invRows.slice(i, i + 50);
+          try {
+            const res = await fetch(
+              `${env.SUPABASE_URL}/rest/v1/inventory?on_conflict=sku`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+                  'apikey': env.SUPABASE_SERVICE_KEY,
+                  'Content-Type': 'application/json',
+                  'Prefer': 'resolution=merge-duplicates,return=representation',
+                },
+                body: JSON.stringify(batch),
+              }
+            );
+            const body = await res.text();
+            let parsed = [];
+            try { parsed = JSON.parse(body); } catch {}
+            counts.supabase.inventory += Array.isArray(parsed) ? parsed.length : 0;
+            if (!res.ok) errors.push({ table: 'inventory', status: res.status, body: body.substring(0, 300) });
+          } catch (e) {
+            errors.push({ table: 'inventory', error: e.message });
+          }
+        }
+      }
+
+      // ── LEADS ──
+      if (d1Customers && d1Customers.length > 0) {
+        const leadRows = [];
+        for (const c of d1Customers) {
+          const phone = c.phone;
+          const orderStats = await env.DB.prepare(`
+            SELECT COUNT(*) as order_count,
+            COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_spent
+            FROM orders WHERE phone = ? OR phone = ?
+          `).bind(phone, phone.replace(/^91/, '')).first();
+          const firstOrder = await env.DB.prepare(`
+            SELECT source, items, created_at FROM orders
+            WHERE phone = ? OR phone = ?
+            ORDER BY datetime(created_at) ASC LIMIT 1
+          `).bind(phone, phone.replace(/^91/, '')).first();
+          const cat = firstOrder ? getCategoryFromItems(firstOrder.items, categoryMap) : '';
+          leadRows.push(mapLeadToSupabase(c, firstOrder, cat, orderStats));
+        }
+        try {
+          const res = await fetch(
+            `${env.SUPABASE_URL}/rest/v1/leads?on_conflict=phone`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+                'apikey': env.SUPABASE_SERVICE_KEY,
+                'Content-Type': 'application/json',
+                'Prefer': 'resolution=merge-duplicates,return=representation',
+              },
+              body: JSON.stringify(leadRows),
+            }
+          );
+          const body = await res.text();
+          let parsed = [];
+          try { parsed = JSON.parse(body); } catch {}
+          counts.supabase.leads = Array.isArray(parsed) ? parsed.length : 0;
+          if (!res.ok) errors.push({ table: 'leads', status: res.status, body: body.substring(0, 300) });
+        } catch (e) {
+          errors.push({ table: 'leads', error: e.message });
+        }
+      }
+
+      // ── SALES ──
+      if (d1Orders && d1Orders.length > 0) {
+        const salesRows = d1Orders.map(o => mapSalesToSupabase(o, getCategoryFromItems(o.items, categoryMap)));
+        try {
+          const res = await fetch(
+            `${env.SUPABASE_URL}/rest/v1/sales?on_conflict=order_id`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+                'apikey': env.SUPABASE_SERVICE_KEY,
+                'Content-Type': 'application/json',
+                'Prefer': 'resolution=merge-duplicates,return=representation',
+              },
+              body: JSON.stringify(salesRows),
+            }
+          );
+          const body = await res.text();
+          let parsed = [];
+          try { parsed = JSON.parse(body); } catch {}
+          counts.supabase.sales = Array.isArray(parsed) ? parsed.length : 0;
+          if (!res.ok) errors.push({ table: 'sales', status: res.status, body: body.substring(0, 300) });
+        } catch (e) {
+          errors.push({ table: 'sales', error: e.message });
+        }
+      }
+
+    } catch (e) {
+      errors.push({ global: true, error: e.message, stack: e.stack });
+    }
+
+    return jsonResponse({
+      success: errors.length === 0,
+      counts,
+      errors: errors.length > 0 ? errors : 'none',
+      syncedAt: new Date().toISOString(),
+    });
+  }
+
+  // ═══ DEFAULT: simple write test ═══
+  const results = {};
+  try {
+    const writeRes = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/orders?on_conflict=order_id`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+          'apikey': env.SUPABASE_SERVICE_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates,return=representation',
+        },
+        body: JSON.stringify([{
+          order_id: '__test__', phone: '0000000000', status: 'test',
+          total: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        }]),
+      }
+    );
+    results.write = { status: writeRes.status, body: await writeRes.text() };
+    const readRes = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/orders?order_id=eq.__test__&select=order_id,status`,
+      { headers: { 'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'apikey': env.SUPABASE_SERVICE_KEY } }
+    );
+    results.read = { status: readRes.status, body: await readRes.text() };
+    await fetch(
+      `${env.SUPABASE_URL}/rest/v1/orders?order_id=eq.__test__`,
+      { method: 'DELETE', headers: { 'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'apikey': env.SUPABASE_SERVICE_KEY } }
+    );
+    results.verdict = results.read.body.includes('__test__') ? 'WRITES WORKING' : 'WRITES BLOCKED';
+    results.hint = 'Use ?action=diagnose or ?action=backfill';
+  } catch (e) {
+    results.error = e.message;
+  }
+  return jsonResponse(results);
+}
+
     if (path === '/webhook' || path === '/api/webhook') {
       if (method === 'GET') return handleWebhookVerify(request, env);
       if (method === 'POST') return handleWebhookPost(request, env, ctx);
@@ -4778,8 +6059,84 @@ if (path === '/api/catalogue' && method === 'GET') {
   });
 }
  
+    // ═══ SHIPROCKET WEBHOOK ═══
+    if (path === '/api/shiprocket/webhook' && method === 'POST') {
+      try {
+        const body = await request.json();
+        const srOrderId = String(body.order_id || body.sr_order_id || '');
+        const status = (body.current_status || '').toLowerCase();
+        const awb = body.awb || body.awb_code || '';
+        const courier = body.courier_name || '';
+
+        if (!srOrderId) return jsonResponse({ status: 'ok' });
+
+        const order = await env.DB.prepare(
+          `SELECT * FROM orders WHERE shiprocket_order_id = ? OR order_id = ?`
+        ).bind(srOrderId, srOrderId).first();
+
+        if (!order) return jsonResponse({ status: 'ok' });
+
+        const statusMap = {
+          'delivered': 'delivered',
+          'shipped': 'shipped',
+          'in transit': 'shipped',
+          'out for delivery': 'shipped',
+          'picked up': 'shipped',
+          'rto initiated': 'cancelled',
+          'rto delivered': 'cancelled',
+          'cancelled': 'cancelled',
+        };
+
+        const newStatus = statusMap[status];
+        if (!newStatus) return jsonResponse({ status: 'ok' });
+
+        const updates = [`status = '${newStatus}'`, `updated_at = datetime('now')`];
+        if (awb) updates.push(`awb_number = '${awb}'`);
+        if (courier) updates.push(`courier = '${courier}'`);
+        if (newStatus === 'delivered') updates.push(`delivered_at = datetime('now')`);
+        if (newStatus === 'shipped' && !order.shipped_at) updates.push(`shipped_at = datetime('now')`);
+
+        await env.DB.prepare(
+          `UPDATE orders SET ${updates.join(', ')} WHERE order_id = ?`
+        ).bind(order.order_id).run();
+
+        await logOrderEvent(env, order.order_id, `shiprocket_${status.replace(/\s+/g, '_')}`, `Shiprocket status: ${status}`, { awb, courier, srOrderId }, 'shiprocket_webhook');
+
+        const name = order.customer_name || 'Customer';
+        const phone = order.phone;
+
+        if (newStatus === 'delivered' && isWhatsAppOrder(order.source)) {
+          await sendWhatsAppText(env, phone,
+            `🎉 *Order Delivered!*\n\nHi ${name.split(' ')[0]}!\n\nOrder ID: *${order.order_id}*\n\n📦 Your KAAPAV jewellery has been delivered!\n\n✨ We hope you love it!\n📸 Share your look on Instagram & tag @kaapavfashionjewellery\n\n💎 Thank you for choosing KAAPAV!`
+          );
+          await sendWhatsAppText(env, env.OWNER_PHONE,
+            `✅ *Order Delivered!*\n\nOrder: *${order.order_id}*\nCustomer: ${name} (${phone})\nAWB: ${awb || order.awb_number || '-'}\n\n📦 Delivered successfully.`
+          );
+        } else if (newStatus === 'shipped' && !order.shipped_at && isWhatsAppOrder(order.source)) {
+          const trackUrl = awb ? `https://www.shiprocket.in/shipment-tracking/?id=${awb}` : '';
+          await sendWhatsAppText(env, phone,
+            `🚚 *Your Order is Shipped!*\n\nHi ${name.split(' ')[0]}!\n\nOrder: *${order.order_id}*\n${awb ? `AWB: *${awb}*\n` : ''}${courier ? `Courier: ${courier}\n` : ''}\n${trackUrl ? `📍 Track: ${trackUrl}\n` : ''}\nDelivery in *2-4 working days*\n\n💎 KAAPAV Fashion Jewellery`
+          );
+        }
+
+        try {
+          await syncOrderToGoogleSheetsSafe(env, order.order_id);
+          await syncShipmentToGoogleSheetsSafe(env, order.order_id);
+          if (phone) {
+            await syncCustomerToGoogleSheetsSafe(env, phone);
+            await syncSalesToGoogleSheetsSafe(env, order.order_id);
+          }
+        } catch (e) { console.error('Shiprocket webhook sync error:', e); }
+
+        return jsonResponse({ status: 'ok' });
+      } catch (e) {
+        console.error('Shiprocket webhook error:', e);
+        return jsonResponse({ status: 'ok' });
+      }
+    }
+
     // ═══ RAZORPAY WEBHOOK ═══
-if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && method === 'POST') {
+    if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && method === 'POST') {
   const rawBody = await request.text();
   const sig = request.headers.get('x-razorpay-signature');
 
@@ -4832,6 +6189,9 @@ if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && met
   source: order.source || 'whatsapp',
 }, 'razorpay_webhook');
 
+        // Deduct stock
+        await deductStockForOrder(env, orderId);
+
     const phone = order.phone;
     try {
       await syncOrderToGoogleSheetsSafe(env, orderId);
@@ -4863,21 +6223,25 @@ if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && met
     } catch(e) { itemLines = '• (items not available)'; }
 
     // Customer WA — payment confirmed
-    await sendWhatsAppText(env, phone,
-      `✅ *Payment Confirmed!*\n\n` +
-      `Hi ${customerName.split(' ')[0]}! 🎉\n\n` +
-      `Order ID: *${orderId}*\n` +
-      `Amount Paid: \u20B9${amount}\n` +
-      `Payment ID: ${paymentId}\n\n` +
-      `📦 Your order is confirmed!\n` +
-      `We will pack & ship within *24 hours*.\n` +
-      `You will get your tracking details here on WhatsApp once shipped. 🚚\n\n` +
-      `Questions? Just message us here anytime 😊\n` +
-      `💎 KAAPAV Fashion Jewellery`
-    );
+        // Customer WA — only for WhatsApp/catalogue orders
+        if (isWhatsAppOrder(order.source)) {
+          await sendWhatsAppText(env, phone,
+            `✅ *Payment Confirmed!*\n\n` +
+            `Hi ${customerName.split(' ')[0]}! 🎉\n\n` +
+            `Order ID: *${orderId}*\n` +
+            `Amount Paid: \u20B9${amount}\n\n` +
+            `📦 Your order is confirmed!\n` +
+            `We will pack & ship within *24 hours*.\n` +
+            `You will get your tracking details here on WhatsApp once shipped. 🚚\n\n` +
+            `Questions? Just message us here anytime 😊\n` +
+            `💎 KAAPAV Fashion Jewellery`
+          );
 
-    // Owner WA — payment received alert
-    await sendWhatsAppText(env, env.OWNER_PHONE,
+          try { await generateAndSendInvoice(env, orderId); } catch (e) { console.error('Auto invoice error:', e); }
+        }
+
+        // Owner WA — ALWAYS
+        await sendWhatsAppText(env, env.OWNER_PHONE,
       `💰 *Payment Received!*\n\n` +
       `Order: *${orderId}*\n` +
       `Customer: ${customerName} (${phone})\n` +
@@ -4889,8 +6253,7 @@ if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && met
       `✅ Open app → Orders → Book Shiprocket.`
     );
 
-   
-    // FCM push to Flutter app
+       // FCM push to Flutter app
     ctx.waitUntil(sendFCMNotification(
       env, phone, customerName,
       `💰 Payment received! Order ${orderId} — \u20B9${amount}`,
@@ -4911,12 +6274,64 @@ if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && met
       `SELECT * FROM orders WHERE order_id = ?`
     ).bind(orderId).first();
 
-    if (!order) return jsonResponse({ status: 'ok' });
+      if (!order) {
+        // Order doesn't exist in D1 — likely from Odoo/website
+        // Create it from payment data
+        try {
+          const amount = payment.amount / 100;
+          const phone = payment.contact || payment.notes?.phone || '';
+          const email = payment.email || payment.notes?.email || '';
+          const name = payment.notes?.customer_name || payment.notes?.name || email || phone || 'Website Customer';
 
-    // Idempotent — skip if already paid
-    if (order.payment_status === 'paid') return jsonResponse({ status: 'ok' });
+          if (phone || email) {
+            const newOrderId = await generateOrderId(env);
+            await env.DB.prepare(`
+              INSERT INTO orders (
+                order_id, phone, customer_name, items, item_count,
+                subtotal, shipping_cost, total,
+                status, payment_status, payment_id, payment_method,
+                paid_at, source, created_at, updated_at
+              ) VALUES (?, ?, ?, '[]', 0, ?, 0, ?, 'confirmed', 'paid', ?, 'razorpay', datetime('now'), 'website', datetime('now'), datetime('now'))
+            `).bind(newOrderId, phone, name, amount, amount, payment.id).run();
 
-    const amount = payment.amount / 100;
+            if (phone) {
+              await env.DB.prepare(`
+                INSERT INTO customers (phone, name, email, first_seen, last_seen, updated_at)
+                VALUES (?, ?, ?, datetime('now'), datetime('now'), datetime('now'))
+                ON CONFLICT(phone) DO UPDATE SET name = excluded.name, last_seen = datetime('now'), updated_at = datetime('now')
+              `).bind(phone, name, email).run();
+            }
+
+            await logOrderEvent(env, newOrderId, 'order_created', 'Auto-created from Odoo/website payment.captured', { paymentId: payment.id, amount }, 'razorpay_webhook');
+
+            try {
+              await syncOrderToGoogleSheetsSafe(env, newOrderId);
+              if (phone) {
+                await syncCustomerToGoogleSheetsSafe(env, phone);
+                await syncLeadToGoogleSheetsSafe(env, phone);
+              }
+              await syncSalesToGoogleSheetsSafe(env, newOrderId);
+            } catch (e) { console.error('Sheets sync error (odoo auto-create):', e); }
+
+            if (phone) {
+              await sendWhatsAppText(env, phone,
+                `✅ *Payment Received!*\n\nHi ${name.split(' ')[0]}! 🎉\n\nAmount: ₹${amount}\nPayment ID: ${payment.id}\n\n📦 Your order is confirmed!\nWe'll ship within 24 hours.\n\n💎 KAAPAV Fashion Jewellery`
+              );
+            }
+
+            await sendWhatsAppText(env, env.OWNER_PHONE,
+              `💰 *Website Payment Received (Auto-Created)*\n\nOrder: *${newOrderId}*\nCustomer: ${name} (${phone})\nAmount: ₹${amount}\nPayment ID: ${payment.id}\n\n⚠️ Items unknown — check Odoo dashboard.\n✅ Order auto-created in D1.`
+            );
+          }
+        } catch (e) { console.error('Odoo auto-create error:', e); }
+
+        return jsonResponse({ status: 'ok' });
+      }
+
+      // Idempotent — skip if already paid
+      if (order.payment_status === 'paid') return jsonResponse({ status: 'ok' });
+
+      const amount = payment.amount / 100;
 
     // Update order status
     await env.DB.prepare(`
@@ -4934,6 +6349,9 @@ if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && met
   amount,
   source: order.source || 'website',
 }, 'razorpay_webhook');
+
+        // Deduct stock
+        await deductStockForOrder(env, orderId);
 
     const phone = order.phone;
     try {
@@ -4967,20 +6385,27 @@ if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && met
     } catch(e) { itemLines = '• (items not available)'; }
 
     // Customer WA — payment confirmed
-    await sendWhatsAppText(env, phone,
-      `✅ *Payment Confirmed!*\n\n` +
-      `Hi ${customerName.split(' ')[0]}! 🎉\n\n` +
-      `Order ID: *${orderId}*\n` +
-      `Amount Paid: \u20B9${amount}\n\n` +
-      `📦 Your order is confirmed!\n` +
-      `We will pack & ship within *24 hours*.\n` +
-      `You will get your tracking details here on WhatsApp once shipped. 🚚\n\n` +
-      `Questions? Just message us here anytime 😊\n` +
-      `💎 KAAPAV Fashion Jewellery`
-    );
+        // Customer WA — only for WhatsApp/catalogue orders
+        if (isWhatsAppOrder(order.source)) {
+          await sendWhatsAppText(env, phone,
+            `✅ *Payment Confirmed!*\n\n` +
+            `Hi ${customerName.split(' ')[0]}! 🎉\n\n` +
+            `Order ID: *${orderId}*\n` +
+            `Amount Paid: \u20B9${amount}\n` +
+            `Payment ID: ${paymentId}\n\n` +
+            `📦 Your order is confirmed!\n` +
+            `We will pack & ship within *24 hours*.\n` +
+            `You will get your tracking details here on WhatsApp once shipped. 🚚\n\n` +
+            `Questions? Just message us here anytime 😊\n` +
+            `💎 KAAPAV Fashion Jewellery`
+          );
 
-    // Owner WA — payment received alert
-    await sendWhatsAppText(env, env.OWNER_PHONE,
+          // Auto-send invoice PDF — only for WA orders
+          try { await generateAndSendInvoice(env, orderId); } catch (e) { console.error('Auto invoice error:', e); }
+        }
+
+        // Owner WA — ALWAYS notify owner regardless of source
+        await sendWhatsAppText(env, env.OWNER_PHONE,
       `💰 *Payment Received!*\n\n` +
       `Order: *${orderId}*\n` +
       `Customer: ${customerName} (${phone})\n` +
@@ -4992,6 +6417,7 @@ if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && met
       `✅ Open app → Orders → Book Shiprocket.`
     );
 
+    
     // FCM push to Flutter app
     ctx.waitUntil(sendFCMNotification(
       env, phone, customerName,
@@ -5007,8 +6433,13 @@ if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && met
   if (path === '/api/orders/catalogue' && method === 'POST') {
   const body = await request.json();
   const { name, phone, address, city, state, pincode, items, total } = body;
-  if (!phone || !items?.length) return errorResponse('phone and items required');
-  const orderId = await generateOrderId(env);
+    if (!phone || !items?.length) return errorResponse('phone and items required');
+
+    // Duplicate order check
+    const dupeId = await checkDuplicateOrder(env, phone, items);
+    if (dupeId) return errorResponse(`Duplicate order detected: ${dupeId}. Wait 5 minutes or complete existing order.`, 409);
+
+    const orderId = await generateOrderId(env);
   const itemsJson = JSON.stringify(items);
   const itemCount = items.reduce((s, i) => s + i.qty, 0);
   const shipping = total >= 498 ? 0 : 60;
@@ -5153,6 +6584,12 @@ await sendWhatsAppText(env, env.OWNER_PHONE,
   amount: order.total,
 }, 'admin_manual');
 
+  try {
+  await generateAndSendInvoice(env, orderId);
+} catch (e) {
+  console.error('Auto invoice send failed:', e);
+}
+
   const customerName = order.customer_name || 'Customer';
   const amount = order.total;
 
@@ -5232,23 +6669,17 @@ await sendWhatsAppText(env, env.OWNER_PHONE,
     const hasValidSyncKey = syncKey && syncKey === env.SYNC_API_KEY;
 
     if (path === '/api/sync/supabase/full-sync' && method === 'POST') {
-
   if (!hasValidSyncKey) return errorResponse('Unauthorized', 401);
-
   try {
-
+    if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) {
+      return errorResponse(`Supabase env vars missing | URL:${!!env.SUPABASE_URL} KEY:${!!env.SUPABASE_SERVICE_KEY}`, 500);
+    }
     const summary = await backfillAllSupabase(env);
-
     return jsonResponse({ success: true, summary });
-
   } catch (e) {
-
     console.error('Supabase full sync error:', e);
-
     return errorResponse('Supabase sync failed: ' + e.message, 500);
-
   }
-
 }
 
     if (path === '/api/sync/google-sheets/full-sync' && method === 'POST') {
@@ -5283,6 +6714,49 @@ await sendWhatsAppText(env, env.OWNER_PHONE,
     }
 
     if (path === '/api/messages/send' && method === 'POST') return handleSendMessage(request, env);
+
+    // ═══ INVOICE — send to customer via WhatsApp ═══
+    if (path.match(/^\/api\/orders\/[^/]+\/invoice$/) && method === 'POST') {
+      const orderId = decodeURIComponent(path.split('/')[3]);
+      try {
+        const sent = await generateAndSendInvoice(env, orderId);
+        if (sent) return jsonResponse({ success: true, message: 'Invoice sent to customer' });
+        return errorResponse('Failed to send invoice', 500);
+      } catch (e) {
+        console.error('Invoice send error:', e);
+        return errorResponse('Invoice error: ' + e.message, 500);
+      }
+    }
+
+    // ═══ INVOICE — download PDF ═══
+    if (path.match(/^\/api\/orders\/[^/]+\/invoice-pdf$/) && method === 'GET') {
+      const orderId = path.split('/')[3];
+      try {
+        const order = await env.DB.prepare(`SELECT * FROM orders WHERE order_id = ?`).bind(orderId).first();
+        if (!order) return errorResponse('Order not found', 404);
+        let items = []; try { items = JSON.parse(order.items || '[]'); } catch { items = []; }
+        const { results: sr } = await env.DB.prepare(`SELECT key, value FROM settings`).all();
+        const settings = {}; (sr || []).forEach(r => { settings[r.key] = r.value; });
+        let logoData = null;
+        const logoUrl = settings.invoice_logo_url || env.INVOICE_LOGO_URL || null;
+        if (logoUrl) {
+          try {
+            const logoRes = await fetch(logoUrl);
+            if (logoRes.ok) {
+              const logoBytes = new Uint8Array(await logoRes.arrayBuffer());
+              const dims = getJpegDimensions(logoBytes);
+              if (dims) {
+                const hex = Array.from(logoBytes).map(b => b.toString(16).padStart(2, '0')).join('') + '>';
+                logoData = { hex, width: dims.width, height: dims.height };
+              }
+            }
+          } catch (e) { console.error('Logo fetch:', e); }
+        }
+        const pdfBytes = generateInvoicePDF(order, items, settings, logoData);
+        return new Response(pdfBytes, { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="Invoice_${orderId}.pdf"` } });
+      } catch (e) { return errorResponse('Failed: ' + e.message, 500); }
+    }
+
     // DELETE message
 if (path.match(/^\/api\/messages\/[^/]+$/) && method === 'DELETE') {
   const messageId = decodeURIComponent(path.split('/')[3]);
@@ -5306,6 +6780,201 @@ if (path === '/api/messages/saved' && method === 'GET') {
   ).all();
   return jsonResponse({ success: true, messages: results });
 }
+    // ═══ ORDER SEARCH ═══
+    if (path === '/api/orders/search' && method === 'GET') {
+      const q = url.searchParams.get('q') || '';
+      const status = url.searchParams.get('status');
+      const from = url.searchParams.get('from');
+      const to = url.searchParams.get('to');
+      const limit = parseInt(url.searchParams.get('limit') || '50');
+
+      let where = [];
+      let params = [];
+
+      if (q) {
+        where.push(`(order_id LIKE ? OR phone LIKE ? OR customer_name LIKE ?)`);
+        params.push(`%${q}%`, `%${q}%`, `%${q}%`);
+      }
+      if (status) { where.push(`status = ?`); params.push(status); }
+      if (from) { where.push(`created_at >= ?`); params.push(from); }
+      if (to) { where.push(`created_at <= ?`); params.push(to); }
+
+      const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+      params.push(limit);
+
+      const { results } = await env.DB.prepare(
+        `SELECT * FROM orders ${whereClause} ORDER BY created_at DESC LIMIT ?`
+      ).bind(...params).all();
+
+      return jsonResponse({ success: true, orders: results, total: results.length });
+    }
+
+    // ═══ CUSTOMER SEARCH ═══
+    if (path === '/api/customers/search' && method === 'GET') {
+      const q = url.searchParams.get('q') || '';
+      const limit = parseInt(url.searchParams.get('limit') || '50');
+
+      if (!q) return jsonResponse({ success: true, customers: [], total: 0 });
+
+      const { results } = await env.DB.prepare(
+        `SELECT * FROM customers WHERE phone LIKE ? OR name LIKE ? OR email LIKE ? ORDER BY last_seen DESC LIMIT ?`
+      ).bind(`%${q}%`, `%${q}%`, `%${q}%`, limit).all();
+
+      return jsonResponse({ success: true, customers: results, total: results.length });
+    }
+
+    // ═══ BOT TOGGLE ═══
+    if (path.match(/^\/api\/chats\/[^/]+\/bot$/) && method === 'POST') {
+      const phone = path.split('/')[3];
+      const { enabled } = await request.json();
+      await env.DB.prepare(
+        `UPDATE chats SET is_bot_enabled = ?, updated_at = datetime('now') WHERE phone = ?`
+      ).bind(enabled ? 1 : 0, phone).run();
+      return jsonResponse({ success: true, is_bot_enabled: enabled });
+    }
+
+    // ═══ COUPON VALIDATE ═══
+    if (path === '/api/coupons/validate' && method === 'POST') {
+      const { code, orderTotal } = await request.json();
+      if (!code) return errorResponse('code required');
+
+      const coupon = await env.DB.prepare(
+        `SELECT * FROM coupons WHERE code = ? AND is_active = 1`
+      ).bind(code.toUpperCase()).first();
+
+      if (!coupon) return errorResponse('Invalid coupon code', 404);
+
+      const now = new Date().toISOString();
+      if (coupon.expires_at && coupon.expires_at < now) return errorResponse('Coupon expired');
+      if (coupon.starts_at && coupon.starts_at > now) return errorResponse('Coupon not active yet');
+      if (coupon.usage_limit > 0 && coupon.used_count >= coupon.usage_limit) return errorResponse('Coupon usage limit reached');
+      if (coupon.min_order > 0 && (orderTotal || 0) < coupon.min_order) return errorResponse(`Minimum order ₹${coupon.min_order} required`);
+
+      let discount = 0;
+      if (coupon.type === 'percent') {
+        discount = ((orderTotal || 0) * coupon.value) / 100;
+        if (coupon.max_discount > 0) discount = Math.min(discount, coupon.max_discount);
+      } else {
+        discount = coupon.value;
+      }
+      discount = Math.round(discount);
+
+      return jsonResponse({ success: true, coupon: { code: coupon.code, type: coupon.type, value: coupon.value, discount, maxDiscount: coupon.max_discount } });
+    }
+
+    // ═══ COUPON CRUD ═══
+    if (path === '/api/coupons' && method === 'GET') {
+      const { results } = await env.DB.prepare(`SELECT * FROM coupons ORDER BY created_at DESC`).all();
+      return jsonResponse({ success: true, coupons: results });
+    }
+    if (path === '/api/coupons' && method === 'POST') {
+      const b = await request.json();
+      await env.DB.prepare(`
+        INSERT INTO coupons (code, type, value, min_order, max_discount, usage_limit, starts_at, expires_at, is_active, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
+      `).bind(
+        (b.code || '').toUpperCase(), b.type || 'percent', b.value || 0,
+        b.min_order || 0, b.max_discount || 0, b.usage_limit || 0,
+        b.starts_at || null, b.expires_at || null
+      ).run();
+      return jsonResponse({ success: true });
+    }
+
+    // ═══ BROADCAST CRUD + SEND ═══
+    if (path === '/api/broadcasts' && method === 'GET') {
+      const { results } = await env.DB.prepare(`SELECT * FROM broadcasts ORDER BY created_at DESC LIMIT 50`).all();
+      return jsonResponse({ success: true, broadcasts: results });
+    }
+    if (path === '/api/broadcasts' && method === 'POST') {
+      const b = await request.json();
+      const broadcastId = `BC-${Date.now()}`;
+      await env.DB.prepare(`
+        INSERT INTO broadcasts (broadcast_id, name, message_type, message, target_type, target_labels, target_segment, status, created_by, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', 'admin', datetime('now'))
+      `).bind(broadcastId, b.name || '', b.message_type || 'text', b.message || '', b.target_type || 'all', b.target_labels || null, b.target_segment || null).run();
+      return jsonResponse({ success: true, broadcastId });
+    }
+    if (path.match(/^\/api\/broadcasts\/[^/]+\/send$/) && method === 'POST') {
+      const broadcastId = path.split('/')[3];
+      const broadcast = await env.DB.prepare(`SELECT * FROM broadcasts WHERE broadcast_id = ?`).bind(broadcastId).first();
+      if (!broadcast) return errorResponse('Broadcast not found', 404);
+
+      let customerQuery = `SELECT phone, name FROM customers WHERE opted_in = 1`;
+      if (broadcast.target_segment) customerQuery += ` AND segment = '${broadcast.target_segment}'`;
+      const { results: recipients } = await env.DB.prepare(customerQuery + ` LIMIT 500`).all();
+
+      await env.DB.prepare(`UPDATE broadcasts SET status = 'sending', target_count = ?, started_at = datetime('now') WHERE broadcast_id = ?`).bind(recipients.length, broadcastId).run();
+
+      let sent = 0, failed = 0;
+      for (const r of recipients) {
+        try {
+          await sendWhatsAppText(env, r.phone, broadcast.message);
+          sent++;
+          await env.DB.prepare(`
+            INSERT INTO broadcast_recipients (broadcast_id, phone, status, sent_at) VALUES (?, ?, 'sent', datetime('now'))
+          `).bind(broadcastId, r.phone).run();
+          // Rate limit: 30 msgs/sec
+          if (sent % 30 === 0) await new Promise(r => setTimeout(r, 1000));
+        } catch (e) {
+          failed++;
+          await env.DB.prepare(`
+            INSERT INTO broadcast_recipients (broadcast_id, phone, status, error_message, failed_at) VALUES (?, ?, 'failed', ?, datetime('now'))
+          `).bind(broadcastId, r.phone, e.message).run();
+        }
+      }
+
+      await env.DB.prepare(`
+        UPDATE broadcasts SET status = 'completed', sent_count = ?, failed_count = ?, completed_at = datetime('now') WHERE broadcast_id = ?
+      `).bind(sent, failed, broadcastId).run();
+
+      return jsonResponse({ success: true, sent, failed, total: recipients.length });
+    }
+
+    // ═══ REFUND ═══
+    if (path.match(/^\/api\/orders\/[^/]+\/refund$/) && method === 'POST') {
+      const orderId = path.split('/')[3];
+      const body = await request.json();
+      const order = await env.DB.prepare(`SELECT * FROM orders WHERE order_id = ?`).bind(orderId).first();
+      if (!order) return errorResponse('Order not found', 404);
+      if (order.payment_status !== 'paid' || !order.payment_id) return errorResponse('Order not paid or no payment ID');
+
+      const refundAmount = body.amount || order.total;
+
+      try {
+        const refundData = await processRazorpayRefund(env, order.payment_id, refundAmount, orderId);
+
+        await env.DB.prepare(`
+          UPDATE orders SET payment_status = 'refunded', status = 'cancelled', updated_at = datetime('now') WHERE order_id = ?
+        `).bind(orderId).run();
+
+        await env.DB.prepare(`
+          INSERT INTO payments (payment_id, order_id, phone, gateway, gateway_payment_id, amount, status, refund_amount, refund_id, refunded_at, created_at)
+          VALUES (?, ?, ?, 'razorpay', ?, ?, 'refunded', ?, ?, datetime('now'), datetime('now'))
+        `).bind(`ref_${Date.now()}`, orderId, order.phone, order.payment_id, order.total, refundAmount, refundData.id).run();
+
+        await logOrderEvent(env, orderId, 'refund_processed', `Refund of Rs.${refundAmount} processed`, { refundId: refundData.id, amount: refundAmount }, 'admin');
+
+        await sendWhatsAppText(env, order.phone,
+          `💰 *Refund Processed!*\n\nHi ${order.customer_name || 'Customer'}!\n\nOrder: *${orderId}*\nRefund Amount: ₹${refundAmount}\n\n✅ Refund will reflect in 5-7 working days.\n\n💎 KAAPAV Fashion Jewellery`
+        );
+
+        await sendWhatsAppText(env, env.OWNER_PHONE,
+          `💰 *Refund Processed*\n\nOrder: *${orderId}*\nCustomer: ${order.customer_name} (${order.phone})\nAmount: ₹${refundAmount}\nRefund ID: ${refundData.id}`
+        );
+
+        try {
+          await syncOrderToGoogleSheetsSafe(env, orderId);
+          await syncCustomerToGoogleSheetsSafe(env, order.phone);
+          await syncSalesToGoogleSheetsSafe(env, orderId);
+        } catch (e) { console.error('Refund sync error:', e); }
+
+        return jsonResponse({ success: true, refundId: refundData.id, amount: refundAmount });
+      } catch (e) {
+        console.error('Refund error:', e);
+        return errorResponse('Refund failed: ' + e.message, 500);
+      }
+    }
+
     if (path === '/api/orders' && method === 'GET') return handleGetOrders(request, env);
      
     // GET single order
@@ -6148,6 +7817,28 @@ if (path.match(/^\/api\/customers\/[^/]+\/orders$/) && method === 'GET') {
       return jsonResponse({ success: true, result });
     }
 
+// ═══ SUPABASE BACKFILL ═══
+if (path === '/api/sync/supabase/backfill' && method === 'POST') {
+  // Auth check with SYNC_API_KEY
+  const authHeader = request.headers.get('Authorization') || '';
+  const apiKey = request.headers.get('X-API-Key') || '';
+  const syncKey = env.SYNC_API_KEY || '';
+  
+  const providedKey = authHeader.replace('Bearer ', '') || apiKey;
+  
+  if (!syncKey || providedKey !== syncKey) {
+    return errorResponse('Unauthorized', 401);
+  }
+
+  try {
+    const result = await backfillAllSupabase(env);
+    return jsonResponse({ success: true, summary: result });
+  } catch (e) {
+    console.error('Supabase backfill error:', e);
+    return errorResponse('Backfill failed: ' + e.message, 500);
+  }
+}
+
     if (path === '/api/media/upload' && method === 'POST') {
       try {
         const formData = await request.formData();
@@ -6184,8 +7875,9 @@ try {
     LIMIT 10
   `).bind(fortyMinAgo, thirtyMinAgo).all();
 
-  for (const order of earlyUnpaidOrders) {
-    await sendWhatsAppText(env, order.phone,
+      for (const order of earlyUnpaidOrders) {
+        if (!isWhatsAppOrder(order.source)) continue;
+        await sendWhatsAppText(env, order.phone,
       `💎 *Complete Your KAAPAV Order*\n\n` +
       `Hi ${order.customer_name || 'there'}! 😊\n\n` +
       `Order ID: *${order.order_id}*\n` +
@@ -6264,6 +7956,10 @@ try {
       `).bind(oneDayAgo, threeDaysAgo).all();
 
       for (const order of deliveredOrders) {
+        if (!isWhatsAppOrder(order.source)) {
+          await env.DB.prepare(`UPDATE orders SET review_sent = 1 WHERE order_id = ?`).bind(order.order_id).run();
+          continue;
+        }
         await sendWhatsAppText(env, order.phone,
           `💎 *How was your KAAPAV order?*\n\n` +
           `Hi ${order.customer_name || 'there'}! 😊\n\n` +
@@ -6295,7 +7991,7 @@ try {
       `).bind(threeHoursAgo, twoHoursAgo).all();
 
       for (const order of unpaidOrders) {
-        // Check if link still valid (created < 22hrs ago)
+        if (!isWhatsAppOrder(order.source)) continue;
         await sendWhatsAppText(env, order.phone,
           `⏰ *Complete your KAAPAV order!*\n\n` +
           `Hi ${order.customer_name || 'there'}! 😊\n\n` +
