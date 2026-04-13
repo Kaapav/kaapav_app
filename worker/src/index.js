@@ -2937,19 +2937,11 @@ function getInvoiceLogoData() {
   try {
     const binary = atob(KAAPAV_LOGO_B64);
     const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     const dims = readJpegSize(bytes);
-    console.log(`Logo loaded: ${dims.width}×${dims.height}`);
-    return {
-      type: 'jpeg',
-      width: dims.width,
-      height: dims.height,
-      hex: bytesToAsciiHex(bytes)
-    };
+    return { type: 'jpeg', width: dims.width, height: dims.height, hex: bytesToAsciiHex(bytes) };
   } catch (err) {
-    console.error('Logo decode failed:', err);
+    console.error('Logo decode failed:', err.message);
     return null;
   }
 }
@@ -3058,35 +3050,21 @@ console.log("📍📍📍 FOUND IT: generateInvoicePDF was called! 📍📍📍"
 
   // ═══════════════════ LOGO ═══════════════════
   const logoTileX = M + 2;
-  const logoTileY = H - 108;
-  const logoTileW = 78;
-  const logoTileH = 70;
-
-  white();
-  fill(logoTileX, logoTileY, logoTileW, logoTileH);
-  goldStroke();
-  rect(logoTileX, logoTileY, logoTileW, logoTileH, 0.45);
+  const logoTileY = H - 112;
+  const logoTileW = 90;
+  const logoTileH = 80;
 
 if (logoData && logoData.width > 0 && logoData.height > 0) {
-  // This logic calculates the correct scale to fit the logo inside the tile without distortion.
-  const pad = 8;
+  const pad = 4;
   const maxW = logoTileW - pad * 2;
   const maxH = logoTileH - pad * 2;
-
-  // Calculate scale factor to fit and maintain aspect ratio
   const scale = Math.min(maxW / logoData.width, maxH / logoData.height);
-  
   const drawW = logoData.width * scale;
   const drawH = logoData.height * scale;
-
-  // Center the logo inside the tile
   const dx = logoTileX + (logoTileW - drawW) / 2;
   const dy = logoTileY + (logoTileH - drawH) / 2;
-
-  // PDF command to place, scale, and draw the image
   ops.push(`q ${drawW} 0 0 ${drawH} ${dx} ${dy} cm /Logo Do Q`);
 } else {
-  // Fallback to "K" if logoData is missing or has invalid dimensions
   darkGold();
   txt('K', logoTileX + 28, logoTileY + 24, 32, true);
 }
@@ -3409,24 +3387,27 @@ if (logoData && logoData.width > 0 && logoData.height > 0) {
   return new TextEncoder().encode(pdf);
 }
 
-// ═══════════════════ SEND INVOICE (v6 - FINAL) ═══════════════════
+// ═══════════════════ SEND INVOICE (v7 - RATE LIMITED) ═══════════════════
 async function generateAndSendInvoice(env, orderId) {
   try {
-    console.log(`✅ v6 generateAndSendInvoice ENTERED for Order ID: ${orderId}.`);
+    console.log(`✅ v7 generateAndSendInvoice ENTERED for Order ID: ${orderId}.`);
 
     const order = await env.DB.prepare(
       `SELECT * FROM orders WHERE order_id = ?`
     ).bind(orderId).first();
-
     if (!order) {
       console.error('generateAndSendInvoice: order not found', orderId);
       return false;
     }
 
-    const alreadySent = await env.KV.get(`invoice_sent:${orderId}`);
-    if (alreadySent) {
-      console.log(`Invoice for ${orderId} already sent, skipping.`);
-      return true;
+    // ── Rate limit: block only if sent within last 15 seconds ──
+    const lastSent = await env.KV.get(`invoice_sent:${orderId}`);
+    if (lastSent) {
+      const secondsAgo = (Date.now() - parseInt(lastSent)) / 1000;
+      if (secondsAgo < 15) {
+        console.log(`Invoice for ${orderId} rate limited — sent ${Math.round(secondsAgo)}s ago, retry in ${Math.ceil(15 - secondsAgo)}s`);
+        return true; // not an error, just throttled
+      }
     }
 
     let items = [];
@@ -3438,29 +3419,26 @@ async function generateAndSendInvoice(env, orderId) {
     const settings = {};
     (sr || []).forEach(r => { settings[r.key] = r.value; });
 
-    // Call the self-contained logo loader module
- // Load logo
-const logoData = getInvoiceLogoData();
+    // ── Load logo ──
+    const logoData = getInvoiceLogoData();
+    if (logoData) {
+      console.log(`✅ Logo ready: ${logoData.width}x${logoData.height}`);
+    } else {
+      console.log(`⚠️ Logo not loaded — 'K' fallback`);
+    }
 
-if (logoData) {
-  console.log("✅ Logo ready for PDF:", logoData.width, 'x', logoData.height);
-} else {
-  console.log("⚠️ Logo not loaded - will show 'K' fallback");
-}
-    
-    // Generate the PDF. It will use logoData if available, or fallback to 'K' if null.
+    // ── Generate PDF ──
     const pdfBytes = generateInvoicePDF(order, items, settings, logoData);
 
-    // Upload to R2
+    // ── Upload to R2 ──
     const fileName = `invoices/Invoice_${orderId}_${Date.now()}.pdf`;
     await env.MEDIA.put(fileName, pdfBytes, {
       httpMetadata: { contentType: 'application/pdf' },
     });
+    const pdfUrl = `https://wa.kaapav.com/${fileName}`;
+    console.log(`✅ PDF uploaded: ${pdfUrl}`);
 
-    const pdfUrl = `https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/${fileName}`;
-    console.log(`✅ PDF for order ${orderId} created and uploaded: ${pdfUrl}`);
-
-    // Send via WhatsApp
+    // ── Send via WhatsApp ──
     const name = order.customer_name || 'Customer';
     const waResult = await sendWhatsAppDocument(
       env,
@@ -3475,21 +3453,22 @@ if (logoData) {
       `💎 KAAPAV Fashion Jewellery\n` +
       `www.kaapav.com`
     );
+    
+    console.log('WA document result:', JSON.stringify(waResult));
 
     if (waResult?.error) {
       console.error('Invoice WA send error:', waResult.error);
-      return false; // Or handle as needed
+      return false;
     }
 
-    await env.KV.put(`invoice_sent:${orderId}`, '1', { expirationTtl: 86400 * 90 });
+    // ── Store timestamp (not boolean) — expires in 15s for rate limit ──
+    await env.KV.put(`invoice_sent:${orderId}`, Date.now().toString(), { expirationTtl: 15 });
 
-    await logOrderEvent(
-      env, orderId, 'invoice_sent',
-      `Invoice sent to customer via WhatsApp`,
-      { pdfUrl }, 'system'
+    await logOrderEvent(env, orderId, 'invoice_sent',
+      `Invoice sent to ${order.phone} via WhatsApp`
     );
 
-    console.log(`✅ Invoice for ${orderId} successfully sent.`);
+    console.log(`✅ Invoice sent successfully for ${orderId}`);
     return true;
 
   } catch (e) {
@@ -6878,21 +6857,7 @@ await sendWhatsAppText(env, env.OWNER_PHONE,
         let items = []; try { items = JSON.parse(order.items || '[]'); } catch { items = []; }
         const { results: sr } = await env.DB.prepare(`SELECT key, value FROM settings`).all();
         const settings = {}; (sr || []).forEach(r => { settings[r.key] = r.value; });
-        let logoData = null;
-        const logoUrl = settings.invoice_logo_url || env.INVOICE_LOGO_URL || null;
-        if (logoUrl) {
-          try {
-            const logoRes = await fetch(logoUrl, { cf: { cacheTtl: 86400, cacheEverything: true } });
-            if (logoRes.ok) {
-              const logoBytes = new Uint8Array(await logoRes.arrayBuffer());
-              const dims = getJpegDimensions(logoBytes);
-              if (dims) {
-                const hex = Array.from(logoBytes).map(b => b.toString(16).padStart(2, '0')).join('') + '>';
-                logoData = { hex, width: dims.width, height: dims.height };
-              }
-            }
-          } catch (e) { console.error('Logo fetch:', e); }
-        }
+        const logoData = getInvoiceLogoData();
         const pdfBytes = generateInvoicePDF(order, items, settings, logoData);
         return new Response(pdfBytes, { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="Invoice_${orderId}.pdf"` } });
       } catch (e) { return errorResponse('Failed: ' + e.message, 500); }
@@ -7461,8 +7426,13 @@ if (path.match(/^\/api\/orders\/[^/]+\/send-notification$/) && method === 'POST'
   };
   const msg = msgs[type];
   if (!msg) return errorResponse('Invalid type — use confirmed/shipped/delivered');
-  await sendWhatsAppText(env, order.phone, msg);
-  return jsonResponse({ success: true });
+const waResult = await sendWhatsAppText(env, order.phone, msg);
+console.log('Notification WA result:', JSON.stringify(waResult));
+if (waResult?.error) {
+  console.error('WA notification error:', JSON.stringify(waResult.error));
+  return errorResponse(`WhatsApp error: ${waResult.error.message || 'Unknown'}`, 502);
+}
+return jsonResponse({ success: true });
 }
     // PATCH /api/orders/:id/notes
 if (path.match(/^\/api\/orders\/[^/]+\/notes$/) && method === 'PATCH') {
@@ -7998,8 +7968,22 @@ if (path === '/api/sync/supabase/backfill' && method === 'POST') {
       }
     }
     
+// ═══ PUBLIC PDF SERVE ═══
+    if (path.match(/^\/invoices\/.+\.pdf$/) && method === 'GET') {
+      const key = path.slice(1);
+      const obj = await env.MEDIA.get(key);
+      if (!obj) return new Response('Not found', { status: 404 });
+      return new Response(obj.body, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Cache-Control': 'public, max-age=86400',
+          'Content-Disposition': `inline; filename="${key.split('/').pop()}"`,
+        }
+      });
+    }
+
     return errorResponse('Not found', 404);
-  },
+   },
 
   async scheduled(event, env, ctx) {
   // ── Abandoned payment reminder (30 min after order, unpaid) ─
