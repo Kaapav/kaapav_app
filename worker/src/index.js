@@ -1,9 +1,103 @@
+import { KAAPAV_LOGO_B64 } from './logo.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Platform, X-Client-Version',
 };
+
+
+// ═══════════════════ K_PDF_LOGO_MODULE v1.0 (Self-Contained) ═══════════════════
+const K_PDF_LOGO_MODULE = (() => {
+  const DEFAULT_LOGO_URL = 'https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/kaapav_Logo.jpg';
+  let logoPromise = null;
+
+  function bytesToAsciiHex(u8) {
+    let out = '';
+    for (let i = 0; i < u8.length; i++) out += u8[i].toString(16).padStart(2, '0');
+    return out.toUpperCase() + '>';
+  }
+
+  function readJpegSize(bytes) {
+    if (bytes[0] !== 0xFF || bytes[1] !== 0xD8) return null;
+    let i = 2;
+    while (i < bytes.length) {
+      if (bytes[i] !== 0xFF) { i++; continue; }
+      const marker = bytes[i + 1];
+      i += 2;
+      if (marker === 0xDA || marker === 0xD9) break;
+      const len = (bytes[i] << 8) | bytes[i + 1];
+      if (!len || len < 2) break;
+      const isSOF = (marker >= 0xC0 && marker <= 0xC3) || (marker >= 0xC5 && marker <= 0xC7) || 
+                    (marker >= 0xC9 && marker <= 0xCB) || (marker >= 0xCD && marker <= 0xCF);
+      if (isSOF) {
+        const height = (bytes[i + 3] << 8) + bytes[i + 4];
+        const width = (bytes[i + 5] << 8) + bytes[i + 6];
+        return { width, height };
+      }
+      i += len;
+    }
+    return null;
+  }
+
+  async function load(settings, env) {
+    const logoUrl = (settings && settings.invoice_logo_url) || 
+                    (env && env.INVOICE_LOGO_URL) || 
+                    DEFAULT_LOGO_URL;
+
+    if (!logoPromise) {
+      logoPromise = (async () => {
+        try {
+          console.log('🔄 Fetching logo from:', logoUrl);
+          
+          const res = await fetch(logoUrl, {
+            cf: { cacheTtl: 86400, cacheEverything: true }
+          });
+          
+          if (!res.ok) {
+            console.error(`❌ Logo fetch failed: ${res.status} ${res.statusText}`);
+            return null;
+          }
+
+          const bytes = new Uint8Array(await res.arrayBuffer());
+          console.log('✅ Logo fetched, size:', bytes.length, 'bytes');
+
+          // Verify JPEG
+          if (!(bytes[0] === 0xFF && bytes[1] === 0xD8)) {
+            console.error('❌ Not a valid JPEG, first bytes:', bytes[0], bytes[1]);
+            return null;
+          }
+
+          const dims = readJpegSize(bytes);
+          if (!dims) {
+            console.error('❌ Could not read JPEG dimensions');
+            return null;
+          }
+
+          console.log('✅ Logo dimensions:', dims.width, 'x', dims.height);
+
+          const result = {
+            type: 'jpeg',
+            width: dims.width,
+            height: dims.height,
+            hex: bytesToAsciiHex(bytes)
+          };
+
+          console.log('✅ Logo data prepared, hex length:', result.hex.length);
+          return result;
+
+        } catch (err) {
+          console.error('❌ Logo load exception:', err.message, err.stack);
+          return null;
+        }
+      })();
+    }
+
+    return logoPromise;
+  }
+
+  return { load };
+})();
 
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -2798,10 +2892,67 @@ function downsampleRGB(rgb, srcW, srcH, maxDim) {
   return { rgb: out, width: dstW, height: dstH };
 }
 
-// ═══════════════════ DEFAULT LOGO URL ═══════════════════
-const DEFAULT_LOGO_URL = 'https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/kaapav_logo.jpg';
+
 
 // ═══════════════════ PDF INVOICE ═══════════════════
+
+function bytesToAsciiHex(u8) {
+  let out = '';
+  for (let i = 0; i < u8.length; i++) out += u8[i].toString(16).padStart(2, '0');
+  return out.toUpperCase() + '>';
+}
+
+function readJpegSize(u8) {
+  if (u8[0] !== 0xFF || u8[1] !== 0xD8) throw new Error('Not a JPEG');
+
+  let i = 2;
+  while (i < u8.length) {
+    if (u8[i] !== 0xFF) { i++; continue; }
+    const marker = u8[i + 1];
+    i += 2;
+
+    if (marker === 0xDA || marker === 0xD9) break; // SOS/EOI
+
+    const len = (u8[i] << 8) + u8[i + 1];
+    if (!len || len < 2) break;
+
+    const isSOF =
+      (marker >= 0xC0 && marker <= 0xC3) ||
+      (marker >= 0xC5 && marker <= 0xC7) ||
+      (marker >= 0xC9 && marker <= 0xCB) ||
+      (marker >= 0xCD && marker <= 0xCF);
+
+    if (isSOF) {
+      const height = (u8[i + 3] << 8) + u8[i + 4];
+      const width  = (u8[i + 5] << 8) + u8[i + 6];
+      return { width, height };
+    }
+
+    i += len;
+  }
+  throw new Error('JPEG size not found');
+}
+
+function getInvoiceLogoData() {
+  try {
+    const binary = atob(KAAPAV_LOGO_B64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const dims = readJpegSize(bytes);
+    console.log(`Logo loaded: ${dims.width}×${dims.height}`);
+    return {
+      type: 'jpeg',
+      width: dims.width,
+      height: dims.height,
+      hex: bytesToAsciiHex(bytes)
+    };
+  } catch (err) {
+    console.error('Logo decode failed:', err);
+    return null;
+  }
+}
 
 function formatPhoneDisplay(phone) {
   const d = String(phone || '').replace(/\D/g, '');
@@ -2811,6 +2962,7 @@ function formatPhoneDisplay(phone) {
 }
 
 function generateInvoicePDF(order, items, settings, logoData = null) {
+console.log("📍📍📍 FOUND IT: generateInvoicePDF was called! 📍📍📍");
   const ops = [];
   const W = 595, H = 842;
   const M = 42, R = W - M;
@@ -2915,9 +3067,26 @@ function generateInvoicePDF(order, items, settings, logoData = null) {
   goldStroke();
   rect(logoTileX, logoTileY, logoTileW, logoTileH, 0.45);
 
-if (logoData) {
-  ops.push(`q 62 0 0 62 ${logoTileX + 8} ${logoTileY + 8} cm /Logo Do Q`);
+if (logoData && logoData.width > 0 && logoData.height > 0) {
+  // This logic calculates the correct scale to fit the logo inside the tile without distortion.
+  const pad = 8;
+  const maxW = logoTileW - pad * 2;
+  const maxH = logoTileH - pad * 2;
+
+  // Calculate scale factor to fit and maintain aspect ratio
+  const scale = Math.min(maxW / logoData.width, maxH / logoData.height);
+  
+  const drawW = logoData.width * scale;
+  const drawH = logoData.height * scale;
+
+  // Center the logo inside the tile
+  const dx = logoTileX + (logoTileW - drawW) / 2;
+  const dy = logoTileY + (logoTileH - drawH) / 2;
+
+  // PDF command to place, scale, and draw the image
+  ops.push(`q ${drawW} 0 0 ${drawH} ${dx} ${dy} cm /Logo Do Q`);
 } else {
+  // Fallback to "K" if logoData is missing or has invalid dimensions
   darkGold();
   txt('K', logoTileX + 28, logoTileY + 24, 32, true);
 }
@@ -3240,10 +3409,11 @@ if (logoData) {
   return new TextEncoder().encode(pdf);
 }
 
-// ═══════════════════ SEND INVOICE (SINGLE FUNCTION) ═══════════════════
-
+// ═══════════════════ SEND INVOICE (v6 - FINAL) ═══════════════════
 async function generateAndSendInvoice(env, orderId) {
   try {
+    console.log(`✅ v6 generateAndSendInvoice ENTERED for Order ID: ${orderId}.`);
+
     const order = await env.DB.prepare(
       `SELECT * FROM orders WHERE order_id = ?`
     ).bind(orderId).first();
@@ -3254,7 +3424,10 @@ async function generateAndSendInvoice(env, orderId) {
     }
 
     const alreadySent = await env.KV.get(`invoice_sent:${orderId}`);
-    if (alreadySent) return true;
+    if (alreadySent) {
+      console.log(`Invoice for ${orderId} already sent, skipping.`);
+      return true;
+    }
 
     let items = [];
     try { items = JSON.parse(order.items || '[]'); } catch { items = []; }
@@ -3265,52 +3438,17 @@ async function generateAndSendInvoice(env, orderId) {
     const settings = {};
     (sr || []).forEach(r => { settings[r.key] = r.value; });
 
-    // ═══════════════════ FETCH LOGO ═══════════════════
-    let logoData = null;
-    // Use setting > env var > hardcoded default
-    const logoUrl = settings.invoice_logo_url || env.INVOICE_LOGO_URL || DEFAULT_LOGO_URL;
+    // Call the self-contained logo loader module
+ // Load logo
+const logoData = getInvoiceLogoData();
 
-    try {
-      console.log('Fetching invoice logo from:', logoUrl);
-      const logoRes = await fetch(logoUrl);
-      if (logoRes.ok) {
-        const logoBytes = new Uint8Array(await logoRes.arrayBuffer());
-        console.log('Logo fetched OK, size:', logoBytes.length, 'bytes, header:', 
-          logoBytes[0].toString(16), logoBytes[1].toString(16), logoBytes[2].toString(16));
-
-        // JPEG
-        if (logoBytes[0] === 0xFF && logoBytes[1] === 0xD8 && logoBytes[2] === 0xFF) {
-	// REPLACE WITH (fallback dims if parser fails):
-        const dims = getJpegDimensions(logoBytes) || { width: 150, height: 150 };
-        const hex = Array.from(logoBytes).map(b => b.toString(16).padStart(2, '0')).join('') + '>';
-        logoData = { hex, width: dims.width, height: dims.height, type: 'jpeg' };
-        console.log('JPEG logo ready:', dims.width, 'x', dims.height);
-        }
-        // PNG
-        else if (logoBytes[0] === 0x89 && logoBytes[1] === 0x50 && logoBytes[2] === 0x4E && logoBytes[3] === 0x47) {
-          console.log('PNG logo detected, decoding to RGB...');
-          const decoded = await decodePngToRGB(logoBytes);
-          if (decoded) {
-            const ds = downsampleRGB(decoded.rgb, decoded.width, decoded.height, 150);
-            const hex = Array.from(ds.rgb).map(b => b.toString(16).padStart(2, '0')).join('') + '>';
-            logoData = { hex, width: ds.width, height: ds.height, type: 'raw' };
-            console.log('PNG logo ready:', ds.width, 'x', ds.height);
-          } else {
-            console.error('PNG decode failed');
-          }
-        } else {
-          console.error('Unknown image format, bytes:', logoBytes[0], logoBytes[1], logoBytes[2], logoBytes[3]);
-        }
-      } else {
-        console.error('Logo fetch HTTP error:', logoRes.status, logoRes.statusText);
-      }
-    } catch (e) {
-      console.error('Invoice logo fetch error:', e.message || e);
-    }
-
-    console.log('Logo data ready:', logoData ? `${logoData.type} ${logoData.width}x${logoData.height}` : 'NONE (fallback K)');
-
-    // Generate PDF
+if (logoData) {
+  console.log("✅ Logo ready for PDF:", logoData.width, 'x', logoData.height);
+} else {
+  console.log("⚠️ Logo not loaded - will show 'K' fallback");
+}
+    
+    // Generate the PDF. It will use logoData if available, or fallback to 'K' if null.
     const pdfBytes = generateInvoicePDF(order, items, settings, logoData);
 
     // Upload to R2
@@ -3320,6 +3458,7 @@ async function generateAndSendInvoice(env, orderId) {
     });
 
     const pdfUrl = `https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/${fileName}`;
+    console.log(`✅ PDF for order ${orderId} created and uploaded: ${pdfUrl}`);
 
     // Send via WhatsApp
     const name = order.customer_name || 'Customer';
@@ -3339,7 +3478,7 @@ async function generateAndSendInvoice(env, orderId) {
 
     if (waResult?.error) {
       console.error('Invoice WA send error:', waResult.error);
-      return false;
+      return false; // Or handle as needed
     }
 
     await env.KV.put(`invoice_sent:${orderId}`, '1', { expirationTtl: 86400 * 90 });
@@ -3350,9 +3489,11 @@ async function generateAndSendInvoice(env, orderId) {
       { pdfUrl }, 'system'
     );
 
+    console.log(`✅ Invoice for ${orderId} successfully sent.`);
     return true;
+
   } catch (e) {
-    console.error('generateAndSendInvoice error:', e);
+    console.error(`❌ Uncaught error in generateAndSendInvoice for order ${orderId}:`, e.stack);
     return false;
   }
 }
@@ -6741,7 +6882,7 @@ await sendWhatsAppText(env, env.OWNER_PHONE,
         const logoUrl = settings.invoice_logo_url || env.INVOICE_LOGO_URL || null;
         if (logoUrl) {
           try {
-            const logoRes = await fetch(logoUrl);
+            const logoRes = await fetch(logoUrl, { cf: { cacheTtl: 86400, cacheEverything: true } });
             if (logoRes.ok) {
               const logoBytes = new Uint8Array(await logoRes.arrayBuffer());
               const dims = getJpegDimensions(logoBytes);
