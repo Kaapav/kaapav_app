@@ -3396,7 +3396,7 @@ async function generateAndSendInvoice(env, orderId) {
     ).bind(orderId).first();
 
     if (!order) {
-      console.error('generateAndSendInvoice: order not found', orderId);
+      console.error("generateAndSendInvoice: order not found", orderId);
       return false;
     }
 
@@ -3413,17 +3413,16 @@ async function generateAndSendInvoice(env, orderId) {
     }
 
     let items = [];
-    try { items = JSON.parse(order.items || '[]'); } catch { items = []; }
+    try { items = JSON.parse(order.items || "[]"); } catch { items = []; }
 
     const { results: sr } = await env.DB.prepare(
       `SELECT key, value FROM settings`
     ).all();
+
     const settings = {};
     (sr || []).forEach(r => { settings[r.key] = r.value; });
 
     // ── Load logo ──
-    // If your getInvoiceLogoData is async, change this to:
-    // const logoData = await getInvoiceLogoData(settings, env);
     const logoData = getInvoiceLogoData();
     if (logoData) console.log(`✅ Logo ready: ${logoData.width}x${logoData.height}`);
     else console.log(`⚠️ Logo not loaded — 'K' fallback`);
@@ -3434,50 +3433,65 @@ async function generateAndSendInvoice(env, orderId) {
     // ── Upload to R2 ──
     const fileName = `invoices/Invoice_${orderId}_${Date.now()}.pdf`;
     await env.MEDIA.put(fileName, pdfBytes, {
-      httpMetadata: { contentType: 'application/pdf' },
+      httpMetadata: { contentType: "application/pdf" },
     });
 
     const pdfUrl = `https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/${fileName}`;
-
     console.log(`✅ PDF uploaded: ${pdfUrl}`);
 
     // ── Send via WhatsApp ──
-    const name = order.customer_name || 'Customer';
+    const name = order.customer_name || "Customer";
+
     const waResult = await sendWhatsAppDocument(
       env,
       order.phone,
       pdfUrl,
       `KAAPAV_Invoice_${orderId}.pdf`,
-      `📄 *Your KAAPAV Invoice*\n\n` +
-        `Hi ${name.split(' ')[0]}! Here's your invoice.\n\n` +
-        `Order: *${orderId}*\n` +
+      `Your KAAPAV Invoice\n\n` +
+        `Hi ${String(name).split(" ")[0]}! Here's your invoice.\n\n` +
+        `Order: ${orderId}\n` +
         `Amount: Rs.${order.total || 0}\n` +
-        `Status: ${(order.payment_status || 'pending').toUpperCase()}\n\n` +
-        `💎 KAAPAV Fashion Jewellery\n` +
+        `Status: ${(order.payment_status || "pending").toUpperCase()}\n\n` +
+        `KAAPAV Fashion Jewellery\n` +
         `www.kaapav.com`
     );
 
-    console.log('WA document result:', JSON.stringify(waResult));
+    console.log("WA document result:", JSON.stringify(waResult));
 
     if (waResult?.error) {
-      console.error('Invoice WA send error:', waResult.error);
+      console.error("Invoice WA send error:", waResult.error);
       return false;
     }
 
-    // ── Store timestamp (KV TTL must be >= 60) ──
+    const wamid = waResult?.messages?.[0]?.id;
+    if (!wamid) {
+      console.error("WA send: no message id returned", waResult);
+      return false;
+    }
+
+    await env.DB.prepare(
+      `UPDATE orders
+       SET last_invoice_wamid = ?, last_invoice_status = ?
+       WHERE order_id = ?`
+    ).bind(wamid, "queued", orderId).run();
+
+    console.log(`Invoice queued on WA for ${orderId}: ${wamid}`);
+
+    // ── Store timestamp ──
     await env.KV.put(`invoice_sent:${orderId}`, Date.now().toString(), { expirationTtl: 60 });
 
-    await logOrderEvent(env, orderId, 'invoice_sent',
-      `Invoice sent to ${order.phone} via WhatsApp`,
-      { pdfUrl },
-      'system'
+    await logOrderEvent(
+      env,
+      orderId,
+      "invoice_queued",
+      `Invoice queued to ${order.phone} via WhatsApp`,
+      { pdfUrl, wamid },
+      "system"
     );
 
-    console.log(`✅ Invoice sent successfully for ${orderId}`);
     return true;
-
   } catch (e) {
-    console.error(`❌ Uncaught error in generateAndSendInvoice for order ${orderId}:`, e.stack);
+    console.error(`❌ Uncaught error in generateAndSendInvoice for order ${orderId}:`, e?.stack || e);
     return false;
   }
 }
@@ -3615,6 +3629,27 @@ async function handleWebhookPost(request, env, ctx) {
     const entry = body?.entry?.[0];
     const changes = entry?.changes?.[0];
     const value = changes?.value;
+   
+    // ✅ Handle delivery/status webhooks (they come in value.statuses, not value.messages)
+const statuses = value?.statuses;
+if (Array.isArray(statuses) && statuses.length) {
+  for (const s of statuses) {
+    console.log("WA STATUS:", JSON.stringify(s, null, 2));
+
+    await env.DB.prepare(
+      `UPDATE orders SET last_invoice_status = ? WHERE last_invoice_wamid = ?`
+    ).bind(s.status, s.id).run();
+
+    // Optional: store error details if failed
+    // const err = s.errors?.[0];
+    // await env.DB.prepare(
+    //   `UPDATE orders SET last_invoice_error_code=?, last_invoice_error_title=? WHERE last_invoice_wamid=?`
+    // ).bind(err?.code ?? null, err?.title ?? null, s.id).run();
+  }
+
+  return jsonResponse({ status: 'ok' }); // important: stop here for status-only webhooks
+}
+
     if (!value?.messages?.[0]) return jsonResponse({ status: 'ok' });
 
     const msg = value.messages[0];
