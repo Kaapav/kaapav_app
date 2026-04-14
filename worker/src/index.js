@@ -111,9 +111,8 @@ function errorResponse(message, status = 400) {
 }
 
 async function logOrderEvent(env, orderId, eventType, message, meta = {}, source = 'system') {
-  try {
-    const createdAt = new Date().toISOString();
-
+  const createdAt = new Date().toISOString();
+try {
     await env.DB.prepare(`
       INSERT INTO order_events (
         order_id, event_type, event_source, message, meta_json, created_at
@@ -3395,6 +3394,7 @@ async function generateAndSendInvoice(env, orderId) {
     const order = await env.DB.prepare(
       `SELECT * FROM orders WHERE order_id = ?`
     ).bind(orderId).first();
+
     if (!order) {
       console.error('generateAndSendInvoice: order not found', orderId);
       return false;
@@ -3403,10 +3403,12 @@ async function generateAndSendInvoice(env, orderId) {
     // ── Rate limit: block only if sent within last 15 seconds ──
     const lastSent = await env.KV.get(`invoice_sent:${orderId}`);
     if (lastSent) {
-      const secondsAgo = (Date.now() - parseInt(lastSent)) / 1000;
+      const secondsAgo = (Date.now() - parseInt(lastSent, 10)) / 1000;
       if (secondsAgo < 15) {
-        console.log(`Invoice for ${orderId} rate limited — sent ${Math.round(secondsAgo)}s ago, retry in ${Math.ceil(15 - secondsAgo)}s`);
-        return true; // not an error, just throttled
+        console.log(
+          `Invoice for ${orderId} rate limited — sent ${Math.round(secondsAgo)}s ago, retry in ${Math.ceil(15 - secondsAgo)}s`
+        );
+        return true; // throttled, not an error
       }
     }
 
@@ -3420,12 +3422,11 @@ async function generateAndSendInvoice(env, orderId) {
     (sr || []).forEach(r => { settings[r.key] = r.value; });
 
     // ── Load logo ──
+    // If your getInvoiceLogoData is async, change this to:
+    // const logoData = await getInvoiceLogoData(settings, env);
     const logoData = getInvoiceLogoData();
-    if (logoData) {
-      console.log(`✅ Logo ready: ${logoData.width}x${logoData.height}`);
-    } else {
-      console.log(`⚠️ Logo not loaded — 'K' fallback`);
-    }
+    if (logoData) console.log(`✅ Logo ready: ${logoData.width}x${logoData.height}`);
+    else console.log(`⚠️ Logo not loaded — 'K' fallback`);
 
     // ── Generate PDF ──
     const pdfBytes = generateInvoicePDF(order, items, settings, logoData);
@@ -3435,7 +3436,9 @@ async function generateAndSendInvoice(env, orderId) {
     await env.MEDIA.put(fileName, pdfBytes, {
       httpMetadata: { contentType: 'application/pdf' },
     });
-    const pdfUrl = `https://wa.kaapav.com/${fileName}`;
+
+    const pdfUrl = `https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/${fileName}`;
+
     console.log(`✅ PDF uploaded: ${pdfUrl}`);
 
     // ── Send via WhatsApp ──
@@ -3446,14 +3449,14 @@ async function generateAndSendInvoice(env, orderId) {
       pdfUrl,
       `KAAPAV_Invoice_${orderId}.pdf`,
       `📄 *Your KAAPAV Invoice*\n\n` +
-      `Hi ${name.split(' ')[0]}! Here's your invoice.\n\n` +
-      `Order: *${orderId}*\n` +
-      `Amount: Rs.${order.total || 0}\n` +
-      `Status: ${(order.payment_status || 'pending').toUpperCase()}\n\n` +
-      `💎 KAAPAV Fashion Jewellery\n` +
-      `www.kaapav.com`
+        `Hi ${name.split(' ')[0]}! Here's your invoice.\n\n` +
+        `Order: *${orderId}*\n` +
+        `Amount: Rs.${order.total || 0}\n` +
+        `Status: ${(order.payment_status || 'pending').toUpperCase()}\n\n` +
+        `💎 KAAPAV Fashion Jewellery\n` +
+        `www.kaapav.com`
     );
-    
+
     console.log('WA document result:', JSON.stringify(waResult));
 
     if (waResult?.error) {
@@ -3461,11 +3464,13 @@ async function generateAndSendInvoice(env, orderId) {
       return false;
     }
 
-    // ── Store timestamp (not boolean) — expires in 15s for rate limit ──
-    await env.KV.put(`invoice_sent:${orderId}`, Date.now().toString(), { expirationTtl: 15 });
+    // ── Store timestamp (KV TTL must be >= 60) ──
+    await env.KV.put(`invoice_sent:${orderId}`, Date.now().toString(), { expirationTtl: 60 });
 
     await logOrderEvent(env, orderId, 'invoice_sent',
-      `Invoice sent to ${order.phone} via WhatsApp`
+      `Invoice sent to ${order.phone} via WhatsApp`,
+      { pdfUrl },
+      'system'
     );
 
     console.log(`✅ Invoice sent successfully for ${orderId}`);
@@ -7426,13 +7431,8 @@ if (path.match(/^\/api\/orders\/[^/]+\/send-notification$/) && method === 'POST'
   };
   const msg = msgs[type];
   if (!msg) return errorResponse('Invalid type — use confirmed/shipped/delivered');
-const waResult = await sendWhatsAppText(env, order.phone, msg);
-console.log('Notification WA result:', JSON.stringify(waResult));
-if (waResult?.error) {
-  console.error('WA notification error:', JSON.stringify(waResult.error));
-  return errorResponse(`WhatsApp error: ${waResult.error.message || 'Unknown'}`, 502);
-}
-return jsonResponse({ success: true });
+  await sendWhatsAppText(env, order.phone, msg);
+  return jsonResponse({ success: true });
 }
     // PATCH /api/orders/:id/notes
 if (path.match(/^\/api\/orders\/[^/]+\/notes$/) && method === 'PATCH') {
