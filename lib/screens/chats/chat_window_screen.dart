@@ -30,6 +30,7 @@ import '../../services/api/api_client.dart';
 import '../../models/product.dart';
 import '../../services/api/product_api.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/notification_service.dart';
 
 class ChatWindowScreen extends ConsumerStatefulWidget {
   final String phone;
@@ -58,6 +59,8 @@ class _ChatWindowScreenState extends ConsumerState<ChatWindowScreen>
   @override
   void initState() {
     super.initState();
+NotificationService.activeChatPhone = widget.phone;
+NotificationService.instance.cancelForPhone(widget.phone);
     WidgetsBinding.instance.addObserver(this);
 
     // Set current chat
@@ -80,6 +83,7 @@ class _ChatWindowScreenState extends ConsumerState<ChatWindowScreen>
 
   @override
   void dispose() {
+NotificationService.activeChatPhone = null;
     WidgetsBinding.instance.removeObserver(this);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
@@ -99,24 +103,32 @@ class _ChatWindowScreenState extends ConsumerState<ChatWindowScreen>
     }
   }
 
-  void _onScroll() {
-    final atBottom = _scrollController.position.pixels <= 100;
+void _onScroll() {
+  if (!_scrollController.hasClients) return;
+  // reverse:false → bottom = maxScrollExtent
+  final atBottom = (_scrollController.position.maxScrollExtent -
+      _scrollController.position.pixels) <= 150;
   if (atBottom != _isAtBottom) {
     setState(() => _isAtBottom = atBottom);
   }
 }
 
-  void _scrollToBottom({bool animated = true}) {
+void _scrollToBottom({bool animated = true}) {
   if (!_scrollController.hasClients) return;
-  if (animated) {
-    _scrollController.animateTo(
-      0,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-    );
-  } else {
-    _scrollController.jumpTo(0);
-  }
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!_scrollController.hasClients) return;
+    if (animated) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    } else {
+      _scrollController.jumpTo(
+        _scrollController.position.maxScrollExtent,
+      );
+    }
+  });
 }
 
   Future<void> _handleSend(String text) async {
@@ -1075,16 +1087,23 @@ ListTile(
     final isLoading = messageState.isLoading(widget.phone);
     final isSending = messageState.isSending;
 
-    ref.listen<List<Message>>(
-      messagesForPhoneProvider(widget.phone),
-      (previous, next) {
-        if (previous != null && next.length > previous.length && _isAtBottom) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _scrollToBottom();
-          });
-        }
-      },
-    );
+   // In build() method, replace the existing ref.listen:
+ref.listen<List<Message>>(
+  messagesForPhoneProvider(widget.phone),
+  (previous, next) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      
+      if (previous == null || previous.isEmpty) {
+        // First load - jump to bottom instantly
+        _scrollToBottom(animated: false);
+      } else if (next.length > previous.length && _isAtBottom) {
+        // New message arrived and user is at bottom
+        _scrollToBottom();
+      }
+    });
+  },
+);
 
     return Scaffold(
       backgroundColor: wallpaperColor,
@@ -1530,115 +1549,140 @@ floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
   }
 
   Widget _buildMessagesList(List<Message> messages, bool readReceiptsEnabled) {
-    // Apply search filter
-    var filtered = messages;
-    if (_searchQuery.isNotEmpty) {
-      filtered = messages.where((m) =>
-        (m.text ?? '').toLowerCase().contains(_searchQuery) ||
-        (m.mediaCaption ?? '').toLowerCase().contains(_searchQuery)
-      ).toList();
-    }
+  var filtered = messages;
+  if (_searchQuery.isNotEmpty) {
+    filtered = messages.where((m) =>
+      (m.text ?? '').toLowerCase().contains(_searchQuery) ||
+      (m.mediaCaption ?? '').toLowerCase().contains(_searchQuery)
+    ).toList();
+  }
 
-    final grouped = _groupMessagesByDate(filtered);
-    final entries = grouped.entries.toList();
+  final grouped = _groupMessagesByDate(filtered);
+  final entries = grouped.entries.toList(); // oldest date first
 
-    return ListView.builder(
-      controller: _scrollController,
-      reverse: true,
-      padding: const EdgeInsets.only(top: 16, bottom: 8),
-      itemCount: entries.length,
-      itemBuilder: (context, index) {
-        final entry = entries[index];
-        final dateStr = entry.key;
-        final dateMessages = entry.value;
+  return ListView.builder(
+    controller: _scrollController,
+    reverse: false, // oldest at top, newest at bottom
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    itemCount: entries.length,
+    itemBuilder: (context, index) {
+      final entry = entries[index];
+      final dateStr = entry.key;
+      final dateMessages = entry.value;
 
-        return Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Date Header ──
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: KaapavTheme.white, borderRadius: BorderRadius.circular(20),
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)]),
-                child: Text(_formatDateHeader(dateStr),
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: KaapavTheme.gray)),
+                  color: Colors.black.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  _formatDateHeader(dateStr),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white,
+                  ),
+                ),
               ),
             ),
-            ...dateMessages.map((message) {
-              final isSelected = _selectedIds.contains(message.messageId);
+          ),
 
-              final bubbleMessage =
-                  !readReceiptsEnabled && message.isOutgoing
-                      ? message.copyWith(
-                          status: message.isFailed ? 'failed' : 'sent',
-                          readAt: null,
-                          deliveredAt: null,
-                        )
-                      : message;
+          // ── Messages ──
+          ...dateMessages.map((message) {
+            final isSelected = _selectedIds.contains(message.messageId);
+            final isOutgoing = message.isOutgoing;
 
-              Widget bubble = ChatBubble(
-                message: bubbleMessage,
-                onButtonClick: _handleButtonClick,
-                onRetry: _handleRetry,
-                onLongPress: _isSelecting
-                    ? (_) => setState(() {
-                        if (isSelected) {
-                          _selectedIds.remove(message.messageId);
-                        } else {
-                          _selectedIds.add(message.messageId);
-                        }
-                      })
-                    : _showMessageOptions,
-              );
-              // Selection mode
-              if (_isSelecting) {
-                bubble = GestureDetector(
-                  onTap: () => setState(() {
-                    if (isSelected) {
-  _selectedIds.remove(message.messageId);
-} else {
-  _selectedIds.add(message.messageId);
-}
-                  }),
-                  child: Container(
-                    color: isSelected ? KaapavTheme.gold.withValues(alpha: 0.1) : null,
-                    child: Row(children: [
+            final bubbleMessage = !readReceiptsEnabled && isOutgoing
+                ? message.copyWith(
+                    status: message.isFailed ? 'failed' : 'sent',
+                    readAt: null,
+                    deliveredAt: null,
+                  )
+                : message;
+
+            Widget bubble = ChatBubble(
+              message: bubbleMessage,
+              onButtonClick: _handleButtonClick,
+              onRetry: _handleRetry,
+              onLongPress: _isSelecting
+                  ? (_) => setState(() {
+                      if (isSelected) {
+                        _selectedIds.remove(message.messageId);
+                      } else {
+                        _selectedIds.add(message.messageId);
+                      }
+                    })
+                  : _showMessageOptions,
+            );
+
+            // ── Selection Mode Wrapper ──
+            if (_isSelecting) {
+              return GestureDetector(
+                onTap: () => setState(() {
+                  if (isSelected) {
+                    _selectedIds.remove(message.messageId);
+                  } else {
+                    _selectedIds.add(message.messageId);
+                  }
+                }),
+                child: Container(
+                  color: isSelected
+                      ? KaapavTheme.gold.withValues(alpha: 0.15)
+                      : Colors.transparent,
+                  padding: const EdgeInsets.symmetric(vertical: 1),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
                       Padding(
                         padding: const EdgeInsets.only(left: 8),
-                        child: Icon(isSelected ? Icons.check_circle : Icons.circle_outlined,
-                            color: isSelected ? KaapavTheme.gold : KaapavTheme.grayLight, size: 22),
+                        child: Icon(
+                          isSelected
+                              ? Icons.check_circle
+                              : Icons.circle_outlined,
+                          color: isSelected
+                              ? KaapavTheme.gold
+                              : KaapavTheme.grayLight,
+                          size: 22,
+                        ),
                       ),
                       Expanded(child: bubble),
-                    ]),
+                    ],
                   ),
-                );
-              } else {
-                // Swipe to reply
-                bubble = Dismissible(
-                  key: Key('swipe_${message.messageId}'),
-                  direction: DismissDirection.startToEnd,
-                  confirmDismiss: (_) async {
-                    HapticFeedback.lightImpact();
-                    setState(() => _replyingTo = message);
-                    return false; // don't dismiss
-                  },
-                  background: Container(
-                    alignment: Alignment.centerLeft,
-                    padding: const EdgeInsets.only(left: 24),
-                    child: const Icon(Icons.reply, color: KaapavTheme.gold, size: 28),
-                  ),
-                  child: bubble,
-                );
-              }
+                ),
+              );
+            }
 
-              return bubble;
-            }),
-          ],
-        );
-      },
-    );
-  }
+            // ── Swipe to Reply ──
+            return Dismissible(
+              key: Key('swipe_${message.messageId}'),
+              direction: DismissDirection.startToEnd,
+              confirmDismiss: (_) async {
+                HapticFeedback.lightImpact();
+                setState(() => _replyingTo = message);
+                return false;
+              },
+              background: Container(
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.only(left: 24),
+                child: const Icon(Icons.reply,
+                    color: KaapavTheme.gold, size: 28),
+              ),
+              child: bubble,
+            );
+          }),
+        ],
+      );
+    },
+  );
+}
 
   Map<String, List<Message>> _groupMessagesByDate(List<Message> messages) {
   final grouped = <String, List<Message>>{};
@@ -1653,7 +1697,7 @@ floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     grouped[dateKey]!.add(message);
   }
 
-  // ? Sort messages within each group by parsed DateTime (not raw string)
+  // Sort messages within each group: oldest → newest
   grouped.forEach((key, value) {
     value.sort((a, b) {
       final aTime = Formatters.parseDate(a.timestamp);
@@ -1661,13 +1705,14 @@ floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       if (aTime == null && bTime == null) return 0;
       if (aTime == null) return -1;
       if (bTime == null) return 1;
-      return aTime.compareTo(bTime); // oldest ? newest (top ? bottom)
+      return aTime.compareTo(bTime);
     });
   });
 
-  // ? Sort groups newest-first (because ListView is reverse:true)
+  // Sort date groups: oldest → newest (ascending)
   final sorted = Map.fromEntries(
-    grouped.entries.toList()..sort((a, b) => b.key.compareTo(a.key)),
+    grouped.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key)), // ✅ ascending
   );
 
   return sorted;

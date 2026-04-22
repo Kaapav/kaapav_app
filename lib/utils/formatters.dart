@@ -20,27 +20,49 @@ class Formatters {
 
   static String date(DateTime? dt) {
     if (dt == null) return '';
-    return _dateFormat.format(dt.toLocal());
+    return _dateFormat.format(dt);
   }
 
   static String time(DateTime? dt) {
     if (dt == null) return '';
-    return _timeFormat.format(dt.toLocal());
+    return _timeFormat.format(dt);
   }
 
   static String dateTime(DateTime? dt) {
     if (dt == null) return '';
-    return _dateTimeFormat.format(dt.toLocal());
+    return _dateTimeFormat.format(dt);
   }
 
   static DateTime? parseDate(String? str) {
-    if (str == null || str.isEmpty) return null;
-    try {
-      return DateTime.parse(str);
-    } catch (_) {
-      return null;
+  if (str == null || str.isEmpty) return null;
+  try {
+    // Handle Unix epoch (stored as string e.g. "1713600000" or "1713600000000")
+    final asInt = int.tryParse(str);
+    if (asInt != null) {
+      final ms = asInt > 9999999999 ? asInt : asInt * 1000;
+      return DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true).toLocal();
     }
+
+    final dt = DateTime.parse(str);
+
+    // If string has no timezone info (no Z, no +XX:XX) → assume UTC
+    final hasTimezone = str.endsWith('Z') ||
+        str.contains('+') ||
+        RegExp(r'-\d{2}:\d{2}$').hasMatch(str);
+
+    if (!hasTimezone) {
+      // Reinterpret as UTC then convert to local (IST = UTC+5:30)
+      return DateTime.utc(
+        dt.year, dt.month, dt.day,
+        dt.hour, dt.minute, dt.second, dt.millisecond,
+      ).toLocal();
+    }
+
+    return dt.toLocal();
+  } catch (_) {
+    return null;
   }
+}
 
   static String fileSize(int bytes) {
     if (bytes >= 1073741824) return '${(bytes / 1073741824).toStringAsFixed(1)} GB';

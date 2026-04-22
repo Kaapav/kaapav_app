@@ -4821,29 +4821,35 @@ if (greetRegex.test(inputLower)) {
   async executeAction(phone, action) {
     const env = this.env;
 
-    const saveOutgoing = async (text, type = 'text') => {
-      const msgId = `auto_${Date.now()}_${Math.random().toString(36).slice(2)}_${phone}`;
-      await env.DB.prepare(`
-        INSERT OR IGNORE INTO messages
-          (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at)
-        VALUES (?, ?, ?, ?, 'outgoing', 'sent', 1, datetime('now'), datetime('now'))
-      `).bind(msgId, phone, text, type).run();
-      await env.DB.prepare(`
-        UPDATE chats SET
-          last_message = ?, last_message_type = ?, last_direction = 'outgoing',
-          last_timestamp = datetime('now'), updated_at = datetime('now')
-        WHERE phone = ?
-      `).bind(text.substring(0, 100), type, phone).run();
-    };
+  const saveOutgoing = async (text, type = 'text', btns = null) => {
+  const msgId = `auto_${Date.now()}_${Math.random().toString(36).slice(2)}_${phone}`;
+  const isMenu = type === 'buttons' ? 1 : 0;
+  const buttonText = btns ? btns.map(b => b.title).join('|') : null;
+  const buttonsJson = btns ? JSON.stringify(btns) : null;
+
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status,
+       is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
+    VALUES (?, ?, ?, ?, 'outgoing', 'sent', 1, ?, ?, ?, datetime('now'), datetime('now'))
+  `).bind(msgId, phone, text, type, isMenu, buttonText, buttonsJson).run();
+
+  await env.DB.prepare(`
+    UPDATE chats SET
+      last_message = ?, last_message_type = ?, last_direction = 'outgoing',
+      last_timestamp = datetime('now'), updated_at = datetime('now')
+    WHERE phone = ?
+  `).bind(text, type, phone).run();
+};
 
     const sendButtons = async (text, btns, footer = null) => {
-      await sendWhatsAppButtons(env, phone, text, btns, footer);
-      await saveOutgoing('[Menu] ' + text.substring(0, 80), 'buttons');
-    };
+  await sendWhatsAppButtons(env, phone, text, btns, footer);
+  await saveOutgoing('[Menu] ' + text, 'buttons', btns); // full text
+};
 
     const sendText = async (text) => {
       await sendWhatsAppText(env, phone, text);
-      await saveOutgoing(text.substring(0, 100), 'text');
+      await saveOutgoing(text, 'text');
     };
 
     switch (action) {
@@ -5224,11 +5230,14 @@ Tap to select 👇`,
     );
 
     const msgId = `auto_${Date.now()}_${phone}`;
-    await env.DB.prepare(`
-      INSERT OR IGNORE INTO messages
-        (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at)
-      VALUES (?, ?, ?, ?, 'outgoing', 'sent', 1, datetime('now'), datetime('now'))
-    `).bind(msgId, phone, '[Browse Topics list sent]', 'list').run();
+   // In sendBrowseTopics, replace the DB save:
+const browseMsg = '📋 Browse FAQ Topics\n\n💎 Pick a topic below and I\'ll answer all your questions!\n\nTap to select 👇';
+await env.DB.prepare(`
+  INSERT OR IGNORE INTO messages
+    (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at)
+  VALUES (?, ?, ?, ?, 'outgoing', 'sent', 1, datetime('now'), datetime('now'))
+`).bind(msgId, phone, browseMsg, 'list').run();
+
     await env.DB.prepare(`
       UPDATE chats SET last_message = 'Browse Topics', last_message_type = 'list',
         last_direction = 'outgoing', last_timestamp = datetime('now'), updated_at = datetime('now')
@@ -5277,17 +5286,14 @@ and get an instant answer! 👇`,
   );
 
   // Save to DB
-  const msgId = `auto_${Date.now()}_${phone}`;
-  await env.DB.prepare(`
-    INSERT OR IGNORE INTO messages
-      (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at)
-    VALUES (?, ?, ?, ?, 'outgoing', 'sent', 1, datetime('now'), datetime('now'))
-  `).bind(msgId, phone, `[FAQ category: ${faqCat.group}]`, 'list').run();
-  await env.DB.prepare(`
-    UPDATE chats SET last_message = ?, last_message_type = 'list',
-      last_direction = 'outgoing', last_timestamp = datetime('now'), updated_at = datetime('now')
-    WHERE phone = ?
-  `).bind(faqCat.title, phone).run();
+  const msgId = 'auto_' + Date.now() + '_' + phone;
+  await env.DB.prepare(
+    'INSERT OR IGNORE INTO messages (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at) VALUES (?, ?, ?, ?, \'outgoing\', \'sent\', 1, datetime(\'now\'), datetime(\'now\'))'
+  ).bind(msgId, phone, '📋 ' + faqCat.title + '\n\n💎 Select your question below and get an instant answer! 👇', 'list').run();
+  
+  await env.DB.prepare(
+    'UPDATE chats SET last_message = ?, last_message_type = \'list\', last_direction = \'outgoing\', last_timestamp = datetime(\'now\'), updated_at = datetime(\'now\') WHERE phone = ?'
+  ).bind(faqCat.title, phone).run();
 }
 
  async handleOrderState(phone, state, data, input) {
@@ -5525,41 +5531,51 @@ Confirm order? 👇`,
   // ── SEND FAQ ANSWER + post-answer buttons ─────────────────────
   // After answer: [❓ More] [🛒 Order] [🏠 Home]
   async sendFaqAnswer(phone, faq) {
-    const env = this.env;
+  const env = this.env;
 
-    // Send the answer text
-    await sendWhatsAppText(env, phone, faq.message);
+  await sendWhatsAppText(env, phone, faq.message);
+  await new Promise(r => setTimeout(r, 800));
+  await sendWhatsAppButtons(
+    env, phone,
+    'Was that helpful? What would you like to do next?',
+    [
+      { id: 'faq_more',  title: '❓ More Questions' },
+      { id: 'faq_order', title: '🛒 Order Now' },
+      { id: 'faq_home',  title: '🏠 Home' },
+    ],
+    '💎 KAAPAV Fashion Jewellery'
+  );
 
-    // Small delay so answer arrives before buttons
-    await new Promise(r => setTimeout(r, 800));
+  const msgId1 = `auto_${Date.now()}_faq_${phone}`;
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at)
+     VALUES (?, ?, ?, ?, 'outgoing', 'sent', 1, datetime('now'), datetime('now'))`
+  ).bind(msgId1, phone, faq.message, 'text').run();
 
-    // Post-FAQ action buttons
-    await sendWhatsAppButtons(
-      env,
-      phone,
-      'Was that helpful? What would you like to do next?',
-      [
-        { id: 'faq_more',  title: '❓ More Questions' },
-        { id: 'faq_order', title: '🛒 Order Now' },
-        { id: 'faq_home',  title: '🏠 Home' },
-      ],
-      '💎 KAAPAV Fashion Jewellery'
-    );
+  const msgId2 = `auto_${Date.now() + 1}_faqbtn_${phone}`;
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status,
+       is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
+     VALUES (?, ?, ?, 'buttons', 'outgoing', 'sent', 1, 1, ?, ?, datetime('now'), datetime('now'))`
+  ).bind(
+    msgId2, phone,
+    'Was that helpful? What would you like to do next?',
+    '❓ More Questions|🛒 Order Now|🏠 Home',
+    JSON.stringify([
+      { id: 'faq_more',  title: '❓ More Questions' },
+      { id: 'faq_order', title: '🛒 Order Now' },
+      { id: 'faq_home',  title: '🏠 Home' },
+    ])
+  ).run();
 
-    // Save to DB
-    const msgId1 = `auto_${Date.now()}_faq_${phone}`;
-    await env.DB.prepare(`
-      INSERT OR IGNORE INTO messages
-        (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at)
-      VALUES (?, ?, ?, ?, 'outgoing', 'sent', 1, datetime('now'), datetime('now'))
-    `).bind(msgId1, phone, faq.message.substring(0, 100), 'text').run();
-
-    await env.DB.prepare(`
-      UPDATE chats SET last_message = ?, last_message_type = 'buttons',
-        last_direction = 'outgoing', last_timestamp = datetime('now'), updated_at = datetime('now')
-      WHERE phone = ?
-    `).bind(faq.title, phone).run();
-  }
+  await env.DB.prepare(
+    `UPDATE chats SET last_message = ?, last_message_type = 'buttons',
+      last_direction = 'outgoing', last_timestamp = datetime('now'), updated_at = datetime('now')
+     WHERE phone = ?`
+  ).bind(faq.title, phone).run();
+}
 
   // ── KEYWORD SEARCH across all FAQs ───────────────────────────
   // Scans keywords JSON array in quick_replies for any word match
@@ -5650,17 +5666,13 @@ Or browse all FAQ topics 👇`,
       '💎 KAAPAV Fashion Jewellery'
     );
 
-    const msgId = `auto_${Date.now()}_${phone}`;
-    await env.DB.prepare(`
-      INSERT OR IGNORE INTO messages
-        (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at)
-      VALUES (?, ?, ?, ?, 'outgoing', 'sent', 1, datetime('now'), datetime('now'))
-    `).bind(msgId, phone, '[Help prompt sent]', 'buttons').run();
-    await env.DB.prepare(`
-      UPDATE chats SET last_message = 'Help & FAQs', last_message_type = 'buttons',
-        last_direction = 'outgoing', last_timestamp = datetime('now'), updated_at = datetime('now')
-      WHERE phone = ?
-    `).bind(phone).run();
+   const msgId = 'auto_' + Date.now() + '_' + phone;
+  await env.DB.prepare(
+    'INSERT OR IGNORE INTO messages (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at) VALUES (?, ?, ?, ?, \'outgoing\', \'sent\', 1, datetime(\'now\'), datetime(\'now\'))'
+  ).bind(msgId, phone, '[Browse Topics list sent]', 'list').run();
+  await env.DB.prepare(
+    'UPDATE chats SET last_message = ?, last_message_type = \'list\', last_direction = \'outgoing\', last_timestamp = datetime(\'now\'), updated_at = datetime(\'now\') WHERE phone = ?'
+  ).bind('Browse Topics', phone).run();;
   }
 }
 

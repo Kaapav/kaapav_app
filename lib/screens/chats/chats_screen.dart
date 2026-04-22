@@ -218,10 +218,10 @@ class _ChatTile extends ConsumerWidget {
   String _previewText() {
     if (chat.lastMessage?.isNotEmpty == true) return chat.lastMessage!;
     switch (chat.lastMessageType) {
-      case 'image': return '?? Photo';
-      case 'video': return '?? Video';
-      case 'audio': return '?? Audio';
-      case 'document': return '?? Document';
+      case 'image': return '📷 Photo';
+      case 'video': return '🎥 Video';
+      case 'audio': return '🎵 Audio';
+      case 'document': return '📄 Document';
       default: return 'Tap to open chat';
     }
   }

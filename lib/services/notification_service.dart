@@ -21,8 +21,12 @@ class NotificationService {
   String? get token => _token;
   bool _initialized = false;
 
+  static String? activeChatPhone;
+ 
   // Callback when notification tapped
   void Function(String phone)? onNotificationTap;
+
+ 
 
   // ───────────────────────────────────────────────────────────────
   // INITIALIZE

@@ -1,6 +1,6 @@
 // lib/widgets/chat_input.dart
 // ---------------------------------------------------------------
-// CHAT INPUT � Send bar with attachments
+// CHAT INPUT   Send bar with attachments
 // ---------------------------------------------------------------
 
 import 'package:flutter/material.dart';
@@ -192,13 +192,13 @@ class ChatInputState extends State<ChatInput> {
                       textInputAction: TextInputAction.newline,
                       style: const TextStyle(
                         fontSize: 16,
-                        color: Colors.white,
+                        color: Color(0xFF111111),
   		        fontWeight: FontWeight.w400,
                       ),
                       decoration: InputDecoration(
                         hintText: widget.hintText ?? 'Type a message...',
                         hintStyle: TextStyle(
- 			 color: Colors.white.withValues(alpha: 0.5),  
+ 			 color: const Color(0xFF9CA3AF),  
   			 fontSize: 16,
 		     ),
                         border: InputBorder.none,
