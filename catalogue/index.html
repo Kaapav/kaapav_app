@@ -98,7 +98,7 @@ body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-
 .m-handle{width:34px;height:4px;background:var(--border);border-radius:2px;margin:11px auto 0}
 .m-close{position:absolute;top:12px;right:12px;width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.06);border:none;cursor:pointer;font-size:14px;color:var(--gray);display:flex;align-items:center;justify-content:center}
 .gal{position:relative}
-.g-main{width:100%;aspect-ratio:1;object-fit:cover;background:#f5f0e8;display:block}
+.g-main{width:100%;aspect-ratio:1;object-fit:cover;background:#f5f0e8;display:block;cursor:zoom-in}
 .g-ph{width:100%;aspect-ratio:1;background:linear-gradient(135deg,#f5f0e8,#ede8df);display:flex;align-items:center;justify-content:center;font-size:56px}
 .g-thumbs{display:flex;gap:5px;padding:7px 13px;overflow-x:auto;scrollbar-width:none}
 .g-thumbs::-webkit-scrollbar{display:none}
@@ -185,7 +185,7 @@ body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-
 .empty-drw .ei{font-size:40px;margin-bottom:10px}
 .empty-drw p{font-size:13px;color:var(--gray)}
 
-/* ── WISHLIST DRAWER (same structure) ── */
+/* ── WISHLIST DRAWER ── */
 .wi{display:flex;gap:10px;padding:10px 0;border-bottom:0.5px solid var(--border);align-items:center}
 .wi:last-child{border-bottom:none}
 .wi-img{width:52px;height:52px;border-radius:8px;object-fit:cover;background:#f5f0e8;flex-shrink:0}
@@ -230,6 +230,19 @@ body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-
 /* ── TOAST ── */
 .toast{position:fixed;top:74px;left:50%;transform:translateX(-50%) translateY(-14px);background:var(--dark);color:#fff;padding:7px 15px;border-radius:20px;font-size:12px;z-index:999;opacity:0;transition:all .22s;white-space:nowrap;pointer-events:none}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── IMAGE VIEWER ── */
+.img-viewer{position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:9999;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .25s}
+.img-viewer.on{opacity:1;pointer-events:all}
+.iv-bg{position:absolute;inset:0}
+.iv-container{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:60px 20px 60px}
+.iv-img{max-width:100%;max-height:100%;object-fit:contain;user-select:none;-webkit-user-select:none;position:relative;z-index:1}
+.iv-close{position:absolute;top:16px;right:16px;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.2);border:none;color:#fff;font-size:20px;cursor:pointer;z-index:10;display:flex;align-items:center;justify-content:center}
+.iv-prev,.iv-next{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.2);border:none;color:#fff;font-size:28px;cursor:pointer;z-index:10;display:flex;align-items:center;justify-content:center}
+.iv-prev{left:12px}
+.iv-next{right:12px}
+.iv-counter{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);color:#fff;padding:5px 14px;border-radius:20px;font-size:13px;z-index:10}
+@media(max-width:480px){.iv-prev,.iv-next{width:36px;height:36px;font-size:22px}}
 
 /* ── BOT NAV ── */
 .botnav{position:fixed;bottom:0;left:0;right:0;background:var(--dark);border-top:0.5px solid rgba(196,148,50,.12);display:flex;padding:7px 0 calc(7px + env(safe-area-inset-bottom));z-index:99}
@@ -321,6 +334,18 @@ body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-
 
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
+
+<!-- FULLSCREEN IMAGE VIEWER -->
+<div class="img-viewer" id="imgViewer">
+  <div class="iv-bg" onclick="closeImageViewer()"></div>
+  <div class="iv-container">
+    <button class="iv-close" onclick="closeImageViewer()">✕</button>
+    <button class="iv-prev" id="ivPrev" onclick="prevImage()">&#8249;</button>
+    <button class="iv-next" id="ivNext" onclick="nextImage()">&#8250;</button>
+    <img class="iv-img" id="ivImg" src="" alt="">
+    <div class="iv-counter" id="ivCounter">1 / 1</div>
+  </div>
+</div>
 
 <!-- BOTTOM NAV -->
 <div class="botnav">
@@ -445,8 +470,10 @@ function cardHTML(p){
   const disc=p.compare_price>p.price?Math.round((1-p.price/p.compare_price)*100):0;
   const inWl=wishlist.has(p.sku);
   const imgs=p.images.length?p.images:(p.image_url?[p.image_url]:[]);
+  // Use JSON.stringify safely for onclick attribute
+  const imgsJson=JSON.stringify(imgs).replace(/"/g,'&quot;');
   const imgH=imgs.length
-    ?`<img class="c-img" src="${imgs[0]}" alt="${p.name}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="c-ph" style="display:none">${CATS[p.category]?.emoji||'💎'}</div>`
+    ?`<img class="c-img" src="${imgs[0]}" onclick="openImageViewer(JSON.parse(this.dataset.imgs),0)" data-imgs="${imgsJson}" alt="${p.name}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="c-ph" style="display:none">${CATS[p.category]?.emoji||'💎'}</div>`
     :`<div class="c-ph">${CATS[p.category]?.emoji||'💎'}</div>`;
   const tbdgs=p.tags.slice(0,2).map(t=>{ const tc=TAGS[t]; return tc?`<span class="bdg" style="background:${tc.bg};color:${tc.color}">${tc.emoji} ${t}</span>`:'' }).join('');
   const feat=p.is_featured?`<span class="bdg bdg-feat">⭐ Featured</span>`:'';
@@ -568,7 +595,7 @@ function renderCart(){
     <button class="btn-checkout" onclick="openCheckout()">Proceed to Checkout →</button>
     <button class="btn-wa-cart" onclick="orderViaWA()">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-      Order via WhatsApp (autoresponder)
+      Order via WhatsApp
     </button>
   `;
 }
@@ -636,7 +663,6 @@ async function doCheckout(total){
   const btn=document.getElementById('payBtn');
   btn.disabled=true; btn.textContent='Please wait...';
 
-  // Create order in backend first
   const items=Object.values(cart).map(i=>({sku:i.sku,name:i.name,price:i.price,qty:i.qty}));
   try {
     const res=await fetch(ORDER_API,{
@@ -647,7 +673,6 @@ async function doCheckout(total){
     const data=await res.json();
     if(!data.success) throw new Error('Order failed');
 
-    // Open Razorpay
     const rzp=new Razorpay({
       key: RZP_KEY,
       amount: total*100,
@@ -657,30 +682,25 @@ async function doCheckout(total){
       prefill:{ name, contact:'+91'+phone },
       theme:{ color:'#C49432' },
       handler: async function(resp){
-  try {
-    await fetch('https://wa.kaapav.com/api/orders/confirm', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        orderId: data.orderId,
-        paymentId: resp.razorpay_payment_id,
-        phone: '91'+phone
-      })
-    });
-  } catch(e){ console.error('Confirm error:', e); }
-  cart={};
-  saveCart(); updateCartCount();
-  closeCheckout();
-  // Show success screen
-  document.getElementById('grid').innerHTML=`
-    <div style="grid-column:1/-1;text-align:center;padding:60px 20px">
-      <div style="font-size:56px;margin-bottom:16px">🎉</div>
-      <div style="font-family:var(--font-serif);font-size:24px;color:var(--dark);margin-bottom:8px">Order Placed!</div>
-      <div style="font-size:13px;color:var(--gray);margin-bottom:6px">Order ID: <strong>${data.orderId}</strong></div>
-      <div style="font-size:13px;color:var(--gray);margin-bottom:20px">Check WhatsApp for confirmation ✅</div>
-      <button onclick="location.reload()" style="background:var(--dark);color:var(--gold-l);border:none;border-radius:10px;padding:12px 28px;font-family:var(--font-sans);font-size:13px;cursor:pointer">Continue Shopping</button>
-    </div>`;
-},
+        try {
+          await fetch('https://wa.kaapav.com/api/orders/confirm', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ orderId: data.orderId, paymentId: resp.razorpay_payment_id, phone: '91'+phone })
+          });
+        } catch(e){ console.error('Confirm error:', e); }
+        cart={};
+        saveCart(); updateCartCount();
+        closeCheckout();
+        document.getElementById('grid').innerHTML=`
+          <div style="grid-column:1/-1;text-align:center;padding:60px 20px">
+            <div style="font-size:56px;margin-bottom:16px">🎉</div>
+            <div style="font-family:var(--font-serif);font-size:24px;color:var(--dark);margin-bottom:8px">Order Placed!</div>
+            <div style="font-size:13px;color:var(--gray);margin-bottom:6px">Order ID: <strong>${data.orderId}</strong></div>
+            <div style="font-size:13px;color:var(--gray);margin-bottom:20px">Check WhatsApp for confirmation ✅</div>
+            <button onclick="location.reload()" style="background:var(--dark);color:var(--gold-l);border:none;border-radius:10px;padding:12px 28px;font-family:var(--font-sans);font-size:13px;cursor:pointer">Continue Shopping</button>
+          </div>`;
+      },
       modal:{ ondismiss:function(){
         btn.disabled=false; btn.textContent=`Pay ₹${total} with Razorpay`;
         toast('Payment cancelled. Your order is saved, check WhatsApp for payment link.');
@@ -700,9 +720,12 @@ function openProd(sku){
   const imgs=p.images.length?p.images:(p.image_url?[p.image_url]:[]);
   const disc=p.compare_price>p.price?Math.round((1-p.price/p.compare_price)*100):0;
   const sav=p.compare_price>p.price?p.compare_price-p.price:0;
+  const imgsJson=JSON.stringify(imgs).replace(/"/g,'&quot;');
 
   document.getElementById('pgal').innerHTML=imgs.length
-    ?`<img id="gm" class="g-main" src="${imgs[0]}" alt="${p.name}">
+    ?`<img id="gm" class="g-main" src="${imgs[0]}"
+        onclick="openImageViewer(JSON.parse(this.dataset.imgs), curGallIdx)"
+        data-imgs="${imgsJson}" alt="${p.name}" style="cursor:zoom-in">
       ${imgs.length>1?`<div class="g-thumbs">${imgs.map((u,i)=>`<img class="g-th${i===0?' on':''}" src="${u}" onclick="setGI(${i})" loading="lazy">`).join('')}</div>`:''}`
     :`<div class="g-ph">${CATS[p.category]?.emoji||'💎'}</div>`;
 
@@ -747,6 +770,7 @@ function openProd(sku){
   document.getElementById('pmo').classList.add('on');
   document.body.style.overflow='hidden';
 }
+
 function setGI(i){
   const p=curProd; const imgs=p.images.length?p.images:(p.image_url?[p.image_url]:[]);
   curGallIdx=i;
@@ -772,7 +796,7 @@ function closePMOd(){ document.getElementById('pmo').classList.remove('on'); doc
 // ── TOAST ──
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('on'); setTimeout(()=>t.classList.remove('on'),2200); }
 
-// ── STICKY OFFSET ──
+// ── STICKY OFFSETS ──
 function fixStickyOffsets(){
   const hdr=document.querySelector('.hdr');
   const cats=document.querySelector('.cats');
@@ -782,6 +806,69 @@ function fixStickyOffsets(){
   document.documentElement.style.setProperty('--hdr-h', hh+'px');
   document.documentElement.style.setProperty('--cat-h', (hh+ch)+'px');
 }
+
+// ── IMAGE VIEWER ──
+let viewerImages = [];
+let viewerIndex = 0;
+
+function openImageViewer(images, startIdx) {
+  startIdx = startIdx || 0;
+  viewerImages = Array.isArray(images) ? images : [];
+  if(!viewerImages.length) return;
+  viewerIndex = startIdx;
+  updateViewerImage();
+  document.getElementById('imgViewer').classList.add('on');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeImageViewer() {
+  document.getElementById('imgViewer').classList.remove('on');
+  document.body.style.overflow = '';
+}
+
+function updateViewerImage() {
+  const img = document.getElementById('ivImg');
+  const counter = document.getElementById('ivCounter');
+  const prev = document.getElementById('ivPrev');
+  const next = document.getElementById('ivNext');
+  img.src = viewerImages[viewerIndex];
+  counter.textContent = (viewerIndex + 1) + ' / ' + viewerImages.length;
+  const show = viewerImages.length > 1 ? 'flex' : 'none';
+  prev.style.display = show;
+  next.style.display = show;
+}
+
+function prevImage() {
+  viewerIndex = (viewerIndex - 1 + viewerImages.length) % viewerImages.length;
+  updateViewerImage();
+}
+
+function nextImage() {
+  viewerIndex = (viewerIndex + 1) % viewerImages.length;
+  updateViewerImage();
+}
+
+// ── SWIPE + KEYBOARD ──
+let touchStartX = 0;
+
+document.getElementById('imgViewer').addEventListener('touchstart', function(e) {
+  touchStartX = e.changedTouches[0].screenX;
+}, { passive: true });
+
+document.getElementById('imgViewer').addEventListener('touchend', function(e) {
+  const diff = touchStartX - e.changedTouches[0].screenX;
+  if (Math.abs(diff) > 50) {
+    if (diff > 0) nextImage();
+    else prevImage();
+  }
+}, { passive: true });
+
+document.addEventListener('keydown', function(e) {
+  if (!document.getElementById('imgViewer').classList.contains('on')) return;
+  if (e.key === 'ArrowLeft') prevImage();
+  else if (e.key === 'ArrowRight') nextImage();
+  else if (e.key === 'Escape') closeImageViewer();
+});
 
 // ── INIT ──
 loadState(); updateCartCount(); updateWLCount();

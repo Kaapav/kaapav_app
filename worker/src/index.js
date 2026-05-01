@@ -7998,22 +7998,46 @@ if (path === '/api/sync/supabase/backfill' && method === 'POST') {
 }
 
     if (path === '/api/media/upload' && method === 'POST') {
-      try {
-        const formData = await request.formData();
-        const file = formData.get('file');
-        if (!file) return errorResponse('file required', 400);
-        const fileName = `${Date.now()}_${file.name || 'upload'}`;
-        const arrayBuffer = await file.arrayBuffer();
-        await env.MEDIA.put(fileName, arrayBuffer, {
-          httpMetadata: { contentType: file.type || 'application/octet-stream' },
-        });
-        const url = `https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/${fileName}`;
-        return jsonResponse({ success: true, url, mediaUrl: url, fileName });
-      } catch (e) {
-        console.error('Upload error:', e);
-        return errorResponse('Upload failed: ' + e.message, 500);
-      }
+  try {
+    const formData = await request.formData();
+    const file = formData.get('file');
+    if (!file) return errorResponse('file required', 400);
+    const fileName = `${Date.now()}_${file.name || 'upload'}`;
+    const arrayBuffer = await file.arrayBuffer();
+    await env.MEDIA.put(fileName, arrayBuffer, {
+      httpMetadata: { contentType: file.type || 'application/octet-stream' },
+    });
+    const url = `https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/${fileName}`;
+    return jsonResponse({ success: true, url, mediaUrl: url, fileName });
+  } catch (e) {
+    console.error('Upload error:', e);
+    return errorResponse('Upload failed: ' + e.message, 500);
+  }
+}
+    
+
+    if (path === '/api/media/upload-multiple' && method === 'POST') {
+  try {
+    const formData = await request.formData();
+    const files = formData.getAll('files');
+    if (!files || files.length === 0) return errorResponse('files required', 400);
+    
+    const urls = [];
+    for (const file of files) {
+      const fileName = `${Date.now()}_${Math.random().toString(36).slice(2)}_${file.name}`;
+      await env.MEDIA.put(fileName, await file.arrayBuffer(), {
+        httpMetadata: { contentType: file.type || 'image/jpeg' },
+      });
+      urls.push(`https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/${fileName}`);
     }
+    
+    return jsonResponse({ success: true, urls, count: urls.length });
+  } catch (e) {
+    console.error('Multiple upload error:', e);
+    return errorResponse('Upload failed: ' + e.message, 500);
+  }
+}
+
     
 // ═══ PUBLIC PDF SERVE ═══
     if (path.match(/^\/invoices\/.+\.pdf$/) && method === 'GET') {
