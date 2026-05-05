@@ -96,7 +96,24 @@ body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-
 .mo.on .m-box{transform:translateY(0)}
 @media(min-width:600px){.mo{align-items:center}.m-box{max-width:460px;margin:auto;border-radius:16px;max-height:86vh}}
 .m-handle{width:34px;height:4px;background:var(--border);border-radius:2px;margin:11px auto 0}
-.m-close{position:absolute;top:12px;right:12px;width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.06);border:none;cursor:pointer;font-size:14px;color:var(--gray);display:flex;align-items:center;justify-content:center}
+.m-close{
+  position:absolute;
+  top:calc(env(safe-area-inset-top, 0px) + 12px);
+  right:12px;
+  width:36px;
+  height:36px;
+  border-radius:50%;
+  background:rgba(17,17,17,.72);
+  border:1px solid rgba(255,255,255,.18);
+  cursor:pointer;
+  font-size:18px;
+  color:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:5;
+  box-shadow:0 8px 24px rgba(0,0,0,.28);
+}
 .gal{position:relative}
 .g-main{width:100%;aspect-ratio:1;object-fit:cover;background:#f5f0e8;display:block;cursor:zoom-in}
 .g-ph{width:100%;aspect-ratio:1;background:linear-gradient(135deg,#f5f0e8,#ede8df);display:flex;align-items:center;justify-content:center;font-size:56px}
@@ -235,9 +252,26 @@ body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-
 .img-viewer{position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:9999;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .25s}
 .img-viewer.on{opacity:1;pointer-events:all}
 .iv-bg{position:absolute;inset:0}
-.iv-container{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:60px 20px 60px}
+.iv-container{
+  position:relative;
+  width:100%;
+  height:100%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:calc(env(safe-area-inset-top, 0px) + 64px) 20px calc(env(safe-area-inset-bottom, 0px) + 60px);
+}
 .iv-img{max-width:100%;max-height:100%;object-fit:contain;user-select:none;-webkit-user-select:none;position:relative;z-index:1}
-.iv-close{position:absolute;top:16px;right:16px;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.2);border:none;color:#fff;font-size:20px;cursor:pointer;z-index:10;display:flex;align-items:center;justify-content:center}
+.iv-close,.iv-prev,.iv-next{
+  background:rgba(17,17,17,.62);
+  border:1px solid rgba(255,255,255,.18);
+  box-shadow:0 10px 26px rgba(0,0,0,.28);
+}
+
+.iv-close{
+  top:calc(env(safe-area-inset-top, 0px) + 16px);
+  right:16px;
+}
 .iv-prev,.iv-next{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.2);border:none;color:#fff;font-size:28px;cursor:pointer;z-index:10;display:flex;align-items:center;justify-content:center}
 .iv-prev{left:12px}
 .iv-next{right:12px}
@@ -812,10 +846,9 @@ let viewerImages = [];
 let viewerIndex = 0;
 
 function openImageViewer(images, startIdx) {
-  startIdx = startIdx || 0;
-  viewerImages = Array.isArray(images) ? images : [];
-  if(!viewerImages.length) return;
-  viewerIndex = startIdx;
+  viewerImages = Array.isArray(images) ? images.filter(Boolean) : [];
+  if (!viewerImages.length) return;
+  viewerIndex = Math.max(0, Math.min(startIdx || 0, viewerImages.length - 1));
   updateViewerImage();
   document.getElementById('imgViewer').classList.add('on');
   document.body.style.overflow = 'hidden';
@@ -824,7 +857,8 @@ function openImageViewer(images, startIdx) {
 function closeImageViewer() {
   document.getElementById('imgViewer').classList.remove('on');
   if (!document.getElementById('pmo').classList.contains('on')) {
-  document.body.style.overflow = '';
+    document.body.style.overflow = '';
+  }
 }
 
 function updateViewerImage() {
@@ -840,14 +874,17 @@ function updateViewerImage() {
 }
 
 function prevImage() {
+  if (!viewerImages.length) return;
   viewerIndex = (viewerIndex - 1 + viewerImages.length) % viewerImages.length;
   updateViewerImage();
 }
 
 function nextImage() {
+  if (!viewerImages.length) return;
   viewerIndex = (viewerIndex + 1) % viewerImages.length;
   updateViewerImage();
 }
+
 
 // ── SWIPE + KEYBOARD ──
 let touchStartX = 0;

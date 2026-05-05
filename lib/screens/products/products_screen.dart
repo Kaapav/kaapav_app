@@ -1848,26 +1848,50 @@ _images = {
   }
 
   Future<void> _pickAndUploadImage() async {
-    final picker = ImagePicker();
-    final file = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
-    );
-    if (file == null) return;
+  final picker = ImagePicker();
+  final files = await picker.pickMultiImage(imageQuality: 85);
+  if (files.isEmpty) return;
 
-    setState(() => _saving = true);
-    try {
-      final res = await _productApi.uploadImage(file.path, file.name);
-      final url = res.data['url'] ?? res.data['mediaUrl'];
-      if (url != null && !_images.contains(url)) {
-        setState(() => _images.add(url as String));
+  setState(() => _saving = true);
+
+  var addedCount = 0;
+  final failures = <String>[];
+
+  try {
+    for (final file in files) {
+      try {
+        final res = await _productApi.uploadImage(file.path, file.name);
+        final rawUrl = res.data['url'] ?? res.data['mediaUrl'];
+        final url = rawUrl?.toString().trim();
+
+        if (url != null && url.isNotEmpty && !_images.contains(url)) {
+          _images.add(url);
+          addedCount++;
+        }
+      } catch (_) {
+        failures.add(file.name);
       }
-    } catch (e) {
-      _toast('Upload failed: $e');
-    } finally {
-      if (mounted) setState(() => _saving = false);
     }
+
+    if (mounted) {
+      setState(() {});
+      if (addedCount > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$addedCount image${addedCount == 1 ? '' : 's'} added'),
+            backgroundColor: const Color(0xFF10B981),
+          ),
+        );
+      }
+      if (failures.isNotEmpty) {
+        _toast('Some uploads failed: ${failures.join(', ')}');
+      }
+    }
+  } finally {
+    if (mounted) setState(() => _saving = false);
   }
+}
+
 
   @override
   Widget build(BuildContext context) {
