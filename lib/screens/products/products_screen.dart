@@ -18,12 +18,12 @@ import '../../services/api/api_client.dart';
 // CATEGORY CONFIG
 // ─────────────────────────────────────────────
 const _catConfig = {
-  'bracelet':     {'emoji': '📿', 'label': 'Bracelets',    'mrp': 999.0,  'price': 499.0},
-  'necklace':     {'emoji': '✨', 'label': 'Necklaces',    'mrp': 999.0,  'price': 499.0},
-  'earrings':     {'emoji': '👂', 'label': 'Earrings',     'mrp': 499.0,  'price': 249.0},
-  'pendant':      {'emoji': '💎', 'label': 'Pendants',     'mrp': 999.0,  'price': 499.0},
-  'rings':        {'emoji': '💍', 'label': 'Rings',        'mrp': 499.0,  'price': 249.0},
-  'pendant_sets': {'emoji': '🎁', 'label': 'Pendant Sets', 'mrp': 1499.0, 'price': 699.0},
+  'Bracelets': {'emoji': '📿', 'label': 'Bracelets', 'mrp': 999.0,  'price': 499.0},
+  'Necklaces': {'emoji': '✨', 'label': 'Necklaces', 'mrp': 999.0,  'price': 499.0},
+  'Sets':      {'emoji': '🎁', 'label': 'Sets',      'mrp': 1499.0, 'price': 699.0},
+  'Pendants':  {'emoji': '💎', 'label': 'Pendants',  'mrp': 999.0,  'price': 499.0},
+  'Rings':     {'emoji': '💍', 'label': 'Rings',     'mrp': 499.0,  'price': 249.0},
+  'Earrings':  {'emoji': '👂', 'label': 'Earrings',  'mrp': 499.0,  'price': 249.0},
 };
 
 const _kTags = {
@@ -37,9 +37,9 @@ const _kTags = {
 };
 
 String _catEmoji(String? cat) =>
-    (_catConfig[cat?.toLowerCase()]?['emoji'] as String?) ?? '💎';
+    (_catConfig[cat]?['emoji'] as String?) ?? '💎';
 String _catLabel(String? cat) =>
-    (_catConfig[cat?.toLowerCase()]?['label'] as String?) ?? (cat ?? 'Other');
+    (_catConfig[cat]?['label'] as String?) ?? (cat ?? 'Other');
 
 // ─────────────────────────────────────────────
 // MAIN SCREEN

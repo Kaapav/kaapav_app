@@ -6231,6 +6231,17 @@ if (path === '/api/catalogue' && method === 'GET') {
   });
 }
  
+if (path === '/' || path === '/index.html') {
+  const response = await fetch(request);
+  return new Response(response.body, {
+    headers: {
+      ...response.headers,
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'Pragma': 'no-cache',
+    }
+  });
+}
+
     // ═══ SHIPROCKET WEBHOOK ═══
     if (path === '/api/shiprocket/webhook' && method === 'POST') {
       try {

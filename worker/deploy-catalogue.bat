@@ -1,0 +1,1 @@
+wrangler pages deploy D:\Apps\kaapav_app\worker\catalogue --project-name=kaapav-catalogue
