@@ -3703,7 +3703,25 @@ if (Array.isArray(statuses) && statuses.length) {
         buttonText = msg.interactive.list_reply?.title;
         text = buttonText || '';
       }
-    }
+    } else if (msg.type === 'unsupported') {
+  text = '[Unsupported message]';
+  messageType = 'unsupported';
+} else if (msg.type === 'reaction') {
+  text = msg.reaction?.emoji ? `Reacted: ${msg.reaction.emoji}` : '[Reaction]';
+  messageType = 'reaction';
+} else if (msg.type === 'location') {
+  text = '📍 Location shared';
+  messageType = 'location';
+} else if (msg.type === 'contacts') {
+  text = '👤 Contact shared';
+  messageType = 'contacts';
+} else if (msg.type === 'sticker') {
+  text = '🎭 Sticker';
+  messageType = 'sticker';
+} else if (msg.type === 'system') {
+  text = '[System message]';
+  messageType = 'system';
+}
 
     const messageId = msg.id;
     const timestamp = new Date(parseInt(msg.timestamp) * 1000).toISOString();
@@ -4632,6 +4650,12 @@ class AutoResponder {
       }
     } catch {}
 
+    // ── Skip non-interactive message types ────────────────────
+    if (['image', 'video', 'audio', 'voice', 'sticker', 'document',
+         'unsupported', 'reaction', 'location', 'contacts', 'system'].includes(messageType)) {
+      return;
+    }
+
     // ── 0. Order state machine — check first ─────────────────────
     const convState = await getConvState(phone, this.env);
     if (convState && convState.state.startsWith('order_')) {
@@ -4753,7 +4777,7 @@ if (greetRegex.test(inputLower)) {
 
   // ── BRACELET ───────────────────────────────────────────────
   const braceletRegex = new RegExp(
-    'bracelet|bangle|bangles|kada|kara|' +
+    'bracelet|br|bangle|bracelets|kada|kara|' +
     '\u0bb5\u0bb3\u0bc8\u0baf\u0bb2\u0bcd|' +  // Tamil: வளையல்
     '\u0c17\u0c3e\u0c1c\u0c41\u0c32\u0c41|' +  // Telugu: గాజులు
     '\u0c2c\u0cb3\u0cc6'                         // Kannada: ಬಳೆ
@@ -4762,7 +4786,7 @@ if (greetRegex.test(inputLower)) {
 
   // ── NECKLACE ───────────────────────────────────────────────
   const necklaceRegex = new RegExp(
-    'necklace|haar|chain|mala|' +
+    'necklace|necklaces|haar|chain|mala|neck|nk|' +
     '\u0bae\u0bbe\u0bb2\u0bc8|' +              // Tamil: மாலை
     '\u0c28\u0c46\u0c15\u0c4d\u0c32\u0c46\u0c38\u0c4d|' + // Telugu: నెక్లెస్
     '\u0cb9\u0cbe\u0cb0'                         // Kannada: ಹಾರ
@@ -4771,7 +4795,7 @@ if (greetRegex.test(inputLower)) {
 
   // ── EARRINGS ───────────────────────────────────────────────
   const earringRegex = new RegExp(
-    'earring|jhumka|bali|stud|tops|jhumke|' +
+    'earring|earrings|ear|er|jhumka|bali|stud|tops|jhumke|' +
     '\u0b95\u0bbe\u0ba4\u0ba3\u0bbf|' +        // Tamil: காதணி
     '\u0c1a\u0c46\u0c35\u0c3f\u0c2a\u0c4b\u0c17\u0c41\u0c32\u0c41|' + // Telugu: చెవిపోగులు
     '\u0c95\u0cbf\u0cb5\u0cbf\u0caf\u0ccb\u0cb2\u0cc6'  // Kannada: ಕಿವಿಯೋಲೆ
@@ -4780,7 +4804,7 @@ if (greetRegex.test(inputLower)) {
 
   // ── PENDANT SETS ───────────────────────────────────────────
   const pendantSetRegex = new RegExp(
-    'pendant set|jewellery set|full set|set chahiye|' +
+    'pendant set|earring set|pendant sets|earrings sets|jewellery set|full set|set chahiye|' +
     '\u0ba8\u0b95\u0bc8 \u0b9a\u0bc6\u0b9f\u0bcd|' +    // Tamil: நகை செட்
     '\u0c1c\u0c4d\u0c2f\u0c41\u0c2f\u0c46\u0c32\u0c30\u0c40 \u0c38\u0c46\u0c1f\u0c4d|' + // Telugu: జ్యుయెలరీ సెట్
     '\u0c92\u0ca1\u0cb5\u0cc6 \u0c38\u0cc6\u0c9f\u0ccd'  // Kannada: ಒಡವೆ ಸೆಟ್
@@ -4789,7 +4813,7 @@ if (greetRegex.test(inputLower)) {
 
   // ── PENDANT ────────────────────────────────────────────────
   const pendantRegex = new RegExp(
-    'pendant|locket|mangalsutra|' +
+    'pendant|pendants|locket|mangalsutra|' +
     '\u0bb2\u0bbe\u0b95\u0bcd\u0b95\u0bc6\u0b9f\u0bcd|' + // Tamil: லாக்கெட்
     '\u0c32\u0c3e\u0c15\u0c46\u0c1f\u0c4d|' +             // Telugu: లాకెట్
     '\u0cb2\u0cbe\u0c95\u0cc6\u0c9f\u0ccd'                 // Kannada: ಲಾಕೆಟ್
@@ -4798,7 +4822,7 @@ if (greetRegex.test(inputLower)) {
 
   // ── RINGS ──────────────────────────────────────────────────
   const ringRegex = new RegExp(
-    '\\bring\\b|anguthi|angoothi|' +
+    '\\bring\\b|anguthi|ring|rings|fingerrings|fingerring|finger ring|finger rings|angoothi|' +
     '\u0bae\u0bcb\u0ba4\u0bbf\u0bb0\u0bae\u0bcd|' +  // Tamil: மோதிரம்
     '\u0c09\u0c02\u0c17\u0c30\u0c02|' +               // Telugu: ఉంగరం
     '\u0c89\u0c02\u0c17\u0cb0'                         // Kannada: ಉಂಗರ
@@ -4807,7 +4831,7 @@ if (greetRegex.test(inputLower)) {
 
   // ── CATALOGUE ──────────────────────────────────────────────
   const catalogRegex = new RegExp(
-    'catalogue|catalog|collection|sab dikhao|all products|poora|' +
+    'catalogue|catalog|collection|collections|catlog|sab dikhao|all products|poora|' +
     '\u0b95\u0bbe\u0b9f\u0bcd\u0b9f\u0bc1|' +  // Tamil: காட்டு
     '\u0c1a\u0c42\u0c2a\u0c3f\u0c02\u0c1a\u0c41|' + // Telugu: చూపించు
     '\u0ca4\u0ccb\u0cb0\u0cbf\u0cb8\u0cc1'      // Kannada: ತೋರಿಸು
@@ -4997,7 +5021,7 @@ Or browse all topics below 👇`,
       // OPEN WEBSITE
       // ════════════════════════════════════════
       case 'OPEN_WEBSITE':
-        await sendText(
+        await sendButtons(
 `═══════════════════════════
 🌐 *Visit Our Website*
 ═══════════════════════════
@@ -5011,12 +5035,13 @@ Or browse all topics below 👇`,
 👉 ${env.WEBSITE_URL}
 
 ═══════════════════════════
-💎 KAAPAV Fashion Jewellery`
+💎 KAAPAV Fashion Jewellery`,
+          [{ id: 'home', title: '🏠 Main Menu' }]
         );
         break;
 
       case 'OPEN_CATALOG':
-        await sendText(
+  await sendButtons(
 `═══════════════════════════
 📱 *KAAPAV Catalogue*
 ═══════════════════════════
@@ -5030,9 +5055,12 @@ Or browse all topics below 👇`,
 👉 ${env.CATALOG_URL}
 
 ═══════════════════════════
-💎 KAAPAV Fashion Jewellery`
-        );
-        break;
+💎 KAAPAV Fashion Jewellery`,
+    [
+      { id: 'home', title: '🏠 Main Menu' },
+    ]
+  );
+  break;
 
       // ════════════════════════════════════════
       // OPEN BESTSELLERS
@@ -5057,8 +5085,8 @@ Or browse all topics below 👇`,
         break;
 
       
-      case 'CAT_BRACELET':
-        await sendText(
+            case 'CAT_BRACELET':
+        await sendButtons(
 `═══════════════════════════
 📿 *KAAPAV Bracelets*
 ═══════════════════════════
@@ -5071,12 +5099,13 @@ Or browse all topics below 👇`,
 
 👉 https://www.kaapav.com/shop/category/all-jewellery-bracelets-13
 
-💬 Message us to order!`
+💬 Message us to order!`,
+          [{ id: 'home', title: '🏠 Main Menu' }]
         );
         break;
 
       case 'CAT_NECKLACE':
-        await sendText(
+        await sendButtons(
 `═══════════════════════════
 ✨ *KAAPAV Necklaces*
 ═══════════════════════════
@@ -5089,12 +5118,13 @@ Or browse all topics below 👇`,
 
 👉 https://www.kaapav.com/shop/category/all-jewellery-necklaces-14
 
-💬 Message us to order!`
+💬 Message us to order!`,
+          [{ id: 'home', title: '🏠 Main Menu' }]
         );
         break;
 
       case 'CAT_EARRINGS':
-        await sendText(
+        await sendButtons(
 `═══════════════════════════
 👂 *KAAPAV Earrings*
 ═══════════════════════════
@@ -5107,12 +5137,13 @@ Or browse all topics below 👇`,
 
 👉 https://www.kaapav.com/shop/category/all-jewellery-earrings-15
 
-💬 Message us to order!`
+💬 Message us to order!`,
+          [{ id: 'home', title: '🏠 Main Menu' }]
         );
         break;
 
       case 'CAT_RINGS':
-        await sendText(
+        await sendButtons(
 `═══════════════════════════
 💍 *KAAPAV Rings*
 ═══════════════════════════
@@ -5125,12 +5156,13 @@ Or browse all topics below 👇`,
 
 👉 https://www.kaapav.com/shop/category/all-jewellery-rings-16
 
-💬 Message us to order!`
+💬 Message us to order!`,
+          [{ id: 'home', title: '🏠 Main Menu' }]
         );
         break;
 
       case 'CAT_PENDANT':
-        await sendText(
+        await sendButtons(
 `═══════════════════════════
 💎 *KAAPAV Pendants*
 ═══════════════════════════
@@ -5143,12 +5175,13 @@ Or browse all topics below 👇`,
 
 👉 https://www.kaapav.com/shop/category/all-jewellery-pendants-17
 
-💬 Message us to order!`
+💬 Message us to order!`,
+          [{ id: 'home', title: '🏠 Main Menu' }]
         );
         break;
 
       case 'CAT_PENDANT_SETS':
-        await sendText(
+        await sendButtons(
 `═══════════════════════════
 🎁 *KAAPAV Pendant Sets*
 ═══════════════════════════
@@ -5161,7 +5194,8 @@ Or browse all topics below 👇`,
 
 👉 https://www.kaapav.com/shop/category/all-jewellery-pendant-sets-18
 
-💬 Message us to order!`
+💬 Message us to order!`,
+          [{ id: 'home', title: '🏠 Main Menu' }]
         );
         break;
 
@@ -5184,9 +5218,9 @@ Or browse all topics below 👇`,
 2️⃣ *Catalogue Website* — browse & order:
    👉 ${env.CATALOG_URL}
 
-💍 Earrings & Rings → ₹249/-
-📿 Necklace & Bracelet → ₹499/-
-✨ Sets → ₹699/-
+💍 Earrings & Rings
+📿 Necklace & Bracelet
+✨ Sets 
 🚚 FREE shipping above ₹498/-
 
 ═══════════════════════════
@@ -5661,7 +5695,7 @@ Examples:
 Or browse all FAQ topics 👇`,
       [
         { id: 'btn_browse',    title: '📋 Browse Topics' },
-        { id: 'btn_help_back', title: '🏠 Back' },
+        { id: 'btn_help_back', title: '🏠 Main Menu' },
       ],
       '💎 KAAPAV Fashion Jewellery'
     );
