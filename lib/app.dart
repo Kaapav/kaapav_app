@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kaapav_app/config/theme.dart';
 import 'package:kaapav_app/config/routes.dart';
 import 'package:kaapav_app/providers/auth_provider.dart';
-import 'package:kaapav_app/providers/theme_provider.dart';
 import 'package:kaapav_app/screens/login_screen.dart';
 import 'package:kaapav_app/screens/home_screen.dart';
 import 'package:kaapav_app/services/notification_service.dart';
@@ -16,13 +15,13 @@ class App extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authProvider);
-    final themeMode = ref.watch(themeProvider);
+    
 
     return MaterialApp(
       title: 'KAAPAV',
       theme: KaapavTheme.lightTheme,
       darkTheme: KaapavTheme.darkTheme,
-      themeMode: themeMode,
+      themeMode: ThemeMode.dark,
       debugShowCheckedModeBanner: false,
       navigatorKey: AppRoutes.navigatorKey,
       onGenerateRoute: AppRoutes.generateRoute,

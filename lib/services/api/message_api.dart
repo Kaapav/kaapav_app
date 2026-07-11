@@ -19,7 +19,7 @@ class MessageApi {
 
   Future<Response> getMessages(
     String phone, {
-    int limit = 50,
+    int limit = 50000,
     int? before,
     CancelToken? cancelToken,
   }) {

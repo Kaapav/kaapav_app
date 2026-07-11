@@ -170,7 +170,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
         search: search,
         label: label,
         starred: starred,
-        limit: 50,
+        limit: 50000,
       );
 
       if (response.statusCode == 200 && response.data != null) {

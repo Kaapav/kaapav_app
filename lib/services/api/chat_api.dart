@@ -23,7 +23,7 @@ class ChatApi {
     String? label,
     bool? starred,
     String? assigned,
-    int limit = 50,
+    int limit = 50000,
     int offset = 0,
     CancelToken? cancelToken,
   }) {

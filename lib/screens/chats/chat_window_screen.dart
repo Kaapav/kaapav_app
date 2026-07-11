@@ -5,7 +5,8 @@
 // ---------------------------------------------------------------
 
 import 'dart:io';
-import 'package:flutter/material.dart';
+import 'dart:ui';
+import 'package:flutter/material.dart';  
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kaapav_app/config/theme.dart';
@@ -31,6 +32,8 @@ import '../../models/product.dart';
 import '../../services/api/product_api.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/notification_service.dart';
+import '../../widgets/common/glass_shell.dart';
+import '../../widgets/common/glass_card.dart';
 
 class ChatWindowScreen extends ConsumerStatefulWidget {
   final String phone;
@@ -56,30 +59,51 @@ class _ChatWindowScreenState extends ConsumerState<ChatWindowScreen>
   String _searchQuery = '';
   Message? _replyingTo;
 
-  @override
-  void initState() {
-    super.initState();
-NotificationService.activeChatPhone = widget.phone;
-NotificationService.instance.cancelForPhone(widget.phone);
-    WidgetsBinding.instance.addObserver(this);
+void _startChatPolling() {
+  ref.read(messageProvider.notifier).startPolling(
+    widget.phone,
+    interval: const Duration(seconds: 2),
+  );
+}
 
-    // Set current chat
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(chatProvider.notifier).setCurrentChat(widget.phone);
-      ref.read(chatProvider.notifier).markAsRead(widget.phone);
+void _stopChatPolling() {
+  ref.read(messageProvider.notifier).stopPolling();
+}
 
-      // Fetch messages
-      // ❌ REMOVED:ref.read(messageProvider.notifier).fetchMessages(widget.phone);
+@override
+void initState() {
+  super.initState();
 
-      // Start polling
+  NotificationService.activeChatPhone = widget.phone;
+  NotificationService.instance.cancelForPhone(widget.phone);
+
+  WidgetsBinding.instance.addObserver(this);
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!mounted) return;
+
+    ref.read(chatProvider.notifier).setCurrentChat(widget.phone);
+    ref.read(chatProvider.notifier).markAsRead(widget.phone);
+
+    Future.microtask(() async {
+      await ref.read(messageProvider.notifier).fetchMessages(
+        widget.phone,
+        refresh: true,
+      );
+
+      if (!mounted) return;
+
+      _scrollToBottom(animated: false);
+
       ref.read(messageProvider.notifier).startPolling(
         widget.phone,
         interval: const Duration(seconds: 2),
       );
     });
+  });
 
-    _scrollController.addListener(_onScroll);
-  }
+  _scrollController.addListener(_onScroll);
+}
 
   @override
   void dispose() {
@@ -87,21 +111,34 @@ NotificationService.activeChatPhone = null;
     WidgetsBinding.instance.removeObserver(this);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _searchController.dispose();
     try {
-      ref.read(messageProvider.notifier).stopPolling();
+      _stopChatPolling();
       ref.read(chatProvider.notifier).clearCurrentChat();
     } catch (_) {}
     super.dispose();
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      ref.read(messageProvider.notifier).startPolling(widget.phone);
-    } else if (state == AppLifecycleState.paused) {
-      ref.read(messageProvider.notifier).stopPolling();
-    }
+@override
+void didChangeAppLifecycleState(AppLifecycleState state) {
+  if (state == AppLifecycleState.resumed) {
+    Future.microtask(() {
+      ref.read(messageProvider.notifier).fetchMessages(
+            widget.phone,
+            refresh: true,
+          );
+    });
+
+    _startChatPolling();
+    return;
   }
+
+  if (state == AppLifecycleState.paused ||
+      state == AppLifecycleState.inactive ||
+      state == AppLifecycleState.detached) {
+    _stopChatPolling();
+  }
+}
 
 void _onScroll() {
   if (!_scrollController.hasClients) return;
@@ -224,59 +261,112 @@ void _scrollToBottom({bool animated = true}) {
   }
 
   void _showAttachmentPicker() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _AttachOption(
-                icon: Icons.photo_library,
-                label: 'Gallery',
-                color: Colors.purple,
-                onTap: () {
-                  Navigator.pop(context);
-                  _handleGallery();
-                },
-              ),
-              _AttachOption(
-                icon: Icons.insert_drive_file,
-                label: 'Document',
-                color: Colors.blue,
-                onTap: () {
-                  Navigator.pop(context);
-                  _handleDocument();
-                },
-              ),
-              _AttachOption(
-                icon: Icons.videocam,
-                label: 'Video',
-                color: Colors.red,
-                onTap: () {
-                  Navigator.pop(context);
-                  _handleVideo();
-                },
-              ),
-              _AttachOption(
-                icon: Icons.diamond_outlined,
-                label: 'Send Product',
-                color: KaapavTheme.gold,
-                onTap: () {
-                  Navigator.pop(context);
-                  _showProductPicker();
-                },
-              ),
-            ],
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: 0.32),
+    builder: (context) {
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+
+      return _GlassBottomSheet(
+        isDark: isDark,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const _GlassSheetHandle(),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        gradient: KaapavTheme.goldGradient,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: KaapavTheme.gold.withValues(alpha: 0.24),
+                            blurRadius: 18,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.add_rounded,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Send to customer',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: isDark ? Colors.white : const Color(0xFF1A1A1A),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                _GlassOptionTile(
+                  isDark: isDark,
+                  icon: Icons.photo_library_rounded,
+                  title: 'Gallery',
+                  subtitle: 'Send jewellery photo from gallery',
+                  color: Colors.purple,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _handleGallery();
+                  },
+                ),
+                _GlassOptionTile(
+                  isDark: isDark,
+                  icon: Icons.insert_drive_file_rounded,
+                  title: 'Document',
+                  subtitle: 'Send invoice, file, or catalogue PDF',
+                  color: Colors.blue,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _handleDocument();
+                  },
+                ),
+                _GlassOptionTile(
+                  isDark: isDark,
+                  icon: Icons.videocam_rounded,
+                  title: 'Video',
+                  subtitle: 'Send product video or reel',
+                  color: Colors.red,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _handleVideo();
+                  },
+                ),
+                _GlassOptionTile(
+                  isDark: isDark,
+                  icon: Icons.diamond_outlined,
+                  title: 'Send Product',
+                  subtitle: 'Share product card from KAAPAV catalogue',
+                  color: KaapavTheme.gold,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showProductPicker();
+                  },
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-    );
-  }
+      );
+    },
+  );
+}
 
   void _showProductPicker() {
     showModalBottomSheet(
@@ -402,7 +492,7 @@ void _scrollToBottom({bool animated = true}) {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('? Saved to gallery')),
+          const SnackBar(content: Text('Saved to gallery')),
         );
       }
     } catch (e) {
@@ -619,56 +709,112 @@ void _scrollToBottom({bool animated = true}) {
   }
 
     void _showDisappearingOptions() {
-    final currentDuration = ref.read(chatProvider).disappearingSettings[widget.phone];
+  final currentDuration =
+      ref.read(chatProvider).disappearingSettings[widget.phone];
 
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                width: 40, height: 4,
-                decoration: BoxDecoration(color: KaapavTheme.border, borderRadius: BorderRadius.circular(2)),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                child: Row(children: [
-                  Icon(Icons.timer, color: KaapavTheme.gold, size: 24),
-                  SizedBox(width: 10),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Disappearing Messages', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                    Text('Messages will be deleted after the selected time',
-                        style: TextStyle(fontSize: 12, color: KaapavTheme.gray)),
-                  ])),
-                ]),
-              ),
-              const Divider(),
-              _DisappearingOption(label: 'Off', subtitle: 'Messages won\'t disappear',
-                icon: Icons.timer_off_outlined, isSelected: currentDuration == null,
-                onTap: () { Navigator.pop(ctx); _setDisappearing(null); }),
-              _DisappearingOption(label: '24 Hours', subtitle: 'Messages disappear after 1 day',
-                icon: Icons.hourglass_bottom, isSelected: currentDuration == '24h',
-                onTap: () { Navigator.pop(ctx); _setDisappearing('24h'); }),
-              _DisappearingOption(label: '7 Days', subtitle: 'Messages disappear after 1 week',
-                icon: Icons.calendar_today, isSelected: currentDuration == '7d',
-                onTap: () { Navigator.pop(ctx); _setDisappearing('7d'); }),
-              _DisappearingOption(label: '90 Days', subtitle: 'Messages disappear after 3 months',
-                icon: Icons.calendar_month, isSelected: currentDuration == '90d',
-                onTap: () { Navigator.pop(ctx); _setDisappearing('90d'); }),
-              const SizedBox(height: 8),
-            ],
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: 0.32),
+    builder: (ctx) {
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+
+      return _GlassBottomSheet(
+        isDark: isDark,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const _GlassSheetHandle(),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        gradient: KaapavTheme.goldGradient,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.timer_rounded,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Disappearing Messages',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: isDark ? Colors.white : const Color(0xFF1A1A1A),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+
+                _GlassOptionTile(
+                  isDark: isDark,
+                  icon: Icons.timer_off_outlined,
+                  title: 'Off',
+                  subtitle: 'Messages will not disappear',
+                  color: KaapavTheme.gold,
+                  selected: currentDuration == null,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _setDisappearing(null);
+                  },
+                ),
+                _GlassOptionTile(
+                  isDark: isDark,
+                  icon: Icons.hourglass_bottom_rounded,
+                  title: '24 Hours',
+                  subtitle: 'Messages disappear after 1 day',
+                  color: KaapavTheme.gold,
+                  selected: currentDuration == '24h',
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _setDisappearing('24h');
+                  },
+                ),
+                _GlassOptionTile(
+                  isDark: isDark,
+                  icon: Icons.calendar_today_rounded,
+                  title: '7 Days',
+                  subtitle: 'Messages disappear after 1 week',
+                  color: KaapavTheme.gold,
+                  selected: currentDuration == '7d',
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _setDisappearing('7d');
+                  },
+                ),
+                _GlassOptionTile(
+                  isDark: isDark,
+                  icon: Icons.calendar_month_rounded,
+                  title: '90 Days',
+                  subtitle: 'Messages disappear after 3 months',
+                  color: KaapavTheme.gold,
+                  selected: currentDuration == '90d',
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _setDisappearing('90d');
+                  },
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-    );
-  }
+      );
+    },
+  );
+}
 
   void _setDisappearing(String? duration) {
     ref.read(chatProvider.notifier).setDisappearing(widget.phone, duration);
@@ -902,176 +1048,214 @@ Future<void> _executeForward(
 }
 
     void _showMessageOptions(Message message) {
-    HapticFeedback.mediumImpact();
-    final hasMedia = message.mediaUrl != null && message.mediaUrl!.isNotEmpty;
-    final hasText = message.text != null && message.text!.isNotEmpty;
-    final isImage = message.messageType == 'image' && hasMedia;
-    final isDoc = message.messageType == 'document' && hasMedia;
-    final isVideo = message.messageType == 'video' && hasMedia;
+  HapticFeedback.mediumImpact();
 
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              margin: const EdgeInsets.only(top: 12),
-              width: 40, height: 4,
-              decoration: BoxDecoration(color: KaapavTheme.border, borderRadius: BorderRadius.circular(2)),
+  final hasMedia = message.mediaUrl != null && message.mediaUrl!.isNotEmpty;
+  final hasText = message.text != null && message.text!.isNotEmpty;
+  final isImage = message.messageType == 'image' && hasMedia;
+  final isDoc = message.messageType == 'document' && hasMedia;
+  final isVideo = message.messageType == 'video' && hasMedia;
+
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: 0.32),
+    builder: (context) {
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+
+      return _GlassBottomSheet(
+        isDark: isDark,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const _GlassSheetHandle(),
+                const SizedBox(height: 12),
+
+                _GlassOptionTile(
+                  isDark: isDark,
+                  icon: Icons.reply_rounded,
+                  title: 'Reply',
+                  subtitle: 'Reply to this message',
+                  color: KaapavTheme.gold,
+                  onTap: () {
+                    Navigator.pop(context);
+                    setState(() => _replyingTo = message);
+                  },
+                ),
+
+                if (hasText)
+                  _GlassOptionTile(
+                    isDark: isDark,
+                    icon: Icons.copy_rounded,
+                    title: 'Copy',
+                    subtitle: 'Copy message text',
+                    color: KaapavTheme.gold,
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: message.text!));
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Copied to clipboard')),
+                      );
+                    },
+                  ),
+
+                if (isImage || isVideo)
+                  _GlassOptionTile(
+                    isDark: isDark,
+                    icon: Icons.download_rounded,
+                    title: 'Save to Gallery',
+                    subtitle: 'Save media to phone gallery',
+                    color: const Color(0xFF10B981),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _handleSaveToGallery(message);
+                    },
+                  ),
+
+                if (isDoc)
+                  _GlassOptionTile(
+                    isDark: isDark,
+                    icon: Icons.open_in_new_rounded,
+                    title: 'Open Document',
+                    subtitle: 'Download and open file',
+                    color: Colors.blue,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _handleOpenDocument(message);
+                    },
+                  ),
+
+                if (isImage)
+                  _GlassOptionTile(
+                    isDark: isDark,
+                    icon: Icons.zoom_in_rounded,
+                    title: 'View Full Screen',
+                    subtitle: 'Open image preview',
+                    color: Colors.purple,
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => FullScreenImage(
+                            imageUrl: message.mediaUrl!,
+                            caption: message.mediaCaption,
+                            timestamp: message.timestamp,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+
+                if (isVideo)
+                  _GlassOptionTile(
+                    isDark: isDark,
+                    icon: Icons.play_arrow_rounded,
+                    title: 'Play Video',
+                    subtitle: 'Open video externally',
+                    color: Colors.red,
+                    onTap: () {
+                      Navigator.pop(context);
+                      launchUrl(
+                        Uri.parse(message.mediaUrl!),
+                        mode: LaunchMode.externalApplication,
+                      );
+                    },
+                  ),
+
+                _GlassOptionTile(
+                  isDark: isDark,
+                  icon: Icons.share_rounded,
+                  title: 'Share',
+                  subtitle: 'Share outside KAAPAV app',
+                  color: KaapavTheme.gold,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _handleShareMessage(message);
+                  },
+                ),
+
+                _GlassOptionTile(
+                  isDark: isDark,
+                  icon: Icons.forward_rounded,
+                  title: 'Forward',
+                  subtitle: 'Forward to another chat',
+                  color: KaapavTheme.gold,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _handleForward(message);
+                  },
+                ),
+
+                if (message.isOutgoing &&
+                    message.messageType == 'text' &&
+                    message.text != null &&
+                    !message.isFailed &&
+                    _canEdit(message))
+                  _GlassOptionTile(
+                    isDark: isDark,
+                    icon: Icons.edit_rounded,
+                    title: 'Edit',
+                    subtitle: 'Edit outgoing message',
+                    color: KaapavTheme.gold,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _handleEdit(message);
+                    },
+                  ),
+
+                _GlassOptionTile(
+                  isDark: isDark,
+                  icon: Icons.check_circle_outline_rounded,
+                  title: 'Select',
+                  subtitle: 'Select for bulk action',
+                  color: KaapavTheme.gold,
+                  onTap: () {
+                    Navigator.pop(context);
+                    setState(() {
+                      _isSelecting = true;
+                      _selectedIds.add(message.messageId);
+                    });
+                  },
+                ),
+
+                if (message.isFailed)
+                  _GlassOptionTile(
+                    isDark: isDark,
+                    icon: Icons.refresh_rounded,
+                    title: 'Retry',
+                    subtitle: 'Try sending again',
+                    color: KaapavTheme.warning,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _handleRetry(message);
+                    },
+                  ),
+
+                _GlassOptionTile(
+                  isDark: isDark,
+                  icon: Icons.delete_outline_rounded,
+                  title: 'Delete',
+                  subtitle: 'Delete message',
+                  color: KaapavTheme.error,
+                  danger: true,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _handleDelete(message);
+                  },
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-
-            // -- Reply --
-            ListTile(
-              leading: const Icon(Icons.reply, color: KaapavTheme.gold),
-              title: const Text('Reply'),
-              onTap: () {
-                Navigator.pop(context);
-                setState(() => _replyingTo = message);
-              },
-            ),
-
-            // -- Copy (text only) --
-            if (hasText)
-              ListTile(
-                leading: const Icon(Icons.copy, color: KaapavTheme.gold),
-                title: const Text('Copy'),
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: message.text!));
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Copied to clipboard')),
-                  );
-                },
-              ),
-
-            // -- Save to Gallery (image/video) --
-            if (isImage || isVideo)
-              ListTile(
-                leading: const Icon(Icons.download, color: KaapavTheme.gold),
-                title: const Text('Save to Gallery'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _handleSaveToGallery(message);
-                },
-              ),
-
-            // -- Open Document --
-            if (isDoc)
-              ListTile(
-                leading: const Icon(Icons.open_in_new, color: KaapavTheme.gold),
-                title: const Text('Open Document'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _handleOpenDocument(message);
-                },
-              ),
-
-            // -- View Fullscreen (image) --
-            if (isImage)
-              ListTile(
-                leading: const Icon(Icons.zoom_in, color: KaapavTheme.gold),
-                title: const Text('View Full Screen'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => FullScreenImage(
-                      imageUrl: message.mediaUrl!,
-                      caption: message.mediaCaption,
-                      timestamp: message.timestamp,
-                    ),
-                  ));
-                },
-              ),
-
-            // -- Play Video --
-            if (isVideo)
-              ListTile(
-                leading: const Icon(Icons.play_arrow, color: KaapavTheme.gold),
-                title: const Text('Play Video'),
-                onTap: () {
-                  Navigator.pop(context);
-                  launchUrl(Uri.parse(message.mediaUrl!), mode: LaunchMode.externalApplication);
-                },
-              ),
-
-            // -- Share --
-            ListTile(
-              leading: const Icon(Icons.share, color: KaapavTheme.gold),
-              title: const Text('Share'),
-              onTap: () {
-                Navigator.pop(context);
-                _handleShareMessage(message);
-              },
-            ),
-          // -- Forward --
-          ListTile(
-            leading: const Icon(Icons.forward, color: KaapavTheme.gold),
-            title: const Text('Forward'),
-            onTap: () {
-              Navigator.pop(context);
-              _handleForward(message);
-            },
           ),
-
-          // -- Edit (outgoing text only, within 15 min) --
-          if (message.isOutgoing &&
-              message.messageType == 'text' &&
-              message.text != null &&
-              !message.isFailed &&
-              _canEdit(message))
-            ListTile(
-              leading: const Icon(Icons.edit, color: KaapavTheme.gold),
-              title: const Text('Edit'),
-              onTap: () {
-                Navigator.pop(context);
-                _handleEdit(message);
-              },
-            ),
-            // -- Delete --
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: KaapavTheme.error),
-              title: const Text('Delete', style: TextStyle(color: KaapavTheme.error)),
-              onTap: () {
-                Navigator.pop(context);
-                _handleDelete(message);
-              },
-            ),
-
-	     // -- Select --
-ListTile(
-  leading: const Icon(Icons.check_circle_outline, color: KaapavTheme.gold),
-  title: const Text('Select'),
-  onTap: () {
-    Navigator.pop(context);
-    setState(() {
-      _isSelecting = true;
-      _selectedIds.add(message.messageId);
-    });
-  },
-),	
-            
-            // -- Retry (failed only) --
-            if (message.isFailed)
-              ListTile(
-                leading: const Icon(Icons.refresh, color: KaapavTheme.warning),
-                title: const Text('Retry'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _handleRetry(message);
-                },
-              ),
-
-            const SizedBox(height: 8),
-          ],
         ),
-      ),
-    );
-  }
+      );
+    },
+  );
+}
 
   @override
   Widget build(BuildContext context) {
@@ -1106,406 +1290,947 @@ ref.listen<List<Message>>(
 );
 
     return Scaffold(
-      backgroundColor: wallpaperColor,
-      appBar: _buildAppBar(chat, customer),
-              body: Column(
-          children: [
-            Expanded(
-              child: Container(
-                color: wallpaperColor,
-                child: isLoading && messages.isEmpty
-                    ? _buildLoadingState()
-                    : messages.isEmpty
-                        ? _buildEmptyState()
-                        : _buildMessagesList(messages, readReceiptsEnabled),
+  backgroundColor: Colors.transparent,
+  appBar: _buildAppBar(chat, customer),
+  body: KaapavGlassShell(
+    isDark: isDark,
+    child: Column(
+      children: [
+        Expanded(
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+            decoration: BoxDecoration(
+              color: wallpaper == 'default'
+                  ? Colors.transparent
+                  : wallpaperColor.withValues(alpha: isDark ? 0.16 : 0.26),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(22),
               ),
             ),
-
-            // -- Reply Preview Bar (NEW) --
-            if (_replyingTo != null)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1A1A1A) : Colors.white,
-                  border: const Border(top: BorderSide(color: KaapavTheme.border)),
-                  ),
-                child: Row(
-                  children: [
-                    Container(width: 4, height: 40, decoration: BoxDecoration(
-                      color: KaapavTheme.gold, borderRadius: BorderRadius.circular(2),
-                    )),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _replyingTo!.isOutgoing ? 'You' : (ref.read(currentChatProvider)?.customerName ?? widget.phone),
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: KaapavTheme.gold),
-                          ),
-                          Text(
-                            _replyingTo!.displayText,
-                            maxLines: 1, overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 13, color: KaapavTheme.gray),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 18, color: KaapavTheme.gray),
-                      onPressed: () => setState(() => _replyingTo = null),
-                    ),
-                  ],
-                ),
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(22),
               ),
-
-          ChatInput(
-            key: _inputKey,
-            onSend: _handleSend,
-            isSending: isSending,
-	    onAttachPressed: _showAttachmentPicker,
-            onAttachment: (path, type) => _uploadAndSend(File(path), type),
-            onCameraPressed: _handleCamera,
-            onVoiceCompleted: _handleVoiceSend,
+              child: isLoading && messages.isEmpty
+                  ? _buildLoadingState()
+                  : messages.isEmpty
+                      ? _buildEmptyState()
+                      : _buildMessagesList(messages, readReceiptsEnabled),
+            ),
           ),
-        ],
-      ),
-      floatingActionButton: !_isAtBottom
-    ? Padding(
-        padding: const EdgeInsets.only(bottom: 70), // above input bar
-        child: FloatingActionButton.small(
-          onPressed: () => _scrollToBottom(),
-          backgroundColor: KaapavTheme.white,
-          elevation: 4,
-          child: const Icon(Icons.keyboard_arrow_down, color: KaapavTheme.gold),
         ),
-      )
-    : null,
-floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+
+        if (_replyingTo != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+            child: KaapavGlassCard(
+              isDark: isDark,
+              radius: 18,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              borderColor: KaapavTheme.gold.withValues(alpha: 0.20),
+              child: Row(
+                children: [
+                  Container(
+                    width: 4,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: KaapavTheme.gold,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _replyingTo!.isOutgoing
+                              ? 'Replying to you'
+                              : 'Replying to ${ref.read(currentChatProvider)?.customerName ?? widget.phone}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: KaapavTheme.gold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _replyingTo!.displayText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: isDark
+                                ? Colors.white70
+                                : const Color(0xFF6B7280),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: KaapavTheme.gray,
+                    ),
+                    onPressed: () => setState(() => _replyingTo = null),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+Padding(
+  padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+  child: KaapavGlassCard(
+    isDark: isDark,
+    radius: 24,
+    padding: EdgeInsets.zero,
+    accentColor: KaapavTheme.teal,
+    borderColor: Colors.white.withValues(alpha: 0.10),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: ChatInput(
+        key: _inputKey,
+        onSend: _handleSend,
+        isSending: isSending,
+        onAttachPressed: _showAttachmentPicker,
+        onAttachment: (path, type) => _uploadAndSend(File(path), type),
+        onCameraPressed: _handleCamera,
+        onVoiceCompleted: _handleVoiceSend,
+      ),
+    ),
+  ),
+),
+      ],
+    ),
+  ),
+  floatingActionButton: !_isAtBottom
+      ? Padding(
+          padding: const EdgeInsets.only(bottom: 78),
+          child: FloatingActionButton.small(
+            onPressed: () => _scrollToBottom(),
+            backgroundColor: isDark
+                ? const Color(0xFF1A1A1A)
+                : Colors.white.withValues(alpha: 0.92),
+            elevation: 4,
+            child: const Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: KaapavTheme.gold,
+            ),
+          ),
+        )
+      : null,
+  floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
 );
-  }
+}
 
     PreferredSizeWidget _buildAppBar(chat, customer) {
-    final name = chat?.customerName ?? customer?.name ?? widget.phone;
-    final isTyping = ref.watch(chatProvider).typingStatus[widget.phone] ?? false;
-    final onlineStatus = ref.watch(chatProvider).onlineStatus[widget.phone];
+  final name = chat?.customerName ?? customer?.name ?? widget.phone;
+  final isTyping = ref.watch(chatProvider).typingStatus[widget.phone] ?? false;
+  final onlineStatus = ref.watch(chatProvider).onlineStatus[widget.phone];
+  final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Selection mode AppBar
-    if (_isSelecting) {
-  final allMessages = ref.read(messagesForPhoneProvider(widget.phone));
-  final allSelected = _selectedIds.length == allMessages.length && allMessages.isNotEmpty;
+  final iconColor = isDark ? Colors.white70 : const Color(0xFF6B7280);
+  final titleColor = isDark ? Colors.white : const Color(0xFF1A1A1A);
 
-  return AppBar(
-    backgroundColor: KaapavTheme.dark,
-    leading: IconButton(
-      icon: const Icon(Icons.close, color: Colors.white),
-      onPressed: () => setState(() { _isSelecting = false; _selectedIds.clear(); }),
-    ),
-    title: Text(
-      '${_selectedIds.length} selected',
-      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
-    ),
-    actions: [
-      IconButton(
-        icon: Icon(allSelected ? Icons.deselect : Icons.select_all, color: Colors.white),
-        tooltip: allSelected ? 'Deselect All' : 'Select All',
-        onPressed: () {
-          setState(() {
-            if (allSelected) {
-              _selectedIds.clear();
-              _isSelecting = false;
-            } else {
-              _selectedIds.addAll(allMessages.map((m) => m.messageId));
-            }
-          });
-        },
-      ),
-      IconButton(
-        icon: const Icon(Icons.copy, color: Colors.white),
-        tooltip: 'Copy',
-        onPressed: () {
-          final msgs = ref.read(messagesForPhoneProvider(widget.phone));
-          final selected = msgs
-              .where((m) => _selectedIds.contains(m.messageId))
-              .toList()
-            ..sort((a, b) => (a.timestamp ?? '').compareTo(b.timestamp ?? ''));
-          final text = selected.map((m) {
-            final dir = m.isOutgoing ? 'You' : (ref.read(currentChatProvider)?.customerName ?? widget.phone);
-            return '[$dir] ${m.displayText}';
-          }).join('\n\n');
-          Clipboard.setData(ClipboardData(text: text));
-          setState(() { _isSelecting = false; _selectedIds.clear(); });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Row(children: [
-                Icon(Icons.copy, color: Colors.white, size: 18),
-                SizedBox(width: 8),
-                Text('Messages copied'),
-              ]),
-              backgroundColor: KaapavTheme.gold,
+  Widget glassBackground() {
+  return ClipRect(
+    child: BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.black.withValues(alpha: 0.42),
+              KaapavTheme.gold.withValues(alpha: 0.105),
+              KaapavTheme.amethyst.withValues(alpha: 0.060),
+              Colors.white.withValues(alpha: 0.035),
+            ],
+          ),
+          border: Border(
+            bottom: BorderSide(
+              color: KaapavTheme.gold.withValues(alpha: 0.14),
             ),
-          );
-        },
-      ),
-      IconButton(
-        icon: const Icon(Icons.bookmark_outline, color: Colors.white),
-        tooltip: 'Save',
-        onPressed: () {
-          for (final id in _selectedIds) {
-            ref.read(messageProvider.notifier).starMessage(widget.phone, id);
-          }
-          final count = _selectedIds.length;
-          setState(() { _isSelecting = false; _selectedIds.clear(); });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(children: [
-                const Icon(Icons.bookmark, color: Colors.white, size: 18),
-                const SizedBox(width: 8),
-                Text('$count message(s) saved'),
-              ]),
-              backgroundColor: KaapavTheme.gold,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.22),
+              blurRadius: 26,
+              offset: const Offset(0, 12),
             ),
-          );
-        },
+          ],
+        ),
       ),
-      IconButton(
-        icon: const Icon(Icons.share, color: Colors.white),
-        tooltip: 'Share',
-        onPressed: () {
-          final msgs = ref.read(messagesForPhoneProvider(widget.phone));
-          final selected = msgs
-              .where((m) => _selectedIds.contains(m.messageId))
-              .toList()
-            ..sort((a, b) => (a.timestamp ?? '').compareTo(b.timestamp ?? ''));
-          final text = selected.map((m) => m.displayText).join('\n\n');
-          Share.share(text);
-          setState(() { _isSelecting = false; _selectedIds.clear(); });
-        },
-      ),
-      IconButton(
-        icon: const Icon(Icons.forward, color: Colors.white),
-        tooltip: 'Forward',
-        onPressed: () => _forwardSelected(),
-      ),
-      IconButton(
-        icon: const Icon(Icons.delete_outline, color: Color(0xFFFF6B6B)),
-        tooltip: 'Delete',
-        onPressed: () => _deleteSelected(),
-      ),
-    ],
+    ),
   );
 }
 
-    // Search mode AppBar
-    if (_isSearching) {
-      return AppBar(
-        backgroundColor: KaapavTheme.white, elevation: 0,
-        leading: IconButton(icon: const Icon(Icons.arrow_back),
-          onPressed: () => setState(() { _isSearching = false; _searchQuery = ''; _searchController.clear(); })),
-        title: TextField(
-          controller: _searchController,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Search messages...', border: InputBorder.none),
-          onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
-        ),
-        actions: [
-          if (_searchQuery.isNotEmpty)
-            IconButton(icon: const Icon(Icons.close),
-              onPressed: () => setState(() { _searchQuery = ''; _searchController.clear(); })),
-        ],
-      );
-    }
+  Widget roundAction({
+  required IconData icon,
+  required String tooltip,
+  required VoidCallback onTap,
+  Color? color,
+}) {
+  final accent = color ?? KaapavTheme.goldLight;
 
-    // Normal AppBar
+  return Padding(
+    padding: const EdgeInsets.only(right: 6),
+    child: Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withValues(alpha: 0.105),
+                accent.withValues(alpha: 0.115),
+                Colors.black.withValues(alpha: 0.080),
+              ],
+            ),
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: accent.withValues(alpha: 0.18),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: accent.withValues(alpha: 0.12),
+                blurRadius: 16,
+                offset: const Offset(0, 7),
+              ),
+            ],
+          ),
+          child: Icon(
+            icon,
+            size: 20,
+            color: accent,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+  // Selection mode AppBar
+  if (_isSelecting) {
+    final allMessages = ref.read(messagesForPhoneProvider(widget.phone));
+    final allSelected =
+        _selectedIds.length == allMessages.length && allMessages.isNotEmpty;
+
     return AppBar(
-      backgroundColor: KaapavTheme.white, elevation: 0, scrolledUnderElevation: 1,
-      leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.of(context).pop()),
-      titleSpacing: 0,
-      title: InkWell(
-        onTap: () => Navigator.push(context, MaterialPageRoute(
-          builder: (_) => ContactInfoScreen(phone: widget.phone))),
-        child: Row(children: [
-          CircleAvatar(radius: 20, backgroundColor: KaapavTheme.gold,
-            child: Text(_getInitials(name), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14))),
-          const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Flexible(child: Text(name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: KaapavTheme.dark),
-                  maxLines: 1, overflow: TextOverflow.ellipsis)),
-              if (customer?.tier == 'vip') ...[
-                const SizedBox(width: 4), const Icon(Icons.workspace_premium, size: 14, color: Color(0xFFFFD700))],
-            ]),
-            const SizedBox(height: 2),
-            if (isTyping)
-              const Text('typing...', style: TextStyle(fontSize: 12, color: KaapavTheme.gold, fontStyle: FontStyle.italic))
-            else
-              Text(onlineStatus == 'online' ? 'Online'
-                  : customer?.lastSeen != null ? 'Last seen ${Formatters.time(Formatters.parseDate(customer!.lastSeen))}' : widget.phone,
-                style: const TextStyle(fontSize: 12, color: KaapavTheme.gray)),
-          ])),
-        ]),
+      toolbarHeight: 70,
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      flexibleSpace: glassBackground(),
+      leading: IconButton(
+        icon: const Icon(Icons.close_rounded),
+        color: titleColor,
+        onPressed: () => setState(() {
+          _isSelecting = false;
+          _selectedIds.clear();
+        }),
+      ),
+      title: Text(
+        '${_selectedIds.length} selected',
+        style: TextStyle(
+          color: titleColor,
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+        ),
       ),
       actions: [
-        IconButton(icon: const Icon(Icons.search, color: KaapavTheme.gray), tooltip: 'Search',
-          onPressed: () => setState(() => _isSearching = true)),
         IconButton(
-          icon: const Icon(Icons.photo_library_outlined, color: KaapavTheme.gray), tooltip: 'Media',
+          icon: Icon(
+            allSelected ? Icons.deselect_rounded : Icons.select_all_rounded,
+            color: titleColor,
+          ),
+          tooltip: allSelected ? 'Deselect All' : 'Select All',
           onPressed: () {
-            final messages = ref.read(messagesForPhoneProvider(widget.phone));
-            Navigator.push(context, MaterialPageRoute(
-              builder: (_) => MediaGalleryScreen(messages: messages, chatName: name)));
+            setState(() {
+              if (allSelected) {
+                _selectedIds.clear();
+                _isSelecting = false;
+              } else {
+                _selectedIds.addAll(allMessages.map((m) => m.messageId));
+              }
+            });
           },
         ),
-        if (chat != null)
-          IconButton(
-            icon: Icon(chat.isBotEnabled ? Icons.smart_toy : Icons.smart_toy_outlined,
-                color: chat.isBotEnabled ? KaapavTheme.gold : KaapavTheme.grayLight),
-            tooltip: chat.isBotEnabled ? 'Bot enabled' : 'Bot disabled',
-            onPressed: () => ref.read(chatProvider.notifier).toggleBot(widget.phone),
-          ),
-        PopupMenuButton<String>(
-          icon: const Icon(Icons.more_vert),
-                    onSelected: (value) async {
-            switch (value) {
-              case 'star': ref.read(chatProvider.notifier).toggleStar(widget.phone); break;
-              case 'refresh': ref.read(messageProvider.notifier).fetchMessages(widget.phone, refresh: true); break;
-              case 'export': _handleExportChat(); break;
-              case 'select': setState(() => _isSelecting = true); break;
-              case 'starred': Navigator.push(context, MaterialPageRoute(builder: (_) => const StarredMessagesScreen())); break;
-              case 'mute':
-                ref.read(chatProvider.notifier).toggleMute(widget.phone);
-                final isMuted = ref.read(chatProvider).mutedChats.contains(widget.phone);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Row(children: [
-                      Icon(isMuted ? Icons.notifications_off : Icons.notifications_active, color: Colors.white, size: 18),
-                      const SizedBox(width: 8),
-                      Text(isMuted ? 'Notifications muted' : 'Notifications unmuted'),
-                    ]),
-                    backgroundColor: KaapavTheme.gold,
-                  ));
-                }
-                break;
-              case 'pin':
-                ref.read(chatProvider.notifier).togglePin(widget.phone);
-                final isPinned = ref.read(chatProvider).pinnedChats.contains(widget.phone);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Row(children: [
-                      Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined, color: Colors.white, size: 18),
-                      const SizedBox(width: 8),
-                      Text(isPinned ? 'Chat pinned' : 'Chat unpinned'),
-                    ]),
-                    backgroundColor: KaapavTheme.gold,
-                  ));
-                }
-                break;
-                        case 'block':
-                final isBlocked = ref.read(currentChatProvider)?.isBlocked ?? false;
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    title: Row(children: [
-                      Icon(isBlocked ? Icons.check_circle_outline : Icons.block,
-                          color: isBlocked ? KaapavTheme.gold : KaapavTheme.error, size: 24),
-                      const SizedBox(width: 8),
-                      Text(isBlocked ? 'Unblock Contact?' : 'Block Contact?'),
-                    ]),
-                    content: Text(isBlocked
-                        ? 'You will start receiving messages again.'
-                        : 'Blocked contacts cannot send you messages.'),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('Cancel', style: TextStyle(color: KaapavTheme.gray))),
-                      ElevatedButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: isBlocked ? KaapavTheme.gold : KaapavTheme.error,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        child: Text(isBlocked ? 'Unblock' : 'Block',
-                            style: const TextStyle(color: Colors.white)),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirm == true) {
-                  ref.read(chatProvider.notifier).toggleBlock(widget.phone);
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Row(children: [
-                        Icon(isBlocked ? Icons.check_circle : Icons.block, color: Colors.white, size: 18),
-                        const SizedBox(width: 8),
-                        Text(isBlocked ? 'Contact unblocked' : 'Contact blocked'),
-                      ]),
-                      backgroundColor: isBlocked ? KaapavTheme.gold : KaapavTheme.error,
-                    ));
-                  }
-                }
-                break;
-              case 'disappearing':
-                _showDisappearingOptions();
-                break;
-            }
+        IconButton(
+          icon: Icon(Icons.copy_rounded, color: titleColor),
+          tooltip: 'Copy',
+          onPressed: () {
+            final msgs = ref.read(messagesForPhoneProvider(widget.phone));
+            final selected = msgs
+                .where((m) => _selectedIds.contains(m.messageId))
+                .toList()
+              ..sort(
+                (a, b) => (a.timestamp ?? '').compareTo(b.timestamp ?? ''),
+              );
+
+            final text = selected.map((m) {
+              final dir = m.isOutgoing
+                  ? 'You'
+                  : (ref.read(currentChatProvider)?.customerName ??
+                      widget.phone);
+              return '[$dir] ${m.displayText}';
+            }).join('\n\n');
+
+            Clipboard.setData(ClipboardData(text: text));
+
+            setState(() {
+              _isSelecting = false;
+              _selectedIds.clear();
+            });
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Row(
+                  children: [
+                    Icon(Icons.copy, color: Colors.white, size: 18),
+                    SizedBox(width: 8),
+                    Text('Messages copied'),
+                  ],
+                ),
+                backgroundColor: KaapavTheme.gold,
+              ),
+            );
           },
-          itemBuilder: (context) => [
-            PopupMenuItem(value: 'star', child: Row(children: [
-              Icon(chat?.isStarred == true ? Icons.star : Icons.star_border,
-                  color: chat?.isStarred == true ? KaapavTheme.gold : null, size: 20),
-              const SizedBox(width: 12), Text(chat?.isStarred == true ? 'Unstar' : 'Star')])),
-            const PopupMenuItem(value: 'select', child: Row(children: [Icon(Icons.check_circle_outline, size: 20), SizedBox(width: 12), Text('Select Messages')])),
-            const PopupMenuItem(value: 'starred', child: Row(children: [Icon(Icons.star, size: 20), SizedBox(width: 12), Text('Starred Messages')])),
-            const PopupMenuItem(value: 'refresh', child: Row(children: [Icon(Icons.refresh, size: 20), SizedBox(width: 12), Text('Refresh')])),
-            const PopupMenuItem(value: 'export', child: Row(children: [Icon(Icons.upload_file, size: 20), SizedBox(width: 12), Text('Export Chat')])),
-            PopupMenuItem(
-              value: 'mute',
-              child: Row(children: [
-                Icon(
-                  ref.read(chatProvider).mutedChats.contains(widget.phone)
-                      ? Icons.notifications_active : Icons.notifications_off_outlined,
-                  size: 20,
+        ),
+        IconButton(
+          icon: Icon(Icons.bookmark_outline_rounded, color: titleColor),
+          tooltip: 'Save',
+          onPressed: () {
+            for (final id in _selectedIds) {
+              ref.read(messageProvider.notifier).starMessage(widget.phone, id);
+            }
+
+            final count = _selectedIds.length;
+
+            setState(() {
+              _isSelecting = false;
+              _selectedIds.clear();
+            });
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.bookmark, color: Colors.white, size: 18),
+                    const SizedBox(width: 8),
+                    Text('$count message(s) saved'),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                Text(ref.read(chatProvider).mutedChats.contains(widget.phone)
-                    ? 'Unmute Notifications' : 'Mute Notifications'),
-              ]),
-            ),
-            PopupMenuItem(
-              value: 'pin',
-              child: Row(children: [
-                Icon(
-                  ref.read(chatProvider).pinnedChats.contains(widget.phone)
-                      ? Icons.push_pin : Icons.push_pin_outlined,
-                  size: 20,
-                ),
-                const SizedBox(width: 12),
-                Text(ref.read(chatProvider).pinnedChats.contains(widget.phone)
-                    ? 'Unpin Chat' : 'Pin Chat'),
-              ]),
-            ),
-            PopupMenuItem(value: 'disappearing', child: Row(children: [
-              Icon(Icons.timer_outlined, size: 20,
-                  color: ref.read(chatProvider).disappearingSettings[widget.phone] != null ? KaapavTheme.gold : null),
-              const SizedBox(width: 12),
-              Text(ref.read(chatProvider).disappearingSettings[widget.phone] != null
-                  ? 'Disappearing: ON' : 'Disappearing Messages'),
-            ])),
-            PopupMenuItem(
-              value: 'block',
-              child: Row(children: [
-                Icon(Icons.block, size: 20, color: chat?.isBlocked == true ? KaapavTheme.gold : KaapavTheme.error),
-                const SizedBox(width: 12),
-                Text(chat?.isBlocked == true ? 'Unblock Contact' : 'Block Contact',
-                    style: TextStyle(color: chat?.isBlocked == true ? KaapavTheme.gold : KaapavTheme.error)),
-              ]),
-            ),
-          ],
+                backgroundColor: KaapavTheme.gold,
+              ),
+            );
+          },
+        ),
+        IconButton(
+          icon: Icon(Icons.share_rounded, color: titleColor),
+          tooltip: 'Share',
+          onPressed: () {
+            final msgs = ref.read(messagesForPhoneProvider(widget.phone));
+            final selected = msgs
+                .where((m) => _selectedIds.contains(m.messageId))
+                .toList()
+              ..sort(
+                (a, b) => (a.timestamp ?? '').compareTo(b.timestamp ?? ''),
+              );
+
+            final text = selected.map((m) => m.displayText).join('\n\n');
+            Share.share(text);
+
+            setState(() {
+              _isSelecting = false;
+              _selectedIds.clear();
+            });
+          },
+        ),
+        IconButton(
+          icon: Icon(Icons.forward_rounded, color: titleColor),
+          tooltip: 'Forward',
+          onPressed: () => _forwardSelected(),
+        ),
+        IconButton(
+          icon: const Icon(Icons.delete_outline_rounded),
+          color: const Color(0xFFFF6B6B),
+          tooltip: 'Delete',
+          onPressed: () => _deleteSelected(),
         ),
       ],
     );
   }
+
+  // Search mode AppBar
+  if (_isSearching) {
+    return AppBar(
+      toolbarHeight: 70,
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      flexibleSpace: glassBackground(),
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_rounded),
+        color: iconColor,
+        onPressed: () => setState(() {
+          _isSearching = false;
+          _searchQuery = '';
+          _searchController.clear();
+        }),
+      ),
+      titleSpacing: 0,
+      title: Container(
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.06)
+              : Colors.white.withValues(alpha: 0.62),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.white.withValues(alpha: 0.55),
+          ),
+        ),
+        child: TextField(
+          controller: _searchController,
+          autofocus: true,
+          style: TextStyle(
+            color: titleColor,
+            fontSize: 14,
+          ),
+          decoration: const InputDecoration(
+            hintText: 'Search messages...',
+            hintStyle: TextStyle(
+              color: Color(0xFF9CA3AF),
+              fontSize: 13,
+            ),
+            border: InputBorder.none,
+          ),
+          onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
+        ),
+      ),
+      actions: [
+        if (_searchQuery.isNotEmpty)
+          IconButton(
+            icon: Icon(Icons.close_rounded, color: iconColor),
+            onPressed: () => setState(() {
+              _searchQuery = '';
+              _searchController.clear();
+            }),
+          ),
+      ],
+    );
+  }
+
+  // Normal AppBar
+  return AppBar(
+    toolbarHeight: 76,
+    backgroundColor: Colors.transparent,
+    surfaceTintColor: Colors.transparent,
+    elevation: 0,
+    scrolledUnderElevation: 0,
+    flexibleSpace: glassBackground(),
+    leading: IconButton(
+      icon: const Icon(Icons.arrow_back_rounded),
+      color: iconColor,
+      onPressed: () => Navigator.of(context).pop(),
+    ),
+    titleSpacing: 0,
+    title: InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ContactInfoScreen(phone: widget.phone),
+        ),
+      ),
+      child: Row(
+        children: [
+          Stack(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: KaapavTheme.goldGradient,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.52),
+                    width: 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: KaapavTheme.gold.withValues(alpha: 0.22),
+                      blurRadius: 16,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Text(
+                    _getInitials(name),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ),
+              if (onlineStatus == 'online')
+                Positioned(
+                  right: 1,
+                  bottom: 1,
+                  child: Container(
+                    width: 11,
+                    height: 11,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF111827) : Colors.white,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        name,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: titleColor,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (customer?.tier == 'vip') ...[
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.workspace_premium_rounded,
+                        size: 14,
+                        color: Color(0xFFFFD700),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                if (isTyping)
+                  const Text(
+                    'typing...',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: KaapavTheme.gold,
+                      fontStyle: FontStyle.italic,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  )
+                else
+                  Text(
+                    onlineStatus == 'online'
+                        ? 'Online'
+                        : customer?.lastSeen != null
+                            ? 'Last seen ${Formatters.time(Formatters.parseDate(customer!.lastSeen))}'
+                            : widget.phone,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF9CA3AF),
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+    actions: [
+      roundAction(
+        icon: Icons.search_rounded,
+        tooltip: 'Search',
+        onTap: () => setState(() => _isSearching = true),
+      ),
+      roundAction(
+        icon: Icons.photo_library_outlined,
+        tooltip: 'Media',
+        onTap: () {
+          final messages = ref.read(messagesForPhoneProvider(widget.phone));
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => MediaGalleryScreen(
+                messages: messages,
+                chatName: name,
+              ),
+            ),
+          );
+        },
+      ),
+      if (chat != null)
+        roundAction(
+          icon: chat.isBotEnabled
+              ? Icons.smart_toy_rounded
+              : Icons.smart_toy_outlined,
+          tooltip: chat.isBotEnabled ? 'Bot enabled' : 'Bot disabled',
+          color: chat.isBotEnabled ? KaapavTheme.gold : KaapavTheme.grayLight,
+          onTap: () => ref.read(chatProvider.notifier).toggleBot(widget.phone),
+        ),
+      PopupMenuButton<String>(
+        icon: Icon(Icons.more_vert_rounded, color: iconColor),
+        color: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        onSelected: (value) async {
+          switch (value) {
+            case 'star':
+              ref.read(chatProvider.notifier).toggleStar(widget.phone);
+              break;
+
+            case 'refresh':
+              ref
+                  .read(messageProvider.notifier)
+                  .fetchMessages(widget.phone, refresh: true);
+              break;
+
+            case 'export':
+              _handleExportChat();
+              break;
+
+            case 'select':
+              setState(() => _isSelecting = true);
+              break;
+
+            case 'starred':
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const StarredMessagesScreen(),
+                ),
+              );
+              break;
+
+            case 'mute':
+              ref.read(chatProvider.notifier).toggleMute(widget.phone);
+              final isMuted =
+                  ref.read(chatProvider).mutedChats.contains(widget.phone);
+
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: [
+                        Icon(
+                          isMuted
+                              ? Icons.notifications_off
+                              : Icons.notifications_active,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          isMuted
+                              ? 'Notifications muted'
+                              : 'Notifications unmuted',
+                        ),
+                      ],
+                    ),
+                    backgroundColor: KaapavTheme.gold,
+                  ),
+                );
+              }
+              break;
+
+            case 'pin':
+              ref.read(chatProvider.notifier).togglePin(widget.phone);
+              final isPinned =
+                  ref.read(chatProvider).pinnedChats.contains(widget.phone);
+
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: [
+                        Icon(
+                          isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(isPinned ? 'Chat pinned' : 'Chat unpinned'),
+                      ],
+                    ),
+                    backgroundColor: KaapavTheme.gold,
+                  ),
+                );
+              }
+              break;
+
+            case 'block':
+              final isBlocked = ref.read(currentChatProvider)?.isBlocked ?? false;
+
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  title: Row(
+                    children: [
+                      Icon(
+                        isBlocked ? Icons.check_circle_outline : Icons.block,
+                        color: isBlocked
+                            ? KaapavTheme.gold
+                            : KaapavTheme.error,
+                        size: 24,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(isBlocked ? 'Unblock Contact?' : 'Block Contact?'),
+                    ],
+                  ),
+                  content: Text(
+                    isBlocked
+                        ? 'You will start receiving messages again.'
+                        : 'Blocked contacts cannot send you messages.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(color: KaapavTheme.gray),
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isBlocked
+                            ? KaapavTheme.gold
+                            : KaapavTheme.error,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: Text(
+                        isBlocked ? 'Unblock' : 'Block',
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+
+              if (confirm == true) {
+                ref.read(chatProvider.notifier).toggleBlock(widget.phone);
+
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Row(
+                        children: [
+                          Icon(
+                            isBlocked ? Icons.check_circle : Icons.block,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            isBlocked
+                                ? 'Contact unblocked'
+                                : 'Contact blocked',
+                          ),
+                        ],
+                      ),
+                      backgroundColor:
+                          isBlocked ? KaapavTheme.gold : KaapavTheme.error,
+                    ),
+                  );
+                }
+              }
+              break;
+
+            case 'disappearing':
+              _showDisappearingOptions();
+              break;
+          }
+        },
+        itemBuilder: (context) => [
+          PopupMenuItem(
+            value: 'star',
+            child: Row(
+              children: [
+                Icon(
+                  chat?.isStarred == true
+                      ? Icons.star_rounded
+                      : Icons.star_border_rounded,
+                  color: chat?.isStarred == true ? KaapavTheme.gold : null,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Text(chat?.isStarred == true ? 'Unstar' : 'Star'),
+              ],
+            ),
+          ),
+          const PopupMenuItem(
+            value: 'select',
+            child: Row(
+              children: [
+                Icon(Icons.check_circle_outline_rounded, size: 20),
+                SizedBox(width: 12),
+                Text('Select Messages'),
+              ],
+            ),
+          ),
+          const PopupMenuItem(
+            value: 'starred',
+            child: Row(
+              children: [
+                Icon(Icons.star_rounded, size: 20),
+                SizedBox(width: 12),
+                Text('Starred Messages'),
+              ],
+            ),
+          ),
+          const PopupMenuItem(
+            value: 'refresh',
+            child: Row(
+              children: [
+                Icon(Icons.refresh_rounded, size: 20),
+                SizedBox(width: 12),
+                Text('Refresh'),
+              ],
+            ),
+          ),
+          const PopupMenuItem(
+            value: 'export',
+            child: Row(
+              children: [
+                Icon(Icons.upload_file_rounded, size: 20),
+                SizedBox(width: 12),
+                Text('Export Chat'),
+              ],
+            ),
+          ),
+          PopupMenuItem(
+            value: 'mute',
+            child: Row(
+              children: [
+                Icon(
+                  ref.read(chatProvider).mutedChats.contains(widget.phone)
+                      ? Icons.notifications_active_rounded
+                      : Icons.notifications_off_outlined,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  ref.read(chatProvider).mutedChats.contains(widget.phone)
+                      ? 'Unmute Notifications'
+                      : 'Mute Notifications',
+                ),
+              ],
+            ),
+          ),
+          PopupMenuItem(
+            value: 'pin',
+            child: Row(
+              children: [
+                Icon(
+                  ref.read(chatProvider).pinnedChats.contains(widget.phone)
+                      ? Icons.push_pin_rounded
+                      : Icons.push_pin_outlined,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  ref.read(chatProvider).pinnedChats.contains(widget.phone)
+                      ? 'Unpin Chat'
+                      : 'Pin Chat',
+                ),
+              ],
+            ),
+          ),
+          PopupMenuItem(
+            value: 'disappearing',
+            child: Row(
+              children: [
+                Icon(
+                  Icons.timer_outlined,
+                  size: 20,
+                  color:
+                      ref.read(chatProvider).disappearingSettings[widget.phone] !=
+                              null
+                          ? KaapavTheme.gold
+                          : null,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  ref.read(chatProvider).disappearingSettings[widget.phone] !=
+                          null
+                      ? 'Disappearing: ON'
+                      : 'Disappearing Messages',
+                ),
+              ],
+            ),
+          ),
+          PopupMenuItem(
+            value: 'block',
+            child: Row(
+              children: [
+                Icon(
+                  Icons.block_rounded,
+                  size: 20,
+                  color: chat?.isBlocked == true
+                      ? KaapavTheme.gold
+                      : KaapavTheme.error,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  chat?.isBlocked == true
+                      ? 'Unblock Contact'
+                      : 'Block Contact',
+                  style: TextStyle(
+                    color: chat?.isBlocked == true
+                        ? KaapavTheme.gold
+                        : KaapavTheme.error,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ],
+  );
+}
 
   Widget _buildLoadingState() {
     return const Center(
@@ -1516,37 +2241,67 @@ floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
   }
 
   Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              gradient: KaapavTheme.goldGradient,
-              shape: BoxShape.circle,
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+
+  return Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: KaapavGlassCard(
+        isDark: isDark,
+        radius: 26,
+        padding: const EdgeInsets.all(26),
+        glow: true,
+        accentColor: KaapavTheme.gold,
+        borderColor: KaapavTheme.gold.withValues(alpha: 0.22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 74,
+              height: 74,
+              decoration: BoxDecoration(
+                gradient: KaapavTheme.luxeGoldGradient,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: KaapavTheme.gold.withValues(alpha: 0.28),
+                    blurRadius: 22,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.chat_bubble_outline_rounded,
+                color: KaapavTheme.bgDeep,
+                size: 34,
+              ),
             ),
-            child: const Icon(Icons.chat_bubble_outline, color: Colors.white, size: 40),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'No messages yet',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: KaapavTheme.dark,
+            const SizedBox(height: 16),
+            const Text(
+              'No messages yet',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                color: KaapavTheme.white,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Send a message to start the conversation',
-            style: TextStyle(color: KaapavTheme.gray),
-          ),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              'Send a message to start the conversation.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: KaapavTheme.grayLight.withValues(alpha: 0.84),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildMessagesList(List<Message> messages, bool readReceiptsEnabled) {
   var filtered = messages;
@@ -1578,11 +2333,19 @@ floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(16),
-                ),
+  padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+  decoration: BoxDecoration(
+    gradient: LinearGradient(
+      colors: [
+        Colors.white.withValues(alpha: 0.105),
+        KaapavTheme.gold.withValues(alpha: 0.075),
+      ],
+    ),
+    borderRadius: BorderRadius.circular(999),
+    border: Border.all(
+      color: Colors.white.withValues(alpha: 0.10),
+    ),
+  ),
                 child: Text(
                   _formatDateHeader(dateStr),
                   style: const TextStyle(
@@ -1774,6 +2537,172 @@ floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     if (parts.isEmpty) return '?';
     if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
     return '${parts[0][0]}${parts[parts.length - 1][0]}'.toUpperCase();
+  }
+}
+
+class _GlassBottomSheet extends StatelessWidget {
+  final bool isDark;
+  final Widget child;
+
+  const _GlassBottomSheet({
+    required this.isDark,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+        child: Container(
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.42)
+                : Colors.white.withValues(alpha: 0.72),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            border: Border(
+              top: BorderSide(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.10)
+                    : Colors.white.withValues(alpha: 0.62),
+              ),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.10),
+                blurRadius: 28,
+                offset: const Offset(0, -10),
+              ),
+            ],
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+class _GlassSheetHandle extends StatelessWidget {
+  const _GlassSheetHandle();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 42,
+      height: 4,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.48),
+        borderRadius: BorderRadius.circular(999),
+      ),
+    );
+  }
+}
+
+class _GlassOptionTile extends StatelessWidget {
+  final bool isDark;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+  final bool selected;
+  final bool danger;
+
+  const _GlassOptionTile({
+    required this.isDark,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+    this.selected = false,
+    this.danger = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = danger
+        ? KaapavTheme.error
+        : isDark
+            ? Colors.white
+            : const Color(0xFF1A1A1A);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: selected
+                ? KaapavTheme.gold.withValues(alpha: 0.16)
+                : isDark
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : Colors.white.withValues(alpha: 0.52),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: selected
+                  ? KaapavTheme.gold.withValues(alpha: 0.36)
+                  : isDark
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : Colors.white.withValues(alpha: 0.55),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: danger ? 0.10 : 0.14),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: color, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: Color(0xFF9CA3AF),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (selected)
+                const Icon(
+                  Icons.check_circle_rounded,
+                  color: KaapavTheme.gold,
+                  size: 20,
+                )
+              else
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Color(0xFF9CA3AF),
+                  size: 20,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

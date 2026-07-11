@@ -118,202 +118,278 @@ class ChatInputState extends State<ChatInput> {
   // -------------------------------------------------------------
 
   @override
-  Widget build(BuildContext context) {
+Widget build(BuildContext context) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final bottomInset = MediaQuery.of(context).viewPadding.bottom;
 
-    // Show voice recorder overlay
-    if (_isRecording) {
-      return VoiceRecorder(
-        onCompleted: (path, duration) {
-          setState(() => _isRecording = false);
-          widget.onVoiceCompleted?.call(path, duration);
-        },
-        onCancel: () => setState(() => _isRecording = false),
-      );
-    }
-    return Container(
-      padding: EdgeInsets.only(
-        left: 8,
-        right: 8,
-        top: 8,
-        bottom: 8 + MediaQuery.of(context).viewPadding.bottom,
-      ),
-      decoration: BoxDecoration(
-        color: KaapavTheme.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          // Attach button
-          _buildIconButton(
-            icon: Icons.add,
-            onTap: widget.enabled ? _showAttachmentPicker : null,
-            tooltip: 'Attach',
-          ),
-
-          // Input field
-          Expanded(
-            child: Container(
-              constraints: const BoxConstraints(maxHeight: 120),
-              decoration: BoxDecoration(
-                color: KaapavTheme.cream,
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: KaapavTheme.border),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  // Emoji button
-                  Padding(
-                    padding: const EdgeInsets.only(left: 4, bottom: 4),
-                    child: _buildIconButton(
-                      icon: Icons.emoji_emotions_outlined,
-                      onTap: widget.onEmojiPressed ?? () => _focusNode.requestFocus(),
-                      tooltip: 'Emoji',
-                      size: 36,
-                    ),
-                  ),
-
-                  // Text input
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      focusNode: _focusNode,
-                      enabled: widget.enabled,
-                      maxLines: 5,
-                      minLines: 1,
-                      textCapitalization: TextCapitalization.sentences,
-                      textInputAction: TextInputAction.newline,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Color(0xFF111111),
-  		        fontWeight: FontWeight.w400,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: widget.hintText ?? 'Type a message...',
-                        hintStyle: TextStyle(
- 			 color: const Color(0xFF9CA3AF),  
-  			 fontSize: 16,
-		     ),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // Camera button (only when no text)
-                  if (!_hasText)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 4, bottom: 4),
-                      child: _buildIconButton(
-                        icon: Icons.camera_alt_outlined,
-                        onTap: widget.onCameraPressed ?? _showAttachmentPicker,
-                        tooltip: 'Camera',
-                        size: 36,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(width: 8),
-
-          // Send button
-          _buildSendButton(),
-        ],
-      ),
+  if (_isRecording) {
+    return VoiceRecorder(
+      onCompleted: (path, duration) {
+        setState(() => _isRecording = false);
+        widget.onVoiceCompleted?.call(path, duration);
+      },
+      onCancel: () => setState(() => _isRecording = false),
     );
   }
+
+  return Container(
+    padding: EdgeInsets.only(
+      left: 8,
+      right: 8,
+      top: 8,
+      bottom: 8 + bottomInset,
+    ),
+    decoration: const BoxDecoration(
+      color: Colors.transparent,
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        _buildIconButton(
+          icon: Icons.add_rounded,
+          onTap: widget.enabled ? _showAttachmentPicker : null,
+          tooltip: 'Attach',
+          color: KaapavTheme.goldLight,
+          filled: true,
+        ),
+
+        const SizedBox(width: 6),
+
+        Expanded(
+          child: Container(
+            constraints: const BoxConstraints(maxHeight: 124),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.white.withValues(alpha: isDark ? 0.090 : 0.74),
+                  KaapavTheme.teal.withValues(alpha: isDark ? 0.040 : 0.055),
+                  Colors.black.withValues(alpha: isDark ? 0.110 : 0.000),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(26),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: isDark ? 0.115 : 0.62),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.05),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, bottom: 4),
+                  child: _buildIconButton(
+                    icon: Icons.emoji_emotions_outlined,
+                    onTap: widget.onEmojiPressed ?? () => _focusNode.requestFocus(),
+                    tooltip: 'Emoji',
+                    size: 36,
+                    color: KaapavTheme.amethyst,
+                  ),
+                ),
+
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    enabled: widget.enabled,
+                    maxLines: 5,
+                    minLines: 1,
+                    textCapitalization: TextCapitalization.sentences,
+                    textInputAction: TextInputAction.newline,
+                    cursorColor: KaapavTheme.goldLight,
+                    style: const TextStyle(
+                      fontSize: 15.5,
+                      color: KaapavTheme.white,
+                      fontWeight: FontWeight.w500,
+                      height: 1.28,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: widget.hintText ?? 'Message KAAPAV customer...',
+                      hintStyle: TextStyle(
+                        color: KaapavTheme.grayLight.withValues(alpha: 0.72),
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ),
+
+                if (!_hasText)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4, bottom: 4),
+                    child: _buildIconButton(
+                      icon: Icons.camera_alt_outlined,
+                      onTap: widget.onCameraPressed ?? _showAttachmentPicker,
+                      tooltip: 'Camera',
+                      size: 36,
+                      color: KaapavTheme.sapphire,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(width: 8),
+
+        _buildSendButton(),
+      ],
+    ),
+  );
+}
 
   // -------------------------------------------------------------
   // ICON BUTTON
   // -------------------------------------------------------------
 
   Widget _buildIconButton({
-    required IconData icon,
-    VoidCallback? onTap,
-    String? tooltip,
-    double size = 44,
-  }) {
-    return Tooltip(
-      message: tooltip ?? '',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(size / 2),
-          child: SizedBox(
-            width: size,
-            height: size,
-            child: Icon(
-              icon,
-              color: onTap != null ? KaapavTheme.gray : KaapavTheme.grayLight,
-              size: 24,
-            ),
+  required IconData icon,
+  VoidCallback? onTap,
+  String? tooltip,
+  double size = 44,
+  Color? color,
+  bool filled = false,
+}) {
+  final accent = color ?? KaapavTheme.grayLight;
+
+  return Tooltip(
+    message: tooltip ?? '',
+    child: Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(size / 2),
+        child: Container(
+          width: size,
+          height: size,
+          decoration: filled
+              ? BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      accent.withValues(alpha: 0.22),
+                      Colors.white.withValues(alpha: 0.070),
+                    ],
+                  ),
+                  border: Border.all(
+                    color: accent.withValues(alpha: 0.22),
+                  ),
+                )
+              : null,
+          child: Icon(
+            icon,
+            color: onTap != null
+                ? accent
+                : KaapavTheme.grayLight.withValues(alpha: 0.42),
+            size: size >= 44 ? 24 : 21,
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   // -------------------------------------------------------------
   // SEND BUTTON
   // -------------------------------------------------------------
 
     Widget _buildSendButton() {
-    final canSend = _hasText && !widget.isSending && widget.enabled;
+  final canSend = _hasText && !widget.isSending && widget.enabled;
 
-    // Mic button when no text
-    if (!_hasText && !widget.isSending && widget.onVoiceCompleted != null) {
-      return GestureDetector(
-        onTap: () {
-          HapticFeedback.mediumImpact();
-          setState(() => _isRecording = true);
-        },
-        child: Container(
-          width: 48, height: 48,
-          decoration: BoxDecoration(
-            gradient: KaapavTheme.goldGradient,
-            shape: BoxShape.circle,
-            boxShadow: [KaapavTheme.goldShadow],
-          ),
-          child: const Icon(Icons.mic, color: Colors.white, size: 22),
+  if (!_hasText && !widget.isSending && widget.onVoiceCompleted != null) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.mediumImpact();
+        setState(() => _isRecording = true);
+      },
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          gradient: KaapavTheme.successGradient,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: KaapavTheme.teal.withValues(alpha: 0.28),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
-      );
-    }
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      width: 48, height: 48,
-      decoration: BoxDecoration(
-        gradient: canSend ? KaapavTheme.goldGradient : null,
-        color: canSend ? null : KaapavTheme.grayLight.withValues(alpha: 0.3),
-        shape: BoxShape.circle,
-        boxShadow: canSend ? [KaapavTheme.goldShadow] : null,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: canSend ? _handleSend : null,
-          borderRadius: BorderRadius.circular(24),
-          child: Center(
-            child: widget.isSending
-                ? const SizedBox(width: 20, height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)))
-                : Icon(Icons.send, color: canSend ? Colors.white : KaapavTheme.grayLight, size: 20),
-          ),
+        child: const Icon(
+          Icons.mic_rounded,
+          color: KaapavTheme.white,
+          size: 22,
         ),
       ),
     );
   }
+
+  return AnimatedContainer(
+    duration: const Duration(milliseconds: 220),
+    curve: Curves.easeOutCubic,
+    width: 48,
+    height: 48,
+    decoration: BoxDecoration(
+      gradient: canSend ? KaapavTheme.luxeGoldGradient : null,
+      color: canSend
+          ? null
+          : KaapavTheme.grayLight.withValues(alpha: 0.18),
+      shape: BoxShape.circle,
+      border: Border.all(
+        color: canSend
+            ? KaapavTheme.goldLight.withValues(alpha: 0.44)
+            : Colors.white.withValues(alpha: 0.08),
+      ),
+      boxShadow: canSend
+          ? [
+              BoxShadow(
+                color: KaapavTheme.gold.withValues(alpha: 0.32),
+                blurRadius: 20,
+                offset: const Offset(0, 9),
+              ),
+            ]
+          : null,
+    ),
+    child: Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: canSend ? _handleSend : null,
+        borderRadius: BorderRadius.circular(24),
+        child: Center(
+          child: widget.isSending
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation(KaapavTheme.white),
+                  ),
+                )
+              : Icon(
+                  Icons.send_rounded,
+                  color: canSend
+                      ? KaapavTheme.bgDeep
+                      : KaapavTheme.grayLight.withValues(alpha: 0.65),
+                  size: 20,
+                ),
+        ),
+      ),
+    ),
+  );
+}
 }

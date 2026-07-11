@@ -10,7 +10,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kaapav_app/config/theme.dart';
 import 'package:share_plus/share_plus.dart';
-
+import '../../providers/product_provider.dart';
+import '../products/product_detail_screen.dart';
 
 import '../../providers/order_provider.dart';
 import '../../widgets/toast.dart';
@@ -54,40 +55,60 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     'cancelled': Color(0xFFEF4444),
   };
 
-  static const _statusEmojis = {
-    'pending': '⏳',
-    'confirmed': '✅',
-    'processing': '📦',
-    'shipped': '🚚',
-    'delivered': '🎉',
-    'cancelled': '❌',
-  };
+static const _statusEmojis = {
+  'pending': '⏳',
+  'confirmed': '✅',
+  'processing': '📦',
+  'shipped': '🚚',
+  'delivered': '🎉',
+  'cancelled': '❌',
+};
 
-  @override
-  void initState() {
+bool _hasActiveShipment(dynamic order) {
+  return (order.shiprocketOrderId ?? '').toString().isNotEmpty ||
+      (order.shipmentId ?? '').toString().isNotEmpty ||
+      (order.awbNumber ?? '').toString().isNotEmpty ||
+      (order.awbCode ?? '').toString().isNotEmpty ||
+      (order.trackingId ?? '').toString().isNotEmpty ||
+      (order.trackingUrl ?? '').toString().isNotEmpty ||
+      order.status == 'shipped' ||
+      order.status == 'delivered';
+}
+
+bool _canBookShiprocket(dynamic order) {
+  return order.paymentStatus == 'paid' &&
+      (order.status == 'confirmed' || order.status == 'processing') &&
+      !_hasActiveShipment(order);
+}
+
+@override
+void initState() {
     super.initState();
     Future.microtask(() async {
       final orders = ref.read(orderProvider).orders;
       if (orders.isEmpty) {
         await ref.read(orderProvider.notifier).loadOrders();
       }
-      await _ensureOrderLoaded();
-      await _loadEvents();
+await _ensureOrderLoaded();
+
+final products = ref.read(productProvider).products;
+if (products.isEmpty) {
+  await ref.read(productProvider.notifier).loadProducts();
+}
+
+await _loadEvents();
     });
   }
 
-  Future<void> _ensureOrderLoaded() async {
-    final existing =
-        ref.read(orderProvider.notifier).getOrderById(widget.orderId);
-    if (existing != null) return;
+Future<void> _ensureOrderLoaded() async {
+  if (mounted) setState(() => _isLoadingOrder = true);
 
-    if (mounted) setState(() => _isLoadingOrder = true);
-    try {
-      await ref.read(orderProvider.notifier).fetchOrderById(widget.orderId);
-    } finally {
-      if (mounted) setState(() => _isLoadingOrder = false);
-    }
+  try {
+    await ref.read(orderProvider.notifier).fetchOrderById(widget.orderId);
+  } finally {
+    if (mounted) setState(() => _isLoadingOrder = false);
   }
+}
 
   Future<void> _loadEvents() async {
     if (mounted) setState(() => _isLoadingEvents = true);
@@ -741,8 +762,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                         child: const Text('Save Status'),
                       ),
                     ),
-                    if (order.status == 'confirmed' &&
-                        order.paymentStatus == 'paid') ...[
+        if (_canBookShiprocket(order)) ...[
                       const SizedBox(height: 10),
                       SizedBox(
                         width: double.infinity,
@@ -829,6 +849,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     final statusColor = _statusColors[order.status] ?? KaapavTheme.gold;
     final statusEmoji = _statusEmojis[order.status] ?? '📋';
     final items = _parseItems(order);
+
+final products = ref.watch(productProvider).products;
+final productImageBySku = {
+  for (final p in products)
+    if (p.sku.isNotEmpty) p.sku: p.imageUrl ?? '',
+};
 
     return Scaffold(
       backgroundColor:
@@ -935,7 +961,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 bg: const Color(0xFFF3F4F6),
                 fg: const Color(0xFF6B7280),
               ),
-              if (order.status == 'confirmed' && order.paymentStatus == 'paid')
+              if (_canBookShiprocket(order))
                 const _MetaChip(
                   icon: Icons.local_shipping_rounded,
                   label: 'Ready for Shiprocket',
@@ -980,11 +1006,28 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                   final i = entry.key;
                   final item = entry.value;
                   final isLast = i == items.length - 1;
-                  return _OrderItemRow(
-                    item: item,
-                    isLast: isLast,
-                    isDark: isDark,
-                  );
+final sku = item['sku']?.toString().trim() ?? '';
+
+return _OrderItemRow(
+  item: item,
+  isLast: isLast,
+  isDark: isDark,
+  fallbackImageUrl: productImageBySku[sku] ?? '',
+  onTap: () {
+    if (sku.isEmpty) {
+      KaapavToast.error(context, 'Product SKU missing');
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProductDetailScreen(sku: sku),
+      ),
+    );
+  },
+);
+
                 }).toList(),
               ),
             ),
@@ -1650,121 +1693,332 @@ class _OrderItemRow extends StatelessWidget {
   final Map<String, dynamic> item;
   final bool isLast;
   final bool isDark;
+  final String fallbackImageUrl;
+  final VoidCallback? onTap;
 
   const _OrderItemRow({
     required this.item,
     required this.isLast,
     required this.isDark,
+    this.fallbackImageUrl = '',
+    this.onTap,
   });
+
+  String _text(dynamic value) => value?.toString().trim() ?? '';
+
+  double _num(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  int _qty(dynamic value) {
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 1;
+  }
+
+  List<String> _images() {
+    final urls = <String>[];
+
+    void add(dynamic value) {
+      final url = _text(value);
+      if (url.isNotEmpty && !urls.contains(url)) urls.add(url);
+    }
+
+    add(item['product_image_url']);
+    add(item['image_url']);
+    add(item['image']);
+    add(fallbackImageUrl);
+
+    final productImages = item['product_images'];
+    if (productImages is List) {
+      for (final img in productImages) {
+        add(img);
+      }
+    }
+
+    return urls;
+  }
+
+  void _openImagePreview(BuildContext context, List<String> images, String name) {
+    if (images.isEmpty) {
+      KaapavToast.error(context, 'Product image not available');
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.92),
+      builder: (_) {
+        return Dialog.fullscreen(
+          backgroundColor: Colors.black,
+          child: Stack(
+            children: [
+              PageView.builder(
+                itemCount: images.length,
+                itemBuilder: (_, index) {
+                  return InteractiveViewer(
+                    minScale: 0.8,
+                    maxScale: 4,
+                    child: Center(
+                      child: CachedNetworkImage(
+                        imageUrl: images[index],
+                        fit: BoxFit.contain,
+                        placeholder: (_, __) => const Center(
+                          child: CircularProgressIndicator(
+                            color: KaapavTheme.gold,
+                          ),
+                        ),
+                        errorWidget: (_, __, ___) => const Center(
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: Colors.white54,
+                            size: 42,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+
+              Positioned(
+                top: 42,
+                left: 16,
+                right: 56,
+                child: Text(
+                  name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+
+              Positioned(
+                top: 36,
+                right: 12,
+                child: IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+              ),
+
+              if (images.length > 1)
+                Positioned(
+                  bottom: 28,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '${images.length} images • swipe',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final name = item['name']?.toString() ?? 'Product';
-    final category = item['category']?.toString() ?? '';
-    final sku = item['sku']?.toString() ?? '';
-    final qty = item['qty'] ?? item['quantity'] ?? 1;
-    final price = (item['price'] as num?)?.toDouble() ?? 0;
-    final imageUrl =
-        item['image_url']?.toString() ?? item['image']?.toString();
-    final lineTotal = price * (qty as num).toDouble();
+    final name = _text(item['name']).isNotEmpty ? _text(item['name']) : 'Product';
+    final category = _text(item['category']);
+    final sku = _text(item['sku']);
+    final qty = _qty(item['qty'] ?? item['quantity']);
+    final price = _num(item['price']);
+    final images = _images();
+    final rawImageUrl =
+    item['image_url']?.toString().trim() ??
+    item['image']?.toString().trim() ??
+    item['imageUrl']?.toString().trim() ??
+    item['thumbnail']?.toString().trim() ??
+    item['product_image']?.toString().trim() ??
+    '';
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
-      decoration: BoxDecoration(
-        border: isLast
-            ? null
-            : Border(
-                bottom: BorderSide(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.06)
-                      : const Color(0xFFE5E7EB),
+final imageUrl = rawImageUrl.isNotEmpty ? rawImageUrl : fallbackImageUrl;
+    final lineTotal = price * qty;
+
+    return InkWell(
+  onTap: onTap,
+      onLongPress: sku.isEmpty
+          ? null
+          : () {
+              Clipboard.setData(ClipboardData(text: sku));
+              KaapavToast.success(context, 'SKU copied: $sku');
+            },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+        decoration: BoxDecoration(
+          border: isLast
+              ? null
+              : Border(
+                  bottom: BorderSide(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.06)
+                        : const Color(0xFFE5E7EB),
+                  ),
                 ),
-              ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              color: isDark ? const Color(0xFF2C2C2C) : const Color(0xFFF5F0E8),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: imageUrl != null && imageUrl.isNotEmpty
-                ? CachedNetworkImage(
-                    imageUrl: imageUrl,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => const Center(
-                      child: Icon(
-                        Icons.diamond_outlined,
-                        size: 20,
-                        color: Color(0xFFC49432),
-                      ),
-                    ),
-                    errorWidget: (_, __, ___) => const Center(
-                      child: Icon(
-                        Icons.diamond_outlined,
-                        size: 20,
-                        color: Color(0xFFC49432),
-                      ),
-                    ),
-                  )
-                : const Center(
-                    child: Icon(
-                      Icons.diamond_outlined,
-                      size: 20,
-                      color: Color(0xFFC49432),
+        ),
+        child: Row(
+          children: [
+GestureDetector(
+  onTap: () => _openImagePreview(context, images, name),
+  child: Stack(
+    children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    color: isDark
+                        ? const Color(0xFF2C2C2C)
+                        : const Color(0xFFF5F0E8),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.06)
+                          : const Color(0xFFE5E7EB),
                     ),
                   ),
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : const Color(0xFF1A1A1A),
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                  clipBehavior: Clip.antiAlias,
+                  child: imageUrl.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: imageUrl,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => const Center(
+                            child: Icon(
+                              Icons.diamond_outlined,
+                              size: 22,
+                              color: Color(0xFFC49432),
+                            ),
+                          ),
+                          errorWidget: (_, __, ___) => const Center(
+                            child: Icon(
+                              Icons.diamond_outlined,
+                              size: 22,
+                              color: Color(0xFFC49432),
+                            ),
+                          ),
+                        )
+                      : const Center(
+                          child: Icon(
+                            Icons.diamond_outlined,
+                            size: 22,
+                            color: Color(0xFFC49432),
+                          ),
+                        ),
                 ),
-                if (category.isNotEmpty || sku.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    category.isNotEmpty && sku.isNotEmpty
-                        ? '$category • $sku'
-                        : (category.isNotEmpty ? category : sku),
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Color(0xFF9CA3AF),
+
+                Positioned(
+                  right: 3,
+                  bottom: 3,
+                  child: Container(
+                    width: 19,
+                    height: 19,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.62),
+                      shape: BoxShape.circle,
                     ),
-                  ),
-                ],
-                const SizedBox(height: 4),
-                Text(
-                  '₹$price × $qty',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF9CA3AF),
+                    child: const Icon(
+                      Icons.zoom_in_rounded,
+                      color: Colors.white,
+                      size: 13,
+                    ),
                   ),
                 ),
               ],
             ),
-          ),
-          Text(
-            '₹${lineTotal.toStringAsFixed(0)}',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: isDark ? Colors.white : const Color(0xFF1A1A1A),
+),
+            const SizedBox(width: 11),
+
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : const Color(0xFF1A1A1A),
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+
+                  const SizedBox(height: 3),
+
+                  if (sku.isNotEmpty)
+                    Text(
+                      'SKU: $sku',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFFC49432),
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+
+                  if (category.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      category,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFF9CA3AF),
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 4),
+
+                  Text(
+                    '₹${price.toStringAsFixed(0)} × $qty • Tap image for packing',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF9CA3AF),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+
+            const SizedBox(width: 8),
+
+            Text(
+              '₹${lineTotal.toStringAsFixed(0)}',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: isDark ? Colors.white : const Color(0xFF1A1A1A),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

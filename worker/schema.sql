@@ -26,8 +26,9 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE TABLE IF NOT EXISTS customers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  phone TEXT UNIQUE,
-  name TEXT,
+phone TEXT UNIQUE,
+customer_id TEXT UNIQUE,
+name TEXT,
   email TEXT,
   address TEXT,
   city TEXT,
@@ -49,6 +50,25 @@ CREATE TABLE IF NOT EXISTS customers (
   push_subscription TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- ═══════════════════════════════════════════════
+-- CUSTOMER ID SEQUENCE
+-- Generates AA0001 → ZZ9999
+-- ═══════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS customer_sequence (
+  id INTEGER PRIMARY KEY,
+  next_number INTEGER NOT NULL
+);
+
+INSERT OR IGNORE INTO customer_sequence (
+  id,
+  next_number
+)
+VALUES (
+  1,
+  1
 );
 
 CREATE TABLE IF NOT EXISTS chats (
@@ -402,6 +422,68 @@ CREATE TABLE IF NOT EXISTS analytics (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- ═══════════════════════════════════════════════
+-- CATALOGUE EVENT HISTORY
+-- ═══════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS catalogue_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  
+  customer_id TEXT,
+  phone TEXT,
+  event_type TEXT,
+
+  sku TEXT,
+  product_name TEXT,
+  category TEXT,
+
+  price REAL DEFAULT 0,
+  quantity INTEGER DEFAULT 1,
+
+  cart_total REAL DEFAULT 0,
+  checkout_items TEXT,
+
+  source TEXT,
+  utm_source TEXT,
+  utm_medium TEXT,
+  utm_campaign TEXT,
+
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- ═══════════════════════════════════════════════
+-- CUSTOMER EVENT HISTORY
+-- Unified tracking
+-- ═══════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS customer_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+  customer_id TEXT,
+  phone TEXT,
+
+  source TEXT,
+  event_type TEXT,
+
+  sku TEXT,
+  product_name TEXT,
+  category TEXT,
+
+  price REAL DEFAULT 0,
+  quantity INTEGER DEFAULT 1,
+
+  cart_total REAL DEFAULT 0,
+  checkout_items TEXT,
+
+  page_url TEXT,
+
+  utm_source TEXT,
+  utm_medium TEXT,
+  utm_campaign TEXT,
+
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   key TEXT UNIQUE,
@@ -449,17 +531,6 @@ CREATE TABLE IF NOT EXISTS notification_log (
   sent_at TEXT DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS return_requests (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  order_id TEXT NOT NULL,
-  phone TEXT NOT NULL,
-  sku TEXT,
-  item_name TEXT,
-  reason TEXT,
-  status TEXT DEFAULT 'requested',
-  created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now'))
-);
 
 -- ═══════════════════════════════════════════════
 -- DEFAULT DATA
@@ -1292,7 +1363,63 @@ ALTER TABLE orders ADD COLUMN return_requested_at TEXT;
 ALTER TABLE orders ADD COLUMN review_sent INTEGER DEFAULT 0;
 ALTER TABLE products ADD COLUMN reserved_stock INTEGER DEFAULT 0;
 ALTER TABLE messages ADD COLUMN is_saved INTEGER DEFAULT 0;
+ALTER TABLE customers
+ADD COLUMN customer_id TEXT;
+
+-- ═══════════════════════════════════════════════
+-- LINK CLICK TRACKING
+-- ═══════════════════════════════════════════════
+ALTER TABLE customers ADD COLUMN clicked_website INTEGER DEFAULT 0;
+ALTER TABLE customers ADD COLUMN clicked_catalogue INTEGER DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS link_clicks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id TEXT,
+  phone TEXT,
+  name TEXT,
+  destination TEXT,
+  clicked_at TEXT DEFAULT (datetime('now'))
+);
 
 
+-- ═══════════════════════════════════════════════
+-- CATALOGUE INTENT TRACKING
+-- ═══════════════════════════════════════════════
 
+ALTER TABLE customers ADD COLUMN add_to_cart INTEGER DEFAULT 0;
+ALTER TABLE customers ADD COLUMN view_content INTEGER DEFAULT 0;
+ALTER TABLE customers ADD COLUMN initiate_checkout INTEGER DEFAULT 0;
+ALTER TABLE customers ADD COLUMN wishlist INTEGER DEFAULT 0;
+
+ALTER TABLE customers ADD COLUMN last_viewed_product TEXT;
+ALTER TABLE customers ADD COLUMN last_cart_product TEXT;
+ALTER TABLE customers ADD COLUMN last_wishlist_product TEXT;
+ALTER TABLE customers ADD COLUMN last_checkout_total REAL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS catalogue_sessions (
+  cid TEXT PRIMARY KEY,
+
+  customer_id TEXT,
+  phone TEXT,
+
+  destination TEXT,
+
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS business_enquiries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  phone TEXT NOT NULL,
+  name TEXT DEFAULT '',
+  enquiry_type TEXT DEFAULT 'other',
+  profession TEXT DEFAULT '',
+  brand_name TEXT DEFAULT '',
+  insta_handle TEXT DEFAULT '',
+  insta_url TEXT DEFAULT '',
+  raw_message TEXT DEFAULT '',
+  status TEXT DEFAULT 'new',
+  notes TEXT DEFAULT '',
+  created_at TEXT,
+  updated_at TEXT
+);
 

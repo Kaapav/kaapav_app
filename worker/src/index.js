@@ -1,11 +1,377 @@
 import { KAAPAV_LOGO_B64 } from './logo.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Platform, X-Client-Version',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key, X-API-Key, X-Client-Platform, X-Client-Version',
 };
 
+
+// ═══════════════════ TRACKING SESSION ═══════════════════
+function generateCID() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let result = '';
+  for (let i = 0; i < 6; i++) {
+    result += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return result;
+}
+
+async function createTrackingSession(env, phone, destination = 'website') {
+  const cid = generateCID();
+  await env.KV.put(
+    `track:${cid}`,
+    JSON.stringify({ phone, destination, created: Date.now() }),
+    { expirationTtl: 86400 }
+  );
+  return cid;
+}
+
+async function resolveTrackingSession(env, cid) {
+  try {
+    const raw = await env.KV.get(`track:${cid}`);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function normalizePhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return { phone91: '', phonePlain: '' };
+
+  if (digits.startsWith('91') && digits.length >= 12) {
+    return {
+      phone91: digits.slice(0, 12),
+      phonePlain: digits.slice(2, 12)
+    };
+  }
+
+  const phonePlain = digits.slice(-10);
+  return {
+    phone91: phonePlain ? `91${phonePlain}` : '',
+    phonePlain
+  };
+}
+
+function getEventColumn(event) {
+  return {
+    AddToCart: 'add_to_cart',
+    ViewContent: 'view_content',
+    InitiateCheckout: 'initiate_checkout',
+    AddToWishlist: 'wishlist',
+    WhatsAppIntent: 'whatsapp_intent',
+    CatalogueClick: 'clicked_catalogue',
+WebsiteClick: 'clicked_website',
+  }[event] || '';
+}
+
+function getWebsiteEventColumn(event) {
+  return {
+    AddToCart: 'w_add_to_cart',
+    ViewContent: 'w_view_content',
+    InitiateCheckout: 'w_initiate_checkout',
+    AddToWishlist: 'w_wishlist',
+  }[event] || '';
+}
+	
+async function handleCustomerEvent(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch(e) {
+    console.error('CE_BODY_PARSE_FAIL', e.message);
+    return errorResponse('invalid json body', 400);
+  }
+
+const rawPhone =
+  body.phone ||
+  body.customer_phone ||
+  '';
+
+const { phone91 } = normalizePhone(rawPhone);
+if (!phone91) return errorResponse('phone required');
+
+const event =
+  body.event_type ||
+  body.event ||
+  '';
+  if (!event) return errorResponse('event_type required');
+
+  console.log('CE_STEP_1', phone91, event);
+
+  // Upsert customer
+  await env.DB.prepare(`
+    INSERT INTO customers (phone, name, first_seen, last_seen, updated_at)
+    VALUES (?, ?, datetime('now'), datetime('now'), datetime('now'))
+    ON CONFLICT(phone) DO UPDATE SET
+      name = CASE WHEN ? != '' THEN ? ELSE customers.name END,
+      last_seen = datetime('now'),
+      updated_at = datetime('now')
+  `).bind(phone91, body.customer_name || '', body.customer_name || '', body.customer_name || '').run();
+
+  // Ensure customer_id
+  await getOrCreateCustomerId(env, phone91);
+  console.log('CE_STEP_2', phone91);
+
+const customer = await env.DB.prepare(
+    `SELECT * FROM customers WHERE phone = ?`
+  ).bind(phone91).first();
+  console.log('CE_STEP_3', customer?.customer_id);
+const source = body.source || 'website';
+
+// Website click tracking
+if (event === 'PageView' && source === 'website') {
+  await env.DB.prepare(`
+    UPDATE customers
+    SET
+      clicked_website = COALESCE(clicked_website, 0) + 1,
+      updated_at = datetime('now')
+    WHERE phone = ?
+  `).bind(phone91).run();
+
+  console.log('WEBSITE_CLICK_COUNTED', phone91);
+}
+
+  // Log to catalogue_events
+  try {
+    await env.DB.prepare(`
+
+INSERT INTO catalogue_events (
+  phone, event_type, sku, product_name, category,
+  price, quantity, cart_total, checkout_items,
+  source, utm_source, utm_medium, utm_campaign, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '+5 hours', '+30 minutes'))
+    `).bind(
+      phone91, event,
+      body.sku || '', body.product_name || '', body.category || '',
+      body.price || 0, body.quantity || 1,
+      body.cart_total || 0, body.checkout_items || '',
+      source,
+      body.utm_source || '', body.utm_medium || '', body.utm_campaign || ''
+    ).run();
+  } catch (e) { console.error('catalogue_events insert error:', e); }
+
+  // Increment customer event counters (catalogue prefix)
+const totalCol = {
+  AddToCart: 'add_to_cart',
+  ViewContent: 'view_content',
+  InitiateCheckout: 'initiate_checkout',
+  AddToWishlist: 'wishlist',
+}[event];
+
+const sourceCol = source === 'website'
+  ? {
+      AddToCart: 'w_add_to_cart',
+      ViewContent: 'w_view_content',
+      InitiateCheckout: 'w_initiate_checkout',
+      AddToWishlist: 'w_wishlist',
+    }[event]
+  : {
+      AddToCart: 'c_add_to_cart',
+      ViewContent: 'c_view_content',
+      InitiateCheckout: 'c_initiate_checkout',
+      AddToWishlist: 'c_wishlist',
+    }[event];
+
+if (sourceCol && totalCol) {
+  try {
+    if (event === 'InitiateCheckout') {
+      await env.DB.prepare(`
+        UPDATE customers
+        SET
+          ${totalCol} = COALESCE(${totalCol}, 0) + 1,
+          ${sourceCol} = COALESCE(${sourceCol}, 0) + 1,
+          last_checkout_total = ?,
+          updated_at = datetime('now')
+        WHERE phone = ?
+      `).bind(body.cart_total || 0, phone91).run();
+    } else {
+      await env.DB.prepare(`
+        UPDATE customers
+        SET
+          ${totalCol} = COALESCE(${totalCol}, 0) + 1,
+          ${sourceCol} = COALESCE(${sourceCol}, 0) + 1,
+          updated_at = datetime('now')
+        WHERE phone = ?
+      `).bind(phone91).run();
+    }
+  } catch (e) {
+    console.error('Counter update error:', e);
+  }
+}
+
+console.log('DEBUG_SOURCE', body.source);
+console.log('DEBUG_TIME',
+  new Date().toLocaleString('sv-SE', {
+    timeZone: 'Asia/Kolkata'
+  }).replace(',', '')
+);
+  // Sync to Google Sheets
+  console.log('SHEETS_APPEND_START', phone91, event);
+await appendCatalogueEventToGoogleSheets(env, {
+  customer_id: customer?.customer_id || '',
+  created_at: new Date().toLocaleString('sv-SE', {
+    timeZone: 'Asia/Kolkata'
+  }).replace(',', ''),
+  phone: phone91,
+  customer_name:
+  body.customer_name ||
+  customer?.name ||
+  '',
+  event_type: event,
+  sku: body.sku || '',
+  product_name: body.product_name || '',
+  category: body.category || '',
+  price: body.price || 0,
+  quantity: body.quantity || 1,
+  cart_total: body.cart_total || 0,
+  checkout_items: body.checkout_items || '',
+  source: body.source || 'website',
+  utm_source: body.utm_source || '',
+  utm_medium: body.utm_medium || '',
+  utm_campaign: body.utm_campaign || '',
+});
+
+console.log(
+  'CATALOGUE_SHEET_DONE',
+  phone91,
+  event
+);
+  await syncCustomerToGoogleSheetsSafe(env, phone91);
+  await syncLeadToGoogleSheetsSafe(env, phone91);
+  return jsonResponse({ success: true });
+}
+
+function getTrackingHtml(phone, customerId, redirectUrl, ogTitle, ogDesc) {
+console.log(
+  'GET_TRACKING_HTML',
+  phone,
+  customerId,
+  redirectUrl
+);
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${ogTitle}</title>
+  <meta property="og:title" content="${ogTitle}">
+  <meta property="og:description" content="${ogDesc}">
+  <meta property="og:image" content="https://www.kaapav.com/pwa-icon-512.png">
+  <meta property="og:image:width" content="512">
+  <meta property="og:image:height" content="512">
+  <meta property="og:url" content="${redirectUrl}">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="KAAPAV Fashion Jewellery">
+  <script>
+    try {
+      localStorage.setItem('kpv_wa_phone', '${phone}');
+      localStorage.setItem('customerPhone', '${phone}');
+      localStorage.setItem('customer_id', '${customerId}');
+    } catch(e) {}
+    window.location.replace('${redirectUrl}');
+  </script>
+</head>
+<body>
+  <style>
+    body { margin:0; background:#FBF8F1; display:flex; 
+           align-items:center; justify-content:center; 
+           min-height:100vh; font-family:sans-serif; }
+    .l { color:#C49432; font-size:14px; }
+  </style>
+  <div class="l">Loading KAAPAV...</div>
+</body>
+</html>`;
+}
+
+function generateCustomerId(n) {
+  const prefixIndex = Math.floor((n - 1) / 9999);
+
+  const first =
+    String.fromCharCode(
+      65 + Math.floor(prefixIndex / 26)
+    );
+
+  const second =
+    String.fromCharCode(
+      65 + (prefixIndex % 26)
+    );
+
+  const number =
+    ((n - 1) % 9999) + 1;
+
+  return `${first}${second}${String(number).padStart(4,'0')}`;
+}
+
+async function getOrCreateCustomerId(env, phone) {
+
+  const existing = await env.DB.prepare(`
+    SELECT customer_id
+    FROM customers
+    WHERE phone = ?
+  `)
+  .bind(phone)
+  .first();
+
+  if (existing?.customer_id) {
+    return existing.customer_id;
+  }
+
+const seq = await env.DB.prepare(`
+  SELECT next_number
+  FROM customer_sequence
+  WHERE id = 1
+`).first();
+
+if (!seq) {
+  throw new Error('customer_sequence not initialized');
+}
+
+  const customerId =
+    generateCustomerId(seq.next_number);
+
+  await env.DB.prepare(`
+    UPDATE customer_sequence
+    SET next_number = next_number + 1
+    WHERE id = 1
+  `).run();
+
+   await env.DB.prepare(`
+    UPDATE customers
+    SET customer_id = ?
+    WHERE phone = ?
+  `)
+  .bind(customerId, phone)
+  .run();
+
+  return customerId;
+}
+
+async function backfillCustomerIds(env) {
+
+  const { results } = await env.DB.prepare(`
+    SELECT phone
+    FROM customers
+    WHERE customer_id IS NULL
+    ORDER BY id ASC
+  `).all();
+
+  let updated = 0;
+
+  for (const row of results) {
+    await getOrCreateCustomerId(env, row.phone);
+    updated++;
+  }
+
+  return {
+    success: true,
+    updated
+  };
+}
 
 // ═══════════════════ K_PDF_LOGO_MODULE v1.0 (Self-Contained) ═══════════════════
 const K_PDF_LOGO_MODULE = (() => {
@@ -183,6 +549,66 @@ async function verifyJWT(token, secret) {
   } catch { return null; }
 }
 
+async function handleCustomerLinkIdentity(request, env) {
+  const auth = await getCustomerAuth(request, env);
+  if (!auth) return errorResponse('Unauthorized', 401);
+
+  const body = await request.json().catch(() => ({}));
+
+  const customerId = String(body.customerId || body.customer_id || '')
+    .trim()
+    .toUpperCase();
+
+  let phone = normalizePhone91(body.phone);
+
+  if (customerId) {
+    const customer = await env.DB.prepare(`
+      SELECT phone
+      FROM customers
+      WHERE customer_id = ?
+      LIMIT 1
+    `).bind(customerId).first();
+
+    if (customer?.phone) {
+      phone = normalizePhone91(customer.phone);
+    }
+  }
+
+  if (!customerId && !phone) {
+    return errorResponse('Customer identity missing', 400);
+  }
+
+  await env.DB.prepare(`
+    UPDATE customer_accounts
+    SET
+      phone = COALESCE(NULLIF(?, ''), phone),
+      customer_id = COALESCE(NULLIF(?, ''), customer_id),
+      updated_at = datetime('now')
+    WHERE email = ?
+  `).bind(phone, customerId, auth.email).run();
+
+  return jsonResponse({
+    success: true,
+    email: auth.email,
+    phone,
+    customerId,
+  });
+}
+
+function normalizePhone91(value) {
+  const d = String(value || '').replace(/\D/g, '');
+
+  if (d.startsWith('91') && d.length >= 12) {
+    return d.slice(0, 12);
+  }
+
+  if (d.length >= 10) {
+    return '91' + d.slice(-10);
+  }
+
+  return '';
+}
+
 async function authMiddleware(request, env) {
   const auth = request.headers.get('Authorization');
   if (!auth?.startsWith('Bearer ')) return null;
@@ -332,6 +758,16 @@ async function googleSheetsRequest(env, method, path, body) {
   return json;
 }
 
+async function clearSheetRange(env, tabName) {
+  const encodedRange = encodeURIComponent(`${tabName}!A:ZZ`);
+  return await googleSheetsRequest(
+    env,
+    'POST',
+    `/values/${encodedRange}:clear`,
+    {}
+  );
+}
+
 async function getSheetValues(env, tabName) {
   const encodedRange = encodeURIComponent(`${tabName}!A:ZZ`);
   const json = await googleSheetsRequest(env, 'GET', `/values/${encodedRange}`, null);
@@ -339,11 +775,12 @@ async function getSheetValues(env, tabName) {
 }
 
 async function appendSheetRow(env, tabName, row) {
-  const encodedRange = encodeURIComponent(`${tabName}!A:ZZ`);
+   const encodedRange = encodeURIComponent(`${tabName}!A:ZZ`);
   return await googleSheetsRequest(env, 'POST', `/values/${encodedRange}:append?valueInputOption=RAW`, {
     values: [row],
   });
 }
+
 
 async function updateSheetRow(env, tabName, rowIndex1Based, row) {
   const encodedRange = encodeURIComponent(`${tabName}!A${rowIndex1Based}:ZZ${rowIndex1Based}`);
@@ -393,6 +830,22 @@ function itemsSummaryFromJson(itemsRaw) {
   }
 }
 
+function itemsSkuList(itemsRaw) {
+  try {
+    const items = typeof itemsRaw === 'string' ? JSON.parse(itemsRaw || '[]') : (itemsRaw || []);
+    if (!Array.isArray(items)) return '';
+    return items.map(i => i.sku || '').filter(Boolean).join(', ');
+  } catch (_) { return ''; }
+}
+
+function itemsNameList(itemsRaw) {
+  try {
+    const items = typeof itemsRaw === 'string' ? JSON.parse(itemsRaw || '[]') : (itemsRaw || []);
+    if (!Array.isArray(items)) return '';
+    return items.map(i => i.name || '').filter(Boolean).join(', ');
+  } catch (_) { return ''; }
+}
+
 function labelsSummary(labelsRaw) {
   try {
     const labels = typeof labelsRaw === 'string' ? JSON.parse(labelsRaw || '[]') : (labelsRaw || []);
@@ -415,6 +868,7 @@ function tagsSummary(tagsRaw) {
 
 function mapOrderToSheetRow(order) {
   return [
+    safeText(order.customer_id || ''),
     safeText(order.order_id),
     safeText(order.created_at),
     safeText(order.updated_at),
@@ -505,30 +959,55 @@ function mapCustomerToSheetRow(customer, unpaidOrderCount = 0, unpaidOrderValue 
     return sum + (qty * price);
   }, 0);
 
-  return [
-    safeText(customer.phone),
-    safeText(customer.name),
-    safeText(customer.email),
-    safeText(customer.city),
-    safeText(customer.state),
-    safeText(customer.pincode),
-    '', // source, can derive later
-    safeText(customer.segment),
-    safeText(customer.tier),
-    labelsSummary(customer.labels),
-    safeNumber(customer.message_count),
-    safeNumber(customer.order_count),
-    safeNumber(customer.total_spent),
-    cartItemCount,
-    cartValue,
-    safeNumber(unpaidOrderCount),
-    safeNumber(unpaidOrderValue),
-    safeText(customer.first_seen),
-    safeText(customer.last_seen),
-    safeText(customer.last_order_at),
-    '', // owner_note (manual)
-    '', // follow_up_priority (manual)
-  ];
+return [
+  safeText(customer.customer_id),
+
+  safeText(customer.phone),
+  safeText(customer.name),
+  safeText(customer.email),
+  safeText(customer.city),
+  safeText(customer.state),
+  safeText(customer.pincode),
+
+  '', // source
+
+  safeText(customer.segment),
+  safeText(customer.tier),
+  labelsSummary(customer.labels),
+
+  safeNumber(customer.message_count),
+  safeNumber(customer.order_count),
+  safeNumber(customer.total_spent),
+
+  cartItemCount,
+  cartValue,
+
+  safeNumber(unpaidOrderCount),
+  safeNumber(unpaidOrderValue),
+
+  safeText(customer.first_seen),
+  safeText(customer.last_seen),
+  safeText(customer.last_order_at),
+
+  safeNumber(customer.clicked_website || 0),
+  safeNumber(customer.clicked_catalogue || 0),
+
+  safeNumber(customer.add_to_cart || 0),
+  safeNumber(customer.view_content || 0),
+  safeNumber(customer.initiate_checkout || 0),
+  safeNumber(customer.wishlist || 0),
+
+  safeNumber(customer.last_checkout_total || 0),
+
+  (
+    customer.add_to_cart > 0 ||
+    customer.initiate_checkout > 0
+  ) ? 'YES' : 'NO',
+
+  '', // owner_note
+  '', // follow_up_priority
+];
+
 }
 
 function mapProductToSheetRow(product) {
@@ -609,21 +1088,43 @@ function deriveLeadStatus(customer) {
 
 function mapLeadToSheetRow(customer) {
   return [
+    safeText(customer.customer_id),
     safeText(customer.created_at || customer.first_seen),
     safeText(customer.phone),
     safeText(customer.name),
-    '', // source, derive later if available
-    deriveLeadStatus(customer),
+
+    '', // source
+    '', // category
+
+    deriveLeadStatus(customer), // lead_status
+
     safeNumber(customer.message_count),
     safeNumber(customer.order_count),
     safeNumber(customer.total_spent),
+
     safeText(customer.segment),
     safeText(customer.tier),
     labelsSummary(customer.labels),
+
     safeText(customer.last_seen),
-    safeText(customer.last_order_at),
-    '', // owner_note (manual)
-    '', // follow_up_needed (manual)
+    safeText(customer.first_order_at || ''),
+
+    safeNumber(customer.clicked_website || 0),
+    safeNumber(customer.clicked_catalogue || 0),
+
+    safeNumber(customer.add_to_cart || 0),
+    safeNumber(customer.view_content || 0),
+    safeNumber(customer.initiate_checkout || 0),
+    safeNumber(customer.wishlist || 0),
+
+    safeNumber(customer.last_checkout_total || 0),
+
+    '', // owner_note
+
+    (
+      customer.add_to_cart > 0 ||
+      customer.initiate_checkout > 0
+    ) ? 'YES' : 'NO' // follow_up_needed
   ];
 }
 
@@ -637,6 +1138,7 @@ function deriveSalesStage(order) {
 
 function mapSalesToSheetRow(order) {
   return [
+    safeText(customer?.customer_id || ''),
     safeText(order.order_id),
     safeText(order.created_at),
     safeText(order.source),
@@ -670,6 +1172,81 @@ async function appendOrderEventToGoogleSheets(env, eventRow) {
   }
 }
 
+async function appendCatalogueEventToGoogleSheets(env, eventData) {
+  try {
+
+console.log(
+  'CATALOGUE_WRITE',
+  JSON.stringify({
+    customer_id: eventData.customer_id,
+    phone: eventData.phone,
+    event: eventData.event_type,
+    source: eventData.source,
+    created_at: eventData.created_at
+  })
+);
+
+    await appendSheetRow(env, 'Catalogue Events', [
+      safeText(eventData.created_at),
+
+      safeText(eventData.customer_id || ''),
+
+safeText(eventData.phone),
+
+      safeText(eventData.customer_name || ''),
+
+      safeText(eventData.event_type),
+
+      safeText(eventData.sku),
+      safeText(eventData.product_name),
+      safeText(eventData.category),
+
+      safeNumber(eventData.price),
+      safeNumber(eventData.quantity),
+
+      safeNumber(eventData.cart_total),
+
+      safeText(eventData.checkout_items),
+
+      safeText(eventData.source || 'website'),
+
+      safeText(eventData.utm_source || ''),
+      safeText(eventData.utm_medium || ''),
+      safeText(eventData.utm_campaign || '')
+    ]);
+
+console.log(
+  'CATALOGUE_APPEND_SUCCESS',
+  eventData.phone,
+  eventData.event_type
+);
+
+} catch (e) {
+    console.error('CATALOGUE Events sheet append error:', e);
+    throw e;
+  }
+}
+
+async function appendBusinessEnquiryToSheets(env, data) {
+  try {
+    await appendSheetRow(env, 'Business Enquiries', [
+      safeText(data.created_at),
+      safeText(data.phone),
+      safeText(data.name),
+      safeText(data.enquiry_type),
+      safeText(data.profession),
+      safeText(data.brand_name),
+      safeText(data.insta_handle),
+      safeText(data.insta_url),
+      safeText(data.raw_message),
+      safeText(data.status),
+      safeText(data.notes),
+    ]);
+  } catch (e) {
+    console.error('Business Enquiries sheet error:', e);
+  }
+}
+
 async function appendSyncFailureToGoogleSheets(env, failure) {
   try {
     await appendSheetRow(env, 'Sync Failures', [
@@ -696,8 +1273,21 @@ async function syncOrderToGoogleSheets(env, orderId) {
 
   if (!order) throw new Error(`Order not found for Sheets sync: ${orderId}`);
 
-  const row = mapOrderToSheetRow(order);
-  await upsertSheetRow(env, 'Orders', 0, order.order_id, row);
+const customer = await env.DB.prepare(`
+  SELECT customer_id
+  FROM customers
+  WHERE phone = ?
+  LIMIT 1
+`)
+.bind(order.phone)
+.first();
+
+const row = mapOrderToSheetRow({
+  ...order,
+  customer_id: customer?.customer_id || ''
+});
+
+await upsertSheetRow(env, 'Orders', 0, order.order_id, row);
 }
 
 async function syncCustomerToGoogleSheets(env, phone) {
@@ -743,6 +1333,14 @@ async function syncSalesToGoogleSheets(env, orderId) {
   ).bind(orderId).first();
 
   if (!order) return;
+
+  const customer = await env.DB.prepare(`
+  SELECT customer_id
+  FROM customers
+  WHERE phone = ?
+`).bind(order.phone).first();
+
+
 
   const row = mapSalesToSheetRow(order);
   await upsertSheetRow(env, 'Sales', 0, order.order_id, row);
@@ -838,49 +1436,125 @@ async function syncLeadToGoogleSheets(env, phone) {
 }
 
 const SHEET_MANUAL_COLUMNS = {
-  'Orders': [30, 31, 32],
+  'Orders': [32, 33, 34],
   'Shipments': [19, 20],
   'Inventory': [18],
   'Order Events': [],
   'Sync Failures': [],
-  'Leads': [15, 16],
-  'Sales': [15],
+  'Leads': [31, 32],
+  'Sales': [18],
   'Source Performance': [8],
-  'Customers': [21, 22],
+  'Customers': [34, 35],
   'Cart Activity': [11, 12],
+  'Catalogue Events': [],
 };
 
 const SHEET_HEADERS = {
   'Orders': [
-    'order_id','created_at','updated_at','customer_name','phone','source','category',
-    'items_summary','item_count','subtotal','shipping_cost','total',
+    'customer_id','order_id','created_at','updated_at','customer_name','phone','source','category',
+    'items_summary','item_count','subtotal','shipping_cost','item_skus','item_names','total',
     'status','payment_status','payment_id','payment_method','payment_link','payment_link_expires',
     'shipping_name','shipping_phone','shipping_address','shipping_city','shipping_state','shipping_pincode',
     'paid_at','cancelled_at','cancellation_reason','customer_notes','internal_notes',
-    'owner_note','follow_up_needed','verified'
+    'owner_note','follow_up_needed','verified',
+'shiprocket_order_id','shipment_id','courier','awb_number','awb_code','tracking_id','tracking_url','shipped_at','delivered_at'
   ],
+
   'Customers': [
-    'phone','name','email','city','state','pincode','source','segment','tier','labels',
+    'customer_id','phone','name','email','city','state','pincode','source','segment','tier','labels',
     'message_count','order_count','total_spent','cart_item_count','cart_value',
     'unpaid_order_count','unpaid_order_value','first_seen','last_seen','last_order_at',
-    'owner_note','follow_up_priority'
+
+'c_add_to_cart',
+'w_add_to_cart',
+'add_to_cart',
+
+'c_view_content',
+'w_view_content',
+'view_content',
+
+'c_initiate_checkout',
+'w_initiate_checkout',
+'initiate_checkout',
+
+'c_wishlist',
+'w_wishlist',
+'wishlist',
+    'last_checkout_total',
+
+    'owner_note',
+    'follow_up_priority'
   ],
+
   'Leads': [
-    'created_at','phone','name','source','category','lead_status',
+    'customer_id','created_at','phone','name','source','category','lead_status',
     'message_count','order_count','total_spent','segment','tier','labels',
     'last_seen','first_order_at',
-    'owner_note','follow_up_needed'
+
+    'clicked_website',
+    'clicked_catalogue',
+
+'c_add_to_cart',
+'w_add_to_cart',
+'add_to_cart',
+
+'c_view_content',
+'w_view_content',
+'view_content',
+
+'c_initiate_checkout',
+'w_initiate_checkout',
+'initiate_checkout',
+
+'c_wishlist',
+'w_wishlist',
+'wishlist',
+
+    'last_checkout_total',
+
+    'owner_note',
+    'follow_up_needed'
   ],
+
+  'Catalogue Events': [
+    'created_at',
+    'customer_id',
+
+    'phone',
+    'customer_name',
+    'event_type',
+
+    'sku',
+    'product_name',
+    'category',
+
+    'price',
+    'quantity',
+
+    'cart_total',
+
+    'checkout_items',
+
+    'source',
+
+    'utm_source',
+    'utm_medium',
+    'utm_campaign'
+  ],
+
   'Sales': [
-    'order_id','created_at','source','category','customer_name','phone','total',
+    'order_id','customer_id','created_at','source','category','customer_name','phone','item_skus','item_names','total',
     'payment_status','status','paid_at','shipped_at','delivered_at',
-    'item_count','items_summary','sales_stage','owner_note'
+    'item_count','items_summary','sales_stage','owner_note',
+'shiprocket_order_id','shipment_id','courier','awb_number','awb_code','tracking_id','tracking_url'
   ],
+
   'Inventory': [
     'sku','name','category','subcategory','price','compare_price','stock','reserved_stock',
     'status','is_featured','image_url','website_link','material','tags_summary','updated_at',
     'image_1','image_2','image_3','restock_note'
   ],
+
   'Shipments': [
     'order_id','customer_name','phone','status','payment_status',
     'shiprocket_order_id','shipment_id','courier','awb_number','awb_code',
@@ -888,6 +1562,7 @@ const SHEET_HEADERS = {
     'paid_at','shipped_at','delivered_at','updated_at',
     'dispatch_note','dispatch_verified'
   ],
+
   'Cart Activity': [
     'phone','customer_name','item_count','total','items_summary','status',
     'reminder_count','last_reminder_at','created_at','updated_at','converted_at',
@@ -896,10 +1571,8 @@ const SHEET_HEADERS = {
 };
  
 function mergeSheetRowPreservingManual(existingRow = [], newRow = [], manualIndexes = []) {
-  const maxLen = Math.max(existingRow.length, newRow.length);
-  const merged = Array.from({ length: maxLen }, (_, i) =>
-    i < newRow.length ? newRow[i] : (existingRow[i] ?? '')
-  );
+
+  const merged = [...newRow];
 
   for (const idx of manualIndexes) {
     if (existingRow[idx] !== undefined && existingRow[idx] !== '') {
@@ -943,8 +1616,17 @@ async function syncOrderToGoogleSheetsSafe(env, orderId) {
 
   const categoryMap = await getAllProductCategories(env);
   const category = getCategoryFromItems(order.items, categoryMap);
+  const customer = await env.DB.prepare(`
+  SELECT customer_id
+  FROM customers
+  WHERE phone = ?
+  LIMIT 1
+`)
+.bind(order.phone)
+.first();
 
-  const row = [
+const row = [
+    safeText(customer?.customer_id || ''),
     safeText(order.order_id),
     safeText(order.created_at),
     safeText(order.updated_at),
@@ -956,6 +1638,8 @@ async function syncOrderToGoogleSheetsSafe(env, orderId) {
     safeNumber(order.item_count),
     safeNumber(order.subtotal),
     safeNumber(order.shipping_cost),
+    itemsSkuList(order.items),
+    itemsNameList(order.items),
     safeNumber(order.total),
     safeText(order.status),
     safeText(order.payment_status),
@@ -973,11 +1657,66 @@ async function syncOrderToGoogleSheetsSafe(env, orderId) {
     safeText(order.cancelled_at),
     safeText(order.cancellation_reason),
     safeText(order.customer_notes),
-    safeText(order.internal_notes),
-    '', '', '',
+safeText(order.internal_notes),
+'', '', '',
+safeText(order.shiprocket_order_id),
+safeText(order.shipment_id),
+safeText(order.courier),
+safeText(order.awb_number),
+safeText(order.awb_code),
+safeText(order.tracking_id),
+safeText(order.tracking_url),
+safeText(order.shipped_at),
+safeText(order.delivered_at),
   ];
 
-  await upsertSheetRowSafe(env, 'Orders', 0, order.order_id, row);
+  await upsertSheetRowSafe(env, 'Orders', 1, order.order_id, row);
+}
+
+async function appendCatalogueEventToGoogleSheetsSafe(env, data) {
+  try {
+
+    const row = [
+
+  safeText(data.created_at),
+
+  safeText(data.customer_id || ''),
+
+  safeText(data.phone),
+  safeText(data.customer_name || ''),
+
+  safeText(data.event_type),
+
+  safeText(data.sku),
+  safeText(data.product_name),
+  safeText(data.category),
+
+  safeNumber(data.price),
+  safeNumber(data.quantity),
+
+  safeNumber(data.cart_total),
+
+  safeText(data.checkout_items || ''),
+
+  safeText(data.source || 'website'),
+
+  safeText(data.utm_source || ''),
+  safeText(data.utm_medium || ''),
+  safeText(data.utm_campaign || '')
+];
+
+await appendSheetRow(
+  env,
+  'Catalogue Events',
+  row
+);
+
+  } catch (e) {
+    console.error(
+      'Catalogue Events Sheet Error:',
+      e
+    );
+  }
 }
 
 async function syncSalesToGoogleSheetsSafe(env, orderId) {
@@ -989,13 +1728,30 @@ async function syncSalesToGoogleSheetsSafe(env, orderId) {
   const categoryMap = await getAllProductCategories(env);
   const category = getCategoryFromItems(order.items, categoryMap);
 
-  const row = [
-    safeText(order.order_id),
-    safeText(order.created_at),
+const customer = await env.DB.prepare(`
+  SELECT customer_id
+  FROM customers
+  WHERE phone = ? OR phone = ?
+  LIMIT 1
+`)
+.bind(
+  order.phone,
+  order.phone.startsWith('91')
+    ? order.phone.slice(2)
+    : '91' + order.phone
+)
+.first();
+
+const row = [
+  safeText(order.order_id),
+  safeText(customer?.customer_id || ''),
+  safeText(order.created_at),
     safeText(order.source),
     safeText(category),
     safeText(order.customer_name),
     safeText(order.phone),
+    itemsSkuList(order.items),
+    itemsNameList(order.items),
     safeNumber(order.total),
     safeText(order.payment_status),
     safeText(order.status),
@@ -1004,8 +1760,15 @@ async function syncSalesToGoogleSheetsSafe(env, orderId) {
     safeText(order.delivered_at),
     safeNumber(order.item_count),
     itemsSummaryFromJson(order.items),
-    deriveSalesStage(order),
-    '',
+deriveSalesStage(order),
+'',
+safeText(order.shiprocket_order_id),
+safeText(order.shipment_id),
+safeText(order.courier),
+safeText(order.awb_number),
+safeText(order.awb_code),
+safeText(order.tracking_id),
+safeText(order.tracking_url),
   ];
 
   await upsertSheetRowSafe(env, 'Sales', 0, order.order_id, row);
@@ -1045,6 +1808,7 @@ async function syncLeadToGoogleSheetsSafe(env, phone) {
   else if (messageCount > 0) leadStatus = 'engaged';
 
   const row = [
+    safeText(customer.customer_id),
     safeText(customer.created_at || customer.first_seen),
     safeText(customer.phone),
     safeText(customer.name),
@@ -1059,10 +1823,38 @@ async function syncLeadToGoogleSheetsSafe(env, phone) {
     labelsSummary(customer.labels),
     safeText(customer.last_seen),
     safeText(firstOrder?.created_at || ''),
-    '', '',
+    safeNumber(customer.clicked_website || 0),
+    safeNumber(customer.clicked_catalogue || 0),
+// Add To Cart
+safeNumber(customer.c_add_to_cart || 0),
+safeNumber(customer.w_add_to_cart || 0),
+safeNumber(customer.add_to_cart || 0),
+
+// View Content
+safeNumber(customer.c_view_content || 0),
+safeNumber(customer.w_view_content || 0),
+safeNumber(customer.view_content || 0),
+
+// Initiate Checkout
+safeNumber(customer.c_initiate_checkout || 0),
+safeNumber(customer.w_initiate_checkout || 0),
+safeNumber(customer.initiate_checkout || 0),
+
+// Wishlist
+safeNumber(customer.c_wishlist || 0),
+safeNumber(customer.w_wishlist || 0),
+safeNumber(customer.wishlist || 0),
+safeNumber(customer.last_checkout_total || 0),
+        '',
+    (
+      customer.c_add_to_cart > 0 ||
+      customer.c_initiate_checkout > 0 ||
+      customer.add_to_cart > 0 ||
+      customer.initiate_checkout > 0
+    ) ? 'YES' : 'NO',
   ];
 
-  await upsertSheetRowSafe(env, 'Leads', 1, customer.phone, row);
+  await upsertSheetRowSafe(env, 'Leads', 2, customer.phone, row);
 }
 
 async function syncCustomerToGoogleSheetsSafe(env, phone) {
@@ -1070,6 +1862,17 @@ async function syncCustomerToGoogleSheetsSafe(env, phone) {
     `SELECT * FROM customers WHERE phone = ?`
   ).bind(phone).first();
   if (!customer) return;
+
+   // Ensure customer_id exists before syncing
+  if (!customer.customer_id) {
+    await getOrCreateCustomerId(env, phone);
+    // Re-fetch with the ID
+    const updated = await env.DB.prepare(
+      `SELECT * FROM customers WHERE phone = ?`
+    ).bind(phone).first();
+
+    if (updated) Object.assign(customer, updated);
+  }
 
   const orderStats = await env.DB.prepare(`
     SELECT
@@ -1106,6 +1909,7 @@ async function syncCustomerToGoogleSheetsSafe(env, phone) {
   }, 0);
 
   const row = [
+    safeText(customer.customer_id),
     safeText(customer.phone),
     safeText(customer.name),
     safeText(customer.email),
@@ -1119,17 +1923,41 @@ async function syncCustomerToGoogleSheetsSafe(env, phone) {
     safeNumber(customer.message_count),
     safeNumber(orderStats?.order_count || 0),
     safeNumber(orderStats?.total_spent || 0),
-    cartItemCount,
-    cartValue,
-    safeNumber(unpaid?.count || 0),
-    safeNumber(unpaid?.value || 0),
-    safeText(customer.first_seen),
-    safeText(customer.last_seen),
-    safeText(customer.last_order_at),
-    '', '',
+cartItemCount,
+cartValue,
+
+safeNumber(unpaid?.count || 0),
+safeNumber(unpaid?.value || 0),
+
+safeText(customer.first_seen),
+safeText(customer.last_seen),
+safeText(customer.last_order_at),
+
+// Add To Cart
+safeNumber(customer.c_add_to_cart || 0),
+safeNumber(customer.w_add_to_cart || 0),
+safeNumber(customer.add_to_cart || 0),
+
+// View Content
+safeNumber(customer.c_view_content || 0),
+safeNumber(customer.w_view_content || 0),
+safeNumber(customer.view_content || 0),
+
+// Initiate Checkout
+safeNumber(customer.c_initiate_checkout || 0),
+safeNumber(customer.w_initiate_checkout || 0),
+safeNumber(customer.initiate_checkout || 0),
+
+// Wishlist
+safeNumber(customer.c_wishlist || 0),
+safeNumber(customer.w_wishlist || 0),
+safeNumber(customer.wishlist || 0),
+
+safeNumber(customer.last_checkout_total || 0),
+    '',
   ];
 
-  await upsertSheetRowSafe(env, 'Customers', 0, customer.phone, row);
+  await upsertSheetRowSafe(env, 'Customers', 1, customer.phone, row);
 }
 
 async function syncProductToGoogleSheetsSafe(env, sku) {
@@ -1205,7 +2033,7 @@ async function backfillOrdersToGoogleSheets(env) {
 
   const existingMap = {};
   for (let i = 1; i < (existing || []).length; i++) {
-    const key = (existing[i] || [])[0];
+    const key = (existing[i] || [])[1];
     if (key) existingMap[key] = existing[i];
   }
 
@@ -1213,7 +2041,16 @@ async function backfillOrdersToGoogleSheets(env) {
 
   for (const order of orders) {
     const category = getCategoryFromItems(order.items, categoryMap);
+  const customer = await env.DB.prepare(`
+  SELECT customer_id
+  FROM customers
+  WHERE phone = ?
+  LIMIT 1
+`)
+.bind(order.phone)
+.first();
     const newRow = [
+      safeText(customer?.customer_id || ''),
       safeText(order.order_id),
       safeText(order.created_at),
       safeText(order.updated_at),
@@ -1225,6 +2062,8 @@ async function backfillOrdersToGoogleSheets(env) {
       safeNumber(order.item_count),
       safeNumber(order.subtotal),
       safeNumber(order.shipping_cost),
+      itemsSkuList(order.items),
+      itemsNameList(order.items),
       safeNumber(order.total),
       safeText(order.status),
       safeText(order.payment_status),
@@ -1242,9 +2081,19 @@ async function backfillOrdersToGoogleSheets(env) {
       safeText(order.cancelled_at),
       safeText(order.cancellation_reason),
       safeText(order.customer_notes),
-      safeText(order.internal_notes),
-      '', '', '',
-    ];
+safeText(order.internal_notes),
+'', '', '',
+safeText(order.shiprocket_order_id),
+safeText(order.shipment_id),
+safeText(order.courier),
+safeText(order.awb_number),
+safeText(order.awb_code),
+safeText(order.tracking_id),
+safeText(order.tracking_url),
+safeText(order.shipped_at),
+safeText(order.delivered_at),
+];
+
 
     const existingRow = existingMap[order.order_id] || [];
     const merged = mergeSheetRowPreservingManual(existingRow, newRow, manualIndexes);
@@ -1259,132 +2108,272 @@ async function backfillOrdersToGoogleSheets(env) {
 
 async function backfillCustomersToGoogleSheets(env) {
   const { results: customers } = await env.DB.prepare(`
-    SELECT * FROM customers ORDER BY last_seen DESC
+    WITH customer_base AS (
+      SELECT
+        c.*,
+        CASE
+          WHEN c.phone LIKE '91%' THEN substr(c.phone, 3)
+          ELSE c.phone
+        END AS phone10
+      FROM customers c
+    ),
+
+    order_norm AS (
+      SELECT
+        o.*,
+        CASE
+          WHEN o.phone LIKE '91%' THEN substr(o.phone, 3)
+          ELSE o.phone
+        END AS phone10,
+        ROW_NUMBER() OVER (
+          PARTITION BY
+            CASE
+              WHEN o.phone LIKE '91%' THEN substr(o.phone, 3)
+              ELSE o.phone
+            END
+          ORDER BY datetime(o.created_at) ASC, o.id ASC
+        ) AS rn
+      FROM orders o
+    ),
+
+    order_stats AS (
+      SELECT
+        phone10,
+        COUNT(*) AS calc_order_count,
+        COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) AS calc_total_spent,
+        SUM(
+          CASE
+            WHEN payment_status = 'unpaid'
+             AND COALESCE(status, '') != 'cancelled'
+            THEN 1 ELSE 0
+          END
+        ) AS unpaid_order_count,
+        COALESCE(SUM(
+          CASE
+            WHEN payment_status = 'unpaid'
+             AND COALESCE(status, '') != 'cancelled'
+            THEN total ELSE 0
+          END
+        ), 0) AS unpaid_order_value
+      FROM order_norm
+      GROUP BY phone10
+    ),
+
+    first_orders AS (
+      SELECT *
+      FROM order_norm
+      WHERE rn = 1
+    )
+
+    SELECT
+      cb.*,
+      COALESCE(os.calc_order_count, 0) AS calc_order_count,
+      COALESCE(os.calc_total_spent, 0) AS calc_total_spent,
+      COALESCE(os.unpaid_order_count, 0) AS unpaid_order_count,
+      COALESCE(os.unpaid_order_value, 0) AS unpaid_order_value,
+      fo.source AS first_source,
+      fo.shipping_city AS first_shipping_city,
+      fo.shipping_state AS first_shipping_state,
+      fo.shipping_pincode AS first_shipping_pincode
+    FROM customer_base cb
+    LEFT JOIN order_stats os ON os.phone10 = cb.phone10
+    LEFT JOIN first_orders fo ON fo.phone10 = cb.phone10
+    ORDER BY datetime(cb.last_seen) DESC, cb.id DESC
   `).all();
 
-  if (!customers || customers.length === 0) return { totalCustomers: 0 };
+  if (!customers || customers.length === 0) {
+    return { totalCustomers: 0 };
+  }
 
   const existing = await getSheetValues(env, 'Customers');
   const manualIndexes = SHEET_MANUAL_COLUMNS['Customers'] || [];
 
   const existingMap = {};
   for (let i = 1; i < (existing || []).length; i++) {
-    const key = (existing[i] || [])[0];
+    const key = (existing[i] || [])[1]; // phone column
     if (key) existingMap[key] = existing[i];
   }
 
   const rows = [SHEET_HEADERS['Customers']];
 
   for (const customer of customers) {
-    const orderStats = await env.DB.prepare(`
-      SELECT
-        COUNT(*) as order_count,
-        COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_spent,
-        MIN(created_at) as first_order_at
-      FROM orders WHERE phone = ? OR phone = ?
-    `).bind(customer.phone, customer.phone.replace(/^91/, '')).first();
-
-    const unpaid = await env.DB.prepare(`
-      SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
-      FROM orders
-      WHERE (phone = ? OR phone = ?)
-        AND payment_status = 'unpaid'
-        AND status != 'cancelled'
-    `).bind(customer.phone, customer.phone.replace(/^91/, '')).first();
-
-    const firstOrder = await env.DB.prepare(`
-      SELECT source, shipping_city, shipping_state, shipping_pincode
-      FROM orders
-      WHERE phone = ? OR phone = ?
-      ORDER BY datetime(created_at) ASC
-      LIMIT 1
-    `).bind(customer.phone, customer.phone.replace(/^91/, '')).first();
-
     let cartItems = [];
     try {
       cartItems = JSON.parse(customer.cart || '[]');
       if (!Array.isArray(cartItems)) cartItems = [];
-    } catch (_) { cartItems = []; }
+    } catch (_) {
+      cartItems = [];
+    }
 
-    const cartItemCount = cartItems.reduce((s, i) => s + Number(i.qty || i.quantity || 1), 0);
+    const cartItemCount = cartItems.reduce((s, i) => {
+      return s + Number(i.qty || i.quantity || 1);
+    }, 0);
+
     const cartValue = cartItems.reduce((s, i) => {
-      return s + (Number(i.qty || i.quantity || 1) * Number(i.price || 0));
+      return s + (
+        Number(i.qty || i.quantity || 1) *
+        Number(i.price || 0)
+      );
     }, 0);
 
     const newRow = [
+      safeText(customer.customer_id),
       safeText(customer.phone),
       safeText(customer.name),
       safeText(customer.email),
-      safeText(customer.city || firstOrder?.shipping_city || ''),
-      safeText(customer.state || firstOrder?.shipping_state || ''),
-      safeText(customer.pincode || firstOrder?.shipping_pincode || ''),
-      safeText(firstOrder?.source || ''),
+      safeText(customer.city || customer.first_shipping_city || ''),
+      safeText(customer.state || customer.first_shipping_state || ''),
+      safeText(customer.pincode || customer.first_shipping_pincode || ''),
+      safeText(customer.first_source || ''),
       safeText(customer.segment),
       safeText(customer.tier),
       labelsSummary(customer.labels),
+
       safeNumber(customer.message_count),
-      safeNumber(orderStats?.order_count || customer.order_count || 0),
-      safeNumber(orderStats?.total_spent || customer.total_spent || 0),
+      safeNumber(customer.calc_order_count || customer.order_count || 0),
+      safeNumber(customer.calc_total_spent || customer.total_spent || 0),
+
       cartItemCount,
       cartValue,
-      safeNumber(unpaid?.count || 0),
-      safeNumber(unpaid?.value || 0),
+
+      safeNumber(customer.unpaid_order_count || 0),
+      safeNumber(customer.unpaid_order_value || 0),
+
       safeText(customer.first_seen),
       safeText(customer.last_seen),
-      safeText(orderStats?.first_order_at || customer.last_order_at || ''),
-      '', '',
+      safeText(customer.last_order_at),
+
+      safeNumber(customer.c_add_to_cart || 0),
+      safeNumber(customer.w_add_to_cart || 0),
+      safeNumber(customer.add_to_cart || 0),
+
+      safeNumber(customer.c_view_content || 0),
+      safeNumber(customer.w_view_content || 0),
+      safeNumber(customer.view_content || 0),
+
+      safeNumber(customer.c_initiate_checkout || 0),
+      safeNumber(customer.w_initiate_checkout || 0),
+      safeNumber(customer.initiate_checkout || 0),
+
+      safeNumber(customer.c_wishlist || 0),
+      safeNumber(customer.w_wishlist || 0),
+      safeNumber(customer.wishlist || 0),
+
+      safeNumber(customer.last_checkout_total || 0),
+
+      '',
+      '',
     ];
 
     const existingRow = existingMap[customer.phone] || [];
-    const merged = mergeSheetRowPreservingManual(existingRow, newRow, manualIndexes);
+    const merged = mergeSheetRowPreservingManual(
+      existingRow,
+      newRow,
+      manualIndexes
+    );
+
     rows.push(merged);
   }
 
   const encodedRange = encodeURIComponent('Customers!A:ZZ');
-  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values: rows });
+  await googleSheetsRequest(
+    env,
+    'PUT',
+    `/values/${encodedRange}?valueInputOption=RAW`,
+    { values: rows }
+  );
 
   return { totalCustomers: customers.length };
 }
 
 async function backfillLeadsToGoogleSheets(env) {
+  const categoryMap = await getAllProductCategories(env);
+
   const { results: customers } = await env.DB.prepare(`
-    SELECT * FROM customers ORDER BY last_seen DESC
+    WITH customer_base AS (
+      SELECT
+        c.*,
+        CASE
+          WHEN c.phone LIKE '91%' THEN substr(c.phone, 3)
+          ELSE c.phone
+        END AS phone10
+      FROM customers c
+    ),
+
+    order_norm AS (
+      SELECT
+        o.*,
+        CASE
+          WHEN o.phone LIKE '91%' THEN substr(o.phone, 3)
+          ELSE o.phone
+        END AS phone10,
+        ROW_NUMBER() OVER (
+          PARTITION BY
+            CASE
+              WHEN o.phone LIKE '91%' THEN substr(o.phone, 3)
+              ELSE o.phone
+            END
+          ORDER BY datetime(o.created_at) ASC, o.id ASC
+        ) AS rn
+      FROM orders o
+    ),
+
+    order_stats AS (
+      SELECT
+        phone10,
+        COUNT(*) AS calc_order_count,
+        COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) AS calc_total_spent
+      FROM order_norm
+      GROUP BY phone10
+    ),
+
+    first_orders AS (
+      SELECT *
+      FROM order_norm
+      WHERE rn = 1
+    )
+
+    SELECT
+      cb.*,
+      COALESCE(os.calc_order_count, 0) AS calc_order_count,
+      COALESCE(os.calc_total_spent, 0) AS calc_total_spent,
+      fo.source AS first_source,
+      fo.items AS first_items,
+      fo.created_at AS first_order_created_at
+    FROM customer_base cb
+    LEFT JOIN order_stats os ON os.phone10 = cb.phone10
+    LEFT JOIN first_orders fo ON fo.phone10 = cb.phone10
+    ORDER BY datetime(cb.last_seen) DESC, cb.id DESC
   `).all();
 
-  if (!customers || customers.length === 0) return { totalLeads: 0 };
+  if (!customers || customers.length === 0) {
+    return { totalLeads: 0 };
+  }
 
-  const categoryMap = await getAllProductCategories(env);
   const existing = await getSheetValues(env, 'Leads');
   const manualIndexes = SHEET_MANUAL_COLUMNS['Leads'] || [];
 
   const existingMap = {};
   for (let i = 1; i < (existing || []).length; i++) {
-    const key = (existing[i] || [])[1];
+    const key = (existing[i] || [])[2]; // phone column
     if (key) existingMap[key] = existing[i];
   }
 
   const rows = [SHEET_HEADERS['Leads']];
 
   for (const customer of customers) {
-    const orderStats = await env.DB.prepare(`
-      SELECT
-        COUNT(*) as order_count,
-        COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_spent,
-        MIN(created_at) as first_order_at
-      FROM orders WHERE phone = ? OR phone = ?
-    `).bind(customer.phone, customer.phone.replace(/^91/, '')).first();
+    const category = customer.first_items
+      ? getCategoryFromItems(customer.first_items, categoryMap)
+      : '';
 
-    const firstOrder = await env.DB.prepare(`
-      SELECT source, items, created_at
-      FROM orders
-      WHERE phone = ? OR phone = ?
-      ORDER BY datetime(created_at) ASC
-      LIMIT 1
-    `).bind(customer.phone, customer.phone.replace(/^91/, '')).first();
+    const orderCount = safeNumber(
+      customer.calc_order_count || customer.order_count || 0
+    );
 
-    const category = firstOrder ? getCategoryFromItems(firstOrder.items, categoryMap) : '';
-    const orderCount = safeNumber(orderStats?.order_count || customer.order_count || 0);
-    const totalSpent = safeNumber(orderStats?.total_spent || customer.total_spent || 0);
+    const totalSpent = safeNumber(
+      customer.calc_total_spent || customer.total_spent || 0
+    );
+
     const messageCount = safeNumber(customer.message_count);
 
     let leadStatus = 'new';
@@ -1393,30 +2382,74 @@ async function backfillLeadsToGoogleSheets(env) {
     else if (messageCount > 0) leadStatus = 'engaged';
 
     const newRow = [
+      safeText(customer.customer_id),
       safeText(customer.created_at || customer.first_seen),
       safeText(customer.phone),
       safeText(customer.name),
-      safeText(firstOrder?.source || ''),
+
+      safeText(customer.first_source || ''),
       safeText(category),
       leadStatus,
+
       messageCount,
       orderCount,
       totalSpent,
+
       safeText(customer.segment),
       safeText(customer.tier),
       labelsSummary(customer.labels),
+
       safeText(customer.last_seen),
-      safeText(firstOrder?.created_at || ''),
-      '', '',
+      safeText(customer.first_order_created_at || ''),
+
+      safeNumber(customer.clicked_website || 0),
+      safeNumber(customer.clicked_catalogue || 0),
+
+      safeNumber(customer.c_add_to_cart || 0),
+      safeNumber(customer.w_add_to_cart || 0),
+      safeNumber(customer.add_to_cart || 0),
+
+      safeNumber(customer.c_view_content || 0),
+      safeNumber(customer.w_view_content || 0),
+      safeNumber(customer.view_content || 0),
+
+      safeNumber(customer.c_initiate_checkout || 0),
+      safeNumber(customer.w_initiate_checkout || 0),
+      safeNumber(customer.initiate_checkout || 0),
+
+      safeNumber(customer.c_wishlist || 0),
+      safeNumber(customer.w_wishlist || 0),
+      safeNumber(customer.wishlist || 0),
+
+      safeNumber(customer.last_checkout_total || 0),
+
+      '',
+
+      (
+        customer.c_add_to_cart > 0 ||
+        customer.c_initiate_checkout > 0 ||
+        customer.add_to_cart > 0 ||
+        customer.initiate_checkout > 0
+      ) ? 'YES' : 'NO',
     ];
 
     const existingRow = existingMap[customer.phone] || [];
-    const merged = mergeSheetRowPreservingManual(existingRow, newRow, manualIndexes);
+    const merged = mergeSheetRowPreservingManual(
+      existingRow,
+      newRow,
+      manualIndexes
+    );
+
     rows.push(merged);
   }
 
   const encodedRange = encodeURIComponent('Leads!A:ZZ');
-  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values: rows });
+  await googleSheetsRequest(
+    env,
+    'PUT',
+    `/values/${encodedRange}?valueInputOption=RAW`,
+    { values: rows }
+  );
 
   return { totalLeads: customers.length };
 }
@@ -1442,13 +2475,25 @@ async function backfillSalesToGoogleSheets(env) {
 
   for (const order of orders) {
     const category = getCategoryFromItems(order.items, categoryMap);
-    const newRow = [
-      safeText(order.order_id),
-      safeText(order.created_at),
-      safeText(order.source),
+
+const customer = await env.DB.prepare(`
+  SELECT customer_id
+  FROM customers
+  WHERE phone = ?
+`)
+.bind(order.phone)
+.first();
+
+const newRow = [
+  safeText(order.order_id),
+  safeText(customer?.customer_id || ''),
+  safeText(order.created_at),
+  safeText(order.source),
       safeText(category),
       safeText(order.customer_name),
       safeText(order.phone),
+    itemsSkuList(order.items),
+    itemsNameList(order.items),
       safeNumber(order.total),
       safeText(order.payment_status),
       safeText(order.status),
@@ -1457,9 +2502,17 @@ async function backfillSalesToGoogleSheets(env) {
       safeText(order.delivered_at),
       safeNumber(order.item_count),
       itemsSummaryFromJson(order.items),
-      deriveSalesStage(order),
-      '',
-    ];
+deriveSalesStage(order),
+'',
+safeText(order.shiprocket_order_id),
+safeText(order.shipment_id),
+safeText(order.courier),
+safeText(order.awb_number),
+safeText(order.awb_code),
+safeText(order.tracking_id),
+safeText(order.tracking_url),
+];
+
 
     const existingRow = existingMap[order.order_id] || [];
     const merged = mergeSheetRowPreservingManual(existingRow, newRow, manualIndexes);
@@ -1555,8 +2608,10 @@ async function backfillShipmentsToGoogleSheets(env) {
     rows.push(merged);
   }
 
-  const encodedRange = encodeURIComponent('Shipments!A:ZZ');
-  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values: rows });
+await clearSheetRange(env, 'Shipments');
+
+const encodedRange = encodeURIComponent('Shipments!A:ZZ');
+await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values: rows });
 
   return { totalShipments: orders.length };
 }
@@ -1597,16 +2652,32 @@ async function backfillCartsToGoogleSheets(env) {
 }
 
 async function backfillOrderEventsToGoogleSheets(env) {
-  const { results: events } = await env.DB.prepare(`
-    SELECT created_at, order_id, event_type, event_source, message, meta_json
-    FROM order_events
-    ORDER BY created_at ASC
+const { results: events } = await env.DB.prepare(`
+    SELECT
+      oe.created_at,
+      oe.order_id,
+      oe.event_type,
+      oe.event_source,
+      oe.message,
+      oe.meta_json,
+      o.phone,
+      c.customer_id
+    FROM order_events oe
+    LEFT JOIN orders o ON o.order_id = oe.order_id
+    LEFT JOIN customers c ON (
+      c.phone = o.phone
+      OR c.phone = CASE
+        WHEN o.phone LIKE '91%' THEN substr(o.phone, 3)
+        ELSE '91' || o.phone
+      END
+    )
+    ORDER BY oe.created_at ASC
   `).all().catch(() => ({ results: [] }));
 
   if (!events || events.length === 0) return { totalOrderEvents: 0 };
 
-  const values = [[
-    'created_at', 'order_id', 'event_type', 'event_source', 'message', 'meta_json'
+const values = [[
+    'created_at', 'order_id', 'event_type', 'event_source', 'message', 'meta_json', 'phone', 'customer_id'
   ]];
 
   for (const event of events) {
@@ -1617,13 +2688,102 @@ async function backfillOrderEventsToGoogleSheets(env) {
       safeText(event.event_source),
       safeText(event.message),
       safeText(event.meta_json),
+      safeText(event.phone || ''),
+      safeText(event.customer_id || ''),
     ]);
   }
 
-  const encodedRange = encodeURIComponent('Order Events!A:F');
+  const encodedRange = encodeURIComponent('Order Events!A:H');
   await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values });
 
   return { totalOrderEvents: events.length };
+}
+
+async function backfillCatalogueEventsToGoogleSheets(env) {
+
+const { results: events } = await env.DB.prepare(`
+    SELECT
+      ce.created_at,
+      c.customer_id,
+      ce.phone,
+      COALESCE(c.name, '') as customer_name,
+      ce.event_type,
+      ce.sku,
+      ce.product_name,
+      ce.category,
+      ce.price,
+      ce.quantity,
+      ce.cart_total,
+      ce.checkout_items,
+      ce.source,
+      ce.utm_source,
+      ce.utm_medium,
+      ce.utm_campaign
+    FROM catalogue_events ce
+    LEFT JOIN customers c ON c.phone = ce.phone OR c.phone = CASE
+      WHEN ce.phone LIKE '91%' THEN substr(ce.phone, 3)
+      ELSE '91' || ce.phone
+    END
+    ORDER BY ce.created_at ASC
+  `).all().catch(() => ({ results: [] }));
+
+  if (!events || events.length === 0) {
+    return { totalCatalogueEvents: 0 };
+  }
+
+  const values = [[
+    'created_at',
+    'customer_id',
+    'phone',
+    'customer_name',
+    'event_type',
+    'sku',
+    'product_name',
+    'category',
+    'price',
+    'quantity',
+    'cart_total',
+    'checkout_items',
+    'source',
+    'utm_source',
+    'utm_medium',
+    'utm_campaign'
+  ]];
+
+  for (const event of events) {
+    values.push([
+      safeText(event.created_at),
+      safeText(event.customer_id || ''),
+      safeText(event.phone),
+      safeText(event.customer_name || ''),
+      safeText(event.event_type),
+      safeText(event.sku),
+      safeText(event.product_name),
+      safeText(event.category),
+      event.price || 0,
+      event.quantity || 0,
+      event.cart_total || 0,
+      safeText(event.checkout_items),
+      safeText(event.source),
+      safeText(event.utm_source),
+      safeText(event.utm_medium),
+      safeText(event.utm_campaign)
+    ]);
+  }
+
+  const encodedRange =
+    encodeURIComponent('Catalogue Events!A:P');
+
+  await googleSheetsRequest(
+    env,
+    'PUT',
+    `/values/${encodedRange}?valueInputOption=RAW`,
+    { values }
+  );
+
+  return {
+    totalCatalogueEvents: events.length
+  };
 }
 
 async function backfillAllGoogleSheets(env) {
@@ -1636,6 +2796,15 @@ async function backfillAllGoogleSheets(env) {
   let carts = { totalCarts: 0 };
   let events = { totalOrderEvents: 0 };
   let sourcePerf = false;
+  let catalogueEvents = { totalCatalogueEvents: 0 };
+
+
+try {
+  catalogueEvents = await backfillCatalogueEventsToGoogleSheets(env);
+} catch (e) {
+  console.error('Backfill catalogue events error:', e);
+}
+
 
   try { orders = await backfillOrdersToGoogleSheets(env); } catch (e) {
     console.error('Backfill orders error:', e);
@@ -1665,20 +2834,21 @@ async function backfillAllGoogleSheets(env) {
     console.error('Backfill source perf error:', e);
   }
 
-  return {
-    orders,
-    customers,
-    leads,
-    sales,
-    products,
-    shipments,
-    carts,
-    events,
-    sourcePerformance: sourcePerf,
-    syncedAt: new Date().toISOString(),
-  };
-}
+return {
+  orders,
+  customers,
+  leads,
+  sales,
+  products,
+  shipments,
+  carts,
+  events,
+  catalogueEvents,
+  sourcePerformance: sourcePerf,
+  syncedAt: new Date().toISOString(),
+};
 
+}
 // ═══════════════════ SUPABASE ═══════════════════
 
 function isSupabaseReady(env) {
@@ -2468,7 +3638,705 @@ async function sendFCMNotification(env, phone, name, text, messageId) {
   } catch (e) { console.error('FCM error:', e); }
 }
 
+function formatINR(amount) {
+  const n = Number(amount || 0);
+  return `₹${n.toLocaleString('en-IN', {
+    maximumFractionDigits: n % 1 === 0 ? 0 : 2,
+  })}`;
+}
 
+function formatISTDateTime(date = new Date()) {
+  return new Date(date).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }) + ' IST';
+}
+
+async function saveRazorpayInternalChatMessage(env, {
+  phone,
+  customerName,
+  orderId,
+  amount,
+  paymentId,
+  method,
+  source,
+  status = 'paid',
+}) {
+  const normalized = normalizePhone(phone || env.OWNER_PHONE || '');
+  const chatPhone = normalized.phone91 || String(phone || env.OWNER_PHONE || '').replace(/\D/g, '');
+  if (!chatPhone) return;
+
+  const paidAt = formatISTDateTime();
+  const amountText = formatINR(amount);
+  const safePaymentId = paymentId || orderId || Date.now();
+
+  const messageId = `rzp_${status}_${safePaymentId}`;
+  const title = status === 'failed'
+    ? '❌ *Razorpay Payment Failed*'
+    : '💰 *Razorpay Payment Received*';
+
+  const text =
+    `${title}\n\n` +
+    `Order: *${orderId || '-'}*\n` +
+    `Customer: ${customerName || 'Customer'} (${chatPhone})\n` +
+    `Amount: *${amountText}*\n` +
+    `Time: ${paidAt}\n` +
+    `Payment ID: ${paymentId || '-'}\n` +
+    `Method: ${method || 'Razorpay'}\n` +
+    `Source: ${source || 'razorpay'}\n\n` +
+    (status === 'failed'
+      ? `⚠️ Payment failed. Follow up if needed.`
+      : `✅ Payment marked paid in KAAPAV.`);
+
+  const preview = status === 'failed'
+    ? `❌ Razorpay failed • ${amountText} • ${orderId || ''}`
+    : `💰 Razorpay paid • ${amountText} • ${orderId || ''}`;
+
+  const timestamp = new Date().toISOString();
+
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO messages (
+      message_id,
+      phone,
+      text,
+      message_type,
+      direction,
+      status,
+      timestamp,
+      created_at
+    )
+    VALUES (?, ?, ?, 'razorpay_payment', 'incoming', 'delivered', ?, datetime('now'))
+  `).bind(
+    messageId,
+    chatPhone,
+    text,
+    timestamp
+  ).run();
+
+  await env.DB.prepare(`
+    INSERT INTO chats (
+      phone,
+      customer_name,
+      last_message,
+      last_message_type,
+      last_timestamp,
+      last_direction,
+      unread_count,
+      total_messages,
+      updated_at
+    )
+    VALUES (?, ?, ?, 'razorpay_payment', ?, 'incoming', 1, 1, datetime('now'))
+    ON CONFLICT(phone) DO UPDATE SET
+      customer_name = COALESCE(chats.customer_name, excluded.customer_name),
+      last_message = excluded.last_message,
+      last_message_type = excluded.last_message_type,
+      last_timestamp = excluded.last_timestamp,
+      last_direction = 'incoming',
+      unread_count = COALESCE(chats.unread_count, 0) + 1,
+      total_messages = COALESCE(chats.total_messages, 0) + 1,
+      updated_at = datetime('now')
+  `).bind(
+    chatPhone,
+    customerName || 'Razorpay',
+    preview,
+    timestamp
+  ).run();
+}
+
+function cleanPushText(value, max = 220) {
+  return String(value || '')
+    .replace(/\*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+}
+
+async function saveOwnerInboxAlert(env, ctx, {
+  type,
+  title,
+  body,
+  orderId = '',
+  phone = '',
+  customerName = '',
+  amount = 0,
+  source = '',
+  priority = 'normal',
+  actionType = '',
+  actionLabel = '',
+  actionUrl = '',
+  meta = {},
+  dedupeKey = '',
+  sendPush = true,
+}) {
+  const normalizedOwner = normalizePhone(env.OWNER_PHONE || '');
+  const ownerPhone = normalizedOwner.phone91 || String(env.OWNER_PHONE || '').replace(/\D/g, '');
+
+  const alertKey = String(
+    dedupeKey ||
+    `${type}:${orderId || '-'}:${meta.paymentId || meta.awb || meta.shipmentId || meta.shiprocketOrderId || Date.now()}`
+  );
+
+  const createdAt = new Date().toISOString();
+  const safeTitle = String(title || 'KAAPAV Alert').trim();
+  const safeBody = String(body || '').trim();
+  const safeAmount = Number(amount || 0);
+
+  const result = await env.DB.prepare(`
+    INSERT OR IGNORE INTO owner_alerts (
+      alert_key,
+      type,
+      priority,
+      title,
+      body,
+      order_id,
+      phone,
+      customer_name,
+      amount,
+      source,
+      action_type,
+      action_label,
+      action_url,
+      meta_json,
+      is_read,
+      created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+  `).bind(
+    alertKey,
+    type || 'system',
+    priority || 'normal',
+    safeTitle,
+    safeBody,
+    orderId || '',
+    phone || '',
+    customerName || '',
+    safeAmount,
+    source || '',
+    actionType || '',
+    actionLabel || '',
+    actionUrl || '',
+    JSON.stringify(meta || {}),
+    createdAt
+  ).run();
+
+  const inserted = Number(result?.meta?.changes || 0) > 0;
+
+if (inserted && sendPush && ctx && ownerPhone) {
+  ctx.waitUntil(sendFCMNotification(
+    env,
+    ownerPhone,
+    cleanPushText(title, 80),
+    cleanPushText(body, 220),
+    `owner_alert_${alertKey}`
+  ));
+}
+
+// Real jugaad: when payment/order/shipping alert arrives,
+// convert the latest pending unsupported vendor WhatsApp message.
+if (inserted && ctx && ['order', 'payment', 'shipping'].includes(String(type || '').toLowerCase())) {
+  ctx.waitUntil(reconcileRecentUnsupportedForAlert(env, {
+    alertKey,
+    type,
+    title,
+    body,
+    orderId,
+    phone,
+    customerName,
+    amount,
+    source,
+    meta,
+  }, 240));
+}
+
+return { success: true, inserted, alertKey };
+}
+
+function safeJsonParse(value, fallback = {}) {
+  try {
+    return JSON.parse(String(value || '{}'));
+  } catch (_) {
+    return fallback;
+  }
+}
+
+async function isKnownCustomerPhone(env, phone) {
+  const normalized = normalizePhone(phone || '');
+  const phone91 = normalized.phone91;
+  const phonePlain = normalized.phonePlain;
+
+  if (!phone91 && !phonePlain) return false;
+
+  const row = await env.DB.prepare(`
+    SELECT phone
+    FROM customers
+    WHERE phone = ? OR phone = ?
+    LIMIT 1
+  `).bind(phone91, phonePlain).first().catch(() => null);
+
+  return !!row;
+}
+
+async function isVendorUnsupportedPhone(env, phone) {
+  const raw = String(phone || '').replace(/\D/g, '');
+  if (!raw) return false;
+
+  const configured = String(env.VENDOR_UNSUPPORTED_PHONES || '447723442078')
+    .split(',')
+    .map(v => v.replace(/\D/g, '').trim())
+    .filter(Boolean);
+
+  if (configured.includes(raw)) return true;
+
+  // If it is not a known customer, treat unsupported as vendor/system.
+  return !(await isKnownCustomerPhone(env, raw));
+}
+
+function buildConvertedChatTextFromOwnerAlert(alert) {
+  const type = String(alert.type || '').toLowerCase();
+
+  const icon = type === 'payment'
+    ? '💰'
+    : type === 'shipping'
+      ? '📦'
+      : type === 'order'
+        ? '🛒'
+        : '🔔';
+
+  const label = type === 'payment'
+    ? 'Converted Razorpay Payment Alert'
+    : type === 'shipping'
+      ? 'Converted Shiprocket Alert'
+      : type === 'order'
+        ? 'Converted Order Alert'
+        : 'Converted KAAPAV Alert';
+
+  const body = alert.body || alert.title || 'Business event received';
+
+  return (
+    `${icon} *${label}*\n\n` +
+    `${body}\n\n` +
+    `✅ Converted from unsupported WhatsApp using KAAPAV business event data.`
+  );
+}
+
+async function reconcileRecentUnsupportedForAlert(env, alert, minutes = 240) {
+  const type = String(alert.type || '').toLowerCase();
+  if (!['order', 'payment', 'shipping'].includes(type)) {
+    return { converted: 0, reason: 'alert type not convertible' };
+  }
+
+  const rowsRes = await env.DB.prepare(`
+    SELECT *
+    FROM messages
+    WHERE direction = 'incoming'
+      AND datetime(created_at) >= datetime('now', ?)
+      AND (
+        message_type = 'unsupported'
+        OR media_caption LIKE '%kaapav_pending_vendor_message%'
+        OR media_caption LIKE '%"kaapav_converted":false%'
+      )
+    ORDER BY datetime(created_at) DESC, id DESC
+    LIMIT 10
+  `).bind(`-${Number(minutes || 240)} minutes`).all();
+
+  const rows = rowsRes.results || [];
+
+  for (const row of rows) {
+    const vendorLike = await isVendorUnsupportedPhone(env, row.phone);
+    if (!vendorLike) continue;
+
+    const oldMeta = safeJsonParse(row.media_caption, {});
+    if (oldMeta.kaapav_converted === true) continue;
+
+    const convertedText = buildConvertedChatTextFromOwnerAlert(alert);
+
+    const newMeta = {
+      ...oldMeta,
+      kaapav_converted: true,
+      kaapav_pending_vendor_message: false,
+      conversion_source: 'owner_alert_reconcile',
+      converted_at: new Date().toISOString(),
+      matched_alert_key: alert.alertKey || alert.alert_key || '',
+      matched_alert_type: alert.type || '',
+      matched_order_id: alert.orderId || alert.order_id || '',
+      matched_payment_id: alert.meta?.paymentId || '',
+    };
+
+    await env.DB.prepare(`
+      UPDATE messages
+      SET text = ?,
+          message_type = 'text',
+          media_caption = ?
+      WHERE message_id = ?
+    `).bind(
+      convertedText,
+      JSON.stringify(newMeta),
+      row.message_id
+    ).run();
+
+    await env.DB.prepare(`
+      UPDATE chats
+      SET last_message = ?,
+          last_message_type = 'text',
+          updated_at = datetime('now')
+      WHERE phone = ?
+    `).bind(
+      convertedText.slice(0, 240),
+      row.phone
+    ).run();
+
+    return {
+      converted: 1,
+      messageId: row.message_id,
+      phone: row.phone,
+      alertType: alert.type,
+    };
+  }
+
+  return { converted: 0, reason: 'no eligible unsupported vendor message found' };
+}
+
+async function markRecentUnsupportedVendorMessagesPending(env, minutes = 720) {
+  const vendorPhones = String(env.VENDOR_UNSUPPORTED_PHONES || '447723442078')
+    .split(',')
+    .map(v => v.replace(/\D/g, '').trim())
+    .filter(Boolean);
+
+  const phoneWhere = vendorPhones.length
+    ? vendorPhones.map(() => `phone LIKE ?`).join(' OR ')
+    : `phone != ''`;
+
+  const binds = vendorPhones.length
+    ? vendorPhones.map(p => `%${p}%`)
+    : [];
+
+  const rowsRes = await env.DB.prepare(`
+    SELECT *
+    FROM messages
+    WHERE direction = 'incoming'
+      AND (
+        message_type = 'unsupported'
+        OR text LIKE '%Unsupported%'
+        OR text LIKE '%Message type unknown%'
+        OR media_caption LIKE '%"type":"unsupported"%'
+        OR media_caption LIKE '%131051%'
+        OR media_caption LIKE '%kaapav_pending_vendor_message%'
+      )
+      AND (${phoneWhere}
+        OR media_caption LIKE '%447723442078%'
+        OR media_caption LIKE '%Message type unknown%'
+        OR media_caption LIKE '%131051%'
+      )
+    ORDER BY id DESC
+    LIMIT 50
+  `).bind(...binds).all();
+
+  const rows = rowsRes.results || [];
+  let updated = 0;
+
+  for (const row of rows) {
+    const oldMeta = safeJsonParse(row.media_caption, {});
+
+    if (oldMeta.kaapav_converted === true) continue;
+
+    const vendorLike =
+      vendorPhones.some(p => String(row.phone || '').includes(p)) ||
+      vendorPhones.some(p => String(row.media_caption || '').includes(p)) ||
+      String(row.media_caption || '').includes('131051') ||
+      String(row.text || '').toLowerCase().includes('message type unknown');
+
+    if (!vendorLike) continue;
+
+    const firstError = Array.isArray(oldMeta.errors)
+      ? oldMeta.errors[0]
+      : null;
+
+    const text =
+      `⏳ *Vendor/System WhatsApp Message Received*\n\n` +
+      `From: ${row.phone || oldMeta.from || 'Vendor/System'}\n` +
+      `Reason: ${firstError?.title || 'Message body hidden by Meta'}\n` +
+      `Meta code: ${firstError?.code || '131051'}\n` +
+      `Time: ${formatISTDateTime()}\n\n` +
+      `KAAPAV is waiting for the matching Razorpay / Shiprocket / order event to convert this into a readable business alert.`;
+
+    const newMeta = {
+      ...oldMeta,
+      kaapav_converted: false,
+      kaapav_pending_vendor_message: true,
+      vendor_sender: row.phone || oldMeta.from || '',
+      reason: 'Waiting for matching KAAPAV business event',
+      pending_marked_at: new Date().toISOString(),
+    };
+
+    await env.DB.prepare(`
+      UPDATE messages
+      SET text = ?,
+          message_type = 'text',
+          media_caption = ?
+      WHERE id = ?
+    `).bind(
+      text,
+      JSON.stringify(newMeta),
+      row.id
+    ).run();
+
+    await env.DB.prepare(`
+      UPDATE chats
+      SET last_message = ?,
+          last_message_type = 'text',
+          updated_at = datetime('now')
+      WHERE phone = ?
+    `).bind(
+      text.slice(0, 240),
+      row.phone
+    ).run();
+
+    updated++;
+  }
+
+  return {
+    updated,
+    scanned: rows.length,
+  };
+}
+
+async function handleReconcileUnsupported(request, env, ctx) {
+  const body = await request.json().catch(() => ({}));
+  const minutes = Math.min(Number(body.minutes || 720), 1440);
+
+  const alert = await env.DB.prepare(`
+    SELECT *
+    FROM owner_alerts
+    WHERE type IN ('payment', 'order', 'shipping')
+    ORDER BY datetime(created_at) DESC, id DESC
+    LIMIT 1
+  `).first().catch(() => null);
+
+  if (alert) {
+    const result = await reconcileRecentUnsupportedForAlert(env, alert, minutes);
+
+    return jsonResponse({
+      success: true,
+      mode: 'converted_with_owner_alert',
+      alert: {
+        id: alert.id,
+        type: alert.type,
+        title: alert.title,
+        orderId: alert.order_id,
+        createdAt: alert.created_at,
+      },
+      result,
+    });
+  }
+
+  const pending = await markRecentUnsupportedVendorMessagesPending(env, minutes);
+
+  return jsonResponse({
+    success: true,
+    mode: 'pending_vendor_message_only',
+    message:
+      'No order/payment/shipping owner alert exists yet. Unsupported vendor messages were converted to pending readable messages. They will auto-convert when the next matching business alert arrives.',
+    result: pending,
+  });
+}
+
+async function handleBackfillOwnerInbox(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const limit = Math.min(Number(body.limit || 100), 300);
+
+  const res = await env.DB.prepare(`
+    SELECT *
+    FROM orders
+    ORDER BY datetime(created_at) DESC, id DESC
+    LIMIT ?
+  `).bind(limit).all();
+
+  const orders = res.results || [];
+  let orderAlerts = 0;
+  let paymentAlerts = 0;
+  let shippingAlerts = 0;
+
+  for (const order of orders) {
+    let itemLines = '';
+    try {
+      const items = JSON.parse(order.items || '[]');
+      itemLines = Array.isArray(items)
+        ? items.map(i => `• ${i.name || i.sku || 'Item'} x${i.qty || i.quantity || 1}`).join('\n')
+        : '';
+    } catch (_) {}
+
+    await env.DB.prepare(`
+      INSERT OR IGNORE INTO owner_alerts (
+        alert_key, type, priority, title, body,
+        order_id, phone, customer_name, amount, source,
+        action_type, action_label, meta_json, is_read, created_at
+      )
+      VALUES (?, 'order', 'normal', ?, ?, ?, ?, ?, ?, ?, 'order_detail', 'Open Order', ?, 1, ?)
+    `).bind(
+      `order_created:${order.order_id}`,
+      'New Order',
+      `Order: ${order.order_id}\nCustomer: ${order.customer_name || 'Customer'} (${order.phone || ''})\nTotal: ${formatINR(order.total)}\nSource: ${order.source || ''}\n\nItems:\n${itemLines || '-'}`,
+      order.order_id || '',
+      order.phone || '',
+      order.customer_name || 'Customer',
+      Number(order.total || 0),
+      order.source || '',
+      JSON.stringify({ backfilled: true }),
+      order.created_at || new Date().toISOString()
+    ).run();
+
+    orderAlerts++;
+
+    if (String(order.payment_status || '').toLowerCase() === 'paid') {
+      await env.DB.prepare(`
+        INSERT OR IGNORE INTO owner_alerts (
+          alert_key, type, priority, title, body,
+          order_id, phone, customer_name, amount, source,
+          action_type, action_label, meta_json, is_read, created_at
+        )
+        VALUES (?, 'payment', 'high', ?, ?, ?, ?, ?, ?, ?, 'order_detail', 'Open Order', ?, 1, ?)
+      `).bind(
+        `payment_received:${order.payment_id || order.order_id}`,
+        'Razorpay Payment Received',
+        `${formatINR(order.total)} received\nOrder: ${order.order_id}\nCustomer: ${order.customer_name || 'Customer'} (${order.phone || ''})\nPayment ID: ${order.payment_id || '-'}\nSource: ${order.source || ''}`,
+        order.order_id || '',
+        order.phone || '',
+        order.customer_name || 'Customer',
+        Number(order.total || 0),
+        order.source || '',
+        JSON.stringify({
+          backfilled: true,
+          paymentId: order.payment_id || '',
+          paymentMethod: order.payment_method || '',
+        }),
+        order.paid_at || order.updated_at || order.created_at || new Date().toISOString()
+      ).run();
+
+      paymentAlerts++;
+    }
+
+    if (
+      order.shiprocket_order_id ||
+      order.shipment_id ||
+      order.awb_number ||
+      order.awb_code ||
+      ['shipped', 'delivered'].includes(String(order.status || '').toLowerCase())
+    ) {
+      await env.DB.prepare(`
+        INSERT OR IGNORE INTO owner_alerts (
+          alert_key, type, priority, title, body,
+          order_id, phone, customer_name, amount, source,
+          action_type, action_label, action_url, meta_json, is_read, created_at
+        )
+        VALUES (?, 'shipping', 'normal', ?, ?, ?, ?, ?, ?, ?, 'order_detail', 'Open Order', ?, ?, 1, ?)
+      `).bind(
+        `shipping_update:${order.order_id}:${order.awb_number || order.awb_code || order.shipment_id || order.shiprocket_order_id || order.status}`,
+        String(order.status || '').toLowerCase() === 'delivered'
+          ? 'Order Delivered'
+          : 'Shipping Update',
+        `Order: ${order.order_id}\nCustomer: ${order.customer_name || 'Customer'} (${order.phone || ''})\nStatus: ${order.status || '-'}\nAWB: ${order.awb_number || order.awb_code || '-'}\nCourier: ${order.courier || '-'}`,
+        order.order_id || '',
+        order.phone || '',
+        order.customer_name || 'Customer',
+        Number(order.total || 0),
+        order.source || '',
+        order.tracking_url || '',
+        JSON.stringify({
+          backfilled: true,
+          shiprocketOrderId: order.shiprocket_order_id || '',
+          shipmentId: order.shipment_id || '',
+          awb: order.awb_number || order.awb_code || '',
+          courier: order.courier || '',
+        }),
+        order.shipped_at || order.delivered_at || order.updated_at || order.created_at || new Date().toISOString()
+      ).run();
+
+      shippingAlerts++;
+    }
+  }
+
+  return jsonResponse({
+    success: true,
+    scanned: orders.length,
+    inserted: {
+      orderAlerts,
+      paymentAlerts,
+      shippingAlerts,
+    },
+  });
+}
+
+async function handleGetOwnerInbox(request, env) {
+  const url = new URL(request.url);
+  const limit = Math.min(Number(url.searchParams.get('limit') || 50), 100);
+  const type = String(url.searchParams.get('type') || 'all').trim();
+  const unreadOnly = url.searchParams.get('unread') === '1';
+
+  const where = [];
+  const binds = [];
+
+  if (type && type !== 'all') {
+    where.push('type = ?');
+    binds.push(type);
+  }
+
+  if (unreadOnly) {
+    where.push('is_read = 0');
+  }
+
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+  const alertsRes = await env.DB.prepare(`
+    SELECT *
+    FROM owner_alerts
+    ${whereSql}
+    ORDER BY datetime(created_at) DESC, id DESC
+    LIMIT ?
+  `).bind(...binds, limit).all();
+
+  const unread = await env.DB.prepare(`
+    SELECT COUNT(*) AS count
+    FROM owner_alerts
+    WHERE is_read = 0
+  `).first();
+
+  return jsonResponse({
+    success: true,
+    alerts: alertsRes.results || [],
+    unread: Number(unread?.count || 0),
+  });
+}
+
+async function handleMarkOwnerAlertRead(path, env) {
+  const match = path.match(/^\/api\/owner-inbox\/(\d+)\/read$/);
+  const id = Number(match?.[1] || 0);
+  if (!id) return errorResponse('Invalid alert id', 400);
+
+  await env.DB.prepare(`
+    UPDATE owner_alerts
+    SET is_read = 1,
+        read_at = datetime('now')
+    WHERE id = ?
+  `).bind(id).run();
+
+  return jsonResponse({ success: true });
+}
+
+async function handleMarkOwnerInboxReadAll(env) {
+  await env.DB.prepare(`
+    UPDATE owner_alerts
+    SET is_read = 1,
+        read_at = datetime('now')
+    WHERE is_read = 0
+  `).run();
+
+  return jsonResponse({ success: true });
+}
 
 // ═══════════════════ WHATSAPP ═══════════════════
 async function sendWhatsAppText(env, phone, text) {
@@ -2518,6 +4386,616 @@ async function sendWhatsAppButtons(env, phone, text, buttons, footer = null) {
     }),
   });
   return res.json();
+}
+
+async function sendWhatsAppCtaUrl(env, phone, text, buttonText, url, footer = null) {
+  const interactive = {
+    type: 'cta_url',
+    body: { text },
+    action: {
+      name: 'cta_url',
+      parameters: {
+        display_text: buttonText,
+        url
+      }
+    }
+  };
+
+  if (footer) interactive.footer = { text: footer };
+
+  const res = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.WA_TOKEN}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'interactive',
+      interactive
+    }),
+  });
+
+  return res.json();
+}
+
+// ─────────────────────────────────────────────
+// KAAPAV Catalogue/Website Retargeting Helpers
+// ─────────────────────────────────────────────
+
+const RETARGETING_EVENT_SCORE = {
+  ViewContent: 1,
+  ViewProduct: 1,
+  AddToWishlist: 2,
+  AddToCart: 3,
+  InitiateCheckout: 4,
+};
+
+function cleanRetargetingProductName(name = '') {
+  return String(name || '')
+    .replace(/\s*[–-]\s*Artificial\s+(White|Yellow|Rose)?\s*Gold.*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .substring(0, 70);
+}
+
+function retargetingPhoneVariants(phone = '') {
+  const p = String(phone || '').replace(/[^\d]/g, '');
+  if (!p) return ['', ''];
+
+  return [
+    p,
+    p.startsWith('91') ? p.slice(2) : '91' + p,
+  ];
+}
+
+function parseISTDate(value) {
+  if (!value) return null;
+  return new Date(String(value).replace(' ', 'T') + '+05:30');
+}
+
+function parseUTCDate(value) {
+  if (!value) return null;
+  return new Date(String(value).replace(' ', 'T') + 'Z');
+}
+
+function isCatalogueSource(source = '') {
+  return String(source || '').toLowerCase().includes('catalog');
+}
+
+function isNegativeOptOutText(text = '') {
+  return /\b(stop|unsubscribe|not interested|no more|don't message|dont message|do not message|no thanks|no thank you|not now|nahi|mat bhejo|band karo)\b/i.test(
+    String(text || '').toLowerCase()
+  );
+}
+
+function isRetargetingSendWindowIST() {
+  const hour = Number(new Date().toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    hour12: false,
+  }));
+
+  // Send only from 9:00 AM to 8:59 PM IST
+  return hour >= 9 && hour < 21;
+}
+
+function getRetargetingButtonText(eventType, reminderNo, itemCount) {
+  if (eventType === 'InitiateCheckout') {
+    return reminderNo === 2 ? '✨ Finish Order' : '💳 Complete Order';
+  }
+
+  if (eventType === 'AddToCart') {
+    return reminderNo === 2 ? '🛒 Complete Order' : '🛒 Complete Cart';
+  }
+
+  if (eventType === 'AddToWishlist') {
+    return itemCount > 1 ? '🤍 View Saved Picks' : '🤍 View Saved Design';
+  }
+
+  return itemCount > 1 ? '💎 View Designs' : '💎 View Again';
+}
+
+function buildRetargetingMessage(eventType, reminderNo, items) {
+  const cleanItems = items
+    .map(i => cleanRetargetingProductName(i.product_name))
+    .filter(Boolean)
+    .slice(0, 2);
+
+  const itemCount = cleanItems.length;
+  const one = cleanItems[0];
+  const two = cleanItems[1];
+
+  if (itemCount > 1) {
+    if (eventType === 'InitiateCheckout') {
+      return reminderNo === 2
+        ? `✨ *Last gentle reminder for now*
+
+Your checkout was left incomplete for:
+
+• *${one}*
+• *${two}*
+
+No rush — finish it only if you still love your picks.`
+        : `💳 *Your checkout is almost complete*
+
+You were close to ordering:
+
+• *${one}*
+• *${two}*
+
+Payment is secure via UPI / Card / Net Banking.`;
+    }
+
+    if (eventType === 'AddToCart') {
+      return reminderNo === 2
+        ? `💎 *Cart reminder*
+
+Your KAAPAV picks are still waiting:
+
+• *${one}*
+• *${two}*
+
+Complete your order only if you still love them.`
+        : `🛒 *Your cart has beautiful picks*
+
+You added:
+
+• *${one}*
+• *${two}*
+
+Checkout is quick, simple and secure.
+
+🚚 Free shipping above ₹498/-`;
+    }
+
+    if (eventType === 'AddToWishlist') {
+      return reminderNo === 2
+        ? `✨ *Still thinking about your saved picks?*
+
+• *${one}*
+• *${two}*
+
+Simple luxury, saved for you.`
+        : `🤍 *Your saved KAAPAV picks are waiting*
+
+You liked:
+
+• *${one}*
+• *${two}*
+
+Elegant pieces for a polished everyday look.
+
+🚚 Free shipping above ₹498/-`;
+    }
+
+    return reminderNo === 2
+      ? `🤍 *Your KAAPAV picks are easy to find again*
+
+You explored:
+
+• *${one}*
+• *${two}*
+
+No rush — view them again whenever you’re ready.`
+      : `💎 *Still thinking about these?*
+
+You explored:
+
+• *${one}*
+• *${two}*
+
+Simple luxury pieces — elegant, wearable and easy to style.
+
+🚚 Free shipping above ₹498/-`;
+  }
+
+  if (eventType === 'InitiateCheckout') {
+    return reminderNo === 2
+      ? `✨ *Last gentle reminder for now*
+
+Your checkout for *${one}* was left incomplete.
+
+No rush — complete it only if you still love the design.`
+      : `💳 *Almost done*
+
+Your order for *${one}* was left incomplete.
+
+Payment is secure via UPI / Card / Net Banking.
+
+Tap below when you’re ready 👇`;
+  }
+
+  if (eventType === 'AddToCart') {
+    return reminderNo === 2
+      ? `💎 *Cart reminder*
+
+*${one}* is still in your selection.
+
+Complete your order only if you still love it.`
+      : `🛒 *Your cart is waiting*
+
+*${one}* is still in your cart.
+
+Checkout is quick, simple and secure.
+
+🚚 Free shipping above ₹498/-`;
+  }
+
+  if (eventType === 'AddToWishlist') {
+    return reminderNo === 2
+      ? `✨ *Still interested in your saved pick?*
+
+*${one}* is still here for you.
+
+Elegant, minimal and easy to pair with your look.`
+      : `🤍 *Your saved design is waiting*
+
+You liked *${one}* earlier.
+
+A graceful piece for simple, everyday luxury.
+
+🚚 Free shipping above ₹498/-`;
+  }
+
+  return reminderNo === 2
+    ? `🤍 *Just keeping this easy to find*
+
+*${one}* caught your eye earlier.
+
+No rush — take another look only if it still feels right.`
+    : `💎 *Still thinking about it?*
+
+You explored *${one}* earlier.
+
+A simple luxury piece — elegant, wearable and easy to style.
+
+🚚 Free shipping above ₹498/-`;
+}
+
+async function getRetargetingWebUrl(env, phone) {
+  const [p1, p2] = retargetingPhoneVariants(phone);
+
+  const customer = await env.DB.prepare(`
+    SELECT customer_id
+    FROM customers
+    WHERE phone = ? OR phone = ?
+    LIMIT 1
+  `).bind(p1, p2).first();
+
+  return `https://www.kaapav.com/${customer?.customer_id || p1}`;
+}
+
+async function getRetargetingCatUrl(env, phone) {
+  const [p1, p2] = retargetingPhoneVariants(phone);
+
+  const customer = await env.DB.prepare(`
+    SELECT customer_id
+    FROM customers
+    WHERE phone = ? OR phone = ?
+    LIMIT 1
+  `).bind(p1, p2).first();
+
+  return `https://catalogue.kaapav.com/${customer?.customer_id || p1}`;
+}
+
+async function customerHasNegativeOptOut(env, phone) {
+  const [p1, p2] = retargetingPhoneVariants(phone);
+
+  const { results } = await env.DB.prepare(`
+    SELECT text
+    FROM messages
+    WHERE (phone = ? OR phone = ?)
+      AND direction = 'incoming'
+    ORDER BY id DESC
+    LIMIT 10
+  `).bind(p1, p2).all();
+
+  return (results || []).some(m => isNegativeOptOutText(m.text));
+}
+
+async function hasOrderAfterRetargetingEvent(env, phone, eventCreatedAtIST) {
+  const [p1, p2] = retargetingPhoneVariants(phone);
+
+  const row = await env.DB.prepare(`
+    SELECT id
+    FROM orders
+    WHERE (phone = ? OR phone = ?)
+      AND status NOT IN ('cancelled', 'failed')
+      AND datetime(created_at) >= datetime(?, '-5 hours', '-30 minutes')
+    LIMIT 1
+  `).bind(p1, p2, eventCreatedAtIST).first();
+
+  return !!row;
+}
+
+async function customerRepliedAfterReminder(env, phone, reminderCreatedAtUTC) {
+  const [p1, p2] = retargetingPhoneVariants(phone);
+
+  const row = await env.DB.prepare(`
+    SELECT id
+    FROM messages
+    WHERE (phone = ? OR phone = ?)
+      AND direction = 'incoming'
+      AND datetime(created_at) > datetime(?)
+    LIMIT 1
+  `).bind(p1, p2, reminderCreatedAtUTC).first();
+
+  return !!row;
+}
+
+async function saveRetargetingOutgoing(env, phone, text, buttons) {
+  const msgId = `retarget_${Date.now()}_${phone}`;
+
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status,
+       is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
+    VALUES (?, ?, ?, 'buttons', 'outgoing', 'sent', 1, 1, ?, ?, datetime('now'), datetime('now'))
+  `).bind(
+    msgId,
+    phone,
+    text,
+    buttons.map(b => b.title).join('|'),
+    JSON.stringify(buttons)
+  ).run();
+
+  await env.DB.prepare(`
+    UPDATE chats
+    SET last_message = ?, last_message_type = 'buttons',
+        last_direction = 'outgoing',
+        last_timestamp = datetime('now'),
+        updated_at = datetime('now')
+    WHERE phone = ?
+  `).bind(text, phone).run();
+}
+
+async function sendRetargetingReminder(env, phone, winner, items, reminderNo) {
+  const source = winner.source || 'catalogue';
+  const targetUrl = isCatalogueSource(source)
+    ? await getRetargetingCatUrl(env, phone)
+    : await getRetargetingWebUrl(env, phone);
+
+  const messageText = buildRetargetingMessage(winner.event_type, reminderNo, items);
+  const buttonText = getRetargetingButtonText(
+    winner.event_type,
+    reminderNo,
+    items.length
+  );
+
+  await sendWhatsAppCtaUrl(
+    env,
+    phone,
+    messageText,
+    buttonText,
+    targetUrl,
+    '💎 KAAPAV Fashion Jewellery'
+  );
+
+  await saveRetargetingOutgoing(env, phone, `[CTA] ${messageText}\n${targetUrl}`, [
+    { id: 'retargeting_cta_url', title: buttonText, url: targetUrl }
+  ]);
+
+  await new Promise(r => setTimeout(r, 700));
+
+  await sendWhatsAppButtons(
+    env,
+    phone,
+    'Need anything else?',
+    [{ id: 'home', title: '🏠 Main Menu' }],
+    '💎 KAAPAV Fashion Jewellery'
+  );
+
+  await saveRetargetingOutgoing(env, phone, 'Need anything else?', [
+    { id: 'home', title: '🏠 Main Menu' }
+  ]);
+
+  await env.DB.prepare(`
+    INSERT INTO retargeting_reminders
+      (phone, event_id, event_type, event_score, source, sku,
+       product_names, categories, reminder_no, target_url, message_text, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', datetime('now'))
+  `).bind(
+    phone,
+    winner.id,
+    winner.event_type,
+    RETARGETING_EVENT_SCORE[winner.event_type] || 1,
+    source,
+    winner.sku || '',
+    JSON.stringify(items.map(i => cleanRetargetingProductName(i.product_name))),
+    JSON.stringify(items.map(i => i.category || '')),
+    reminderNo,
+    targetUrl,
+    messageText
+  ).run();
+}
+
+async function processCatalogueRetargetingReminders(env) {
+  if (!isRetargetingSendWindowIST()) {
+    console.log('Retargeting skipped: outside 9 AM - 9 PM IST');
+    return;
+  }
+
+  const { results } = await env.DB.prepare(`
+    SELECT
+      ce.id,
+      ce.phone,
+      ce.event_type,
+      ce.sku,
+      ce.product_name,
+      ce.category,
+      ce.source,
+      ce.created_at,
+      COALESCE(c.opted_in, 1) AS opted_in,
+      COALESCE(ch.is_blocked, 0) AS is_blocked
+    FROM catalogue_events ce
+    LEFT JOIN customers c ON c.phone = ce.phone
+    LEFT JOIN chats ch ON ch.phone = ce.phone
+    WHERE ce.event_type IN ('ViewContent', 'ViewProduct', 'AddToWishlist', 'AddToCart', 'InitiateCheckout')
+      AND ce.product_name IS NOT NULL
+      AND TRIM(ce.product_name) != ''
+      AND datetime(ce.created_at) >= datetime('now', '+5 hours', '+30 minutes', '-24 hours')
+      AND datetime(ce.created_at) <= datetime('now', '+5 hours', '+30 minutes', '-3 hours')
+      AND COALESCE(c.opted_in, 1) = 1
+      AND COALESCE(ch.is_blocked, 0) = 0
+    ORDER BY ce.created_at DESC
+    LIMIT 500
+  `).all();
+
+  const byPhone = new Map();
+
+  for (const row of results || []) {
+    if (!byPhone.has(row.phone)) byPhone.set(row.phone, []);
+    byPhone.get(row.phone).push(row);
+  }
+
+  for (const [phone, events] of byPhone.entries()) {
+    try {
+      if (await customerHasNegativeOptOut(env, phone)) continue;
+
+      const lock = await env.DB.prepare(`
+        SELECT COUNT(*) AS count
+        FROM retargeting_reminders
+        WHERE phone = ?
+          AND datetime(created_at) >= datetime('now', '-7 days')
+      `).bind(phone).first();
+
+      if ((lock?.count || 0) >= 2) continue;
+
+      const ranked = events
+        .map(e => ({
+          ...e,
+          score: RETARGETING_EVENT_SCORE[e.event_type] || 1,
+          channel_score: isCatalogueSource(e.source) ? 2 : 1,
+        }))
+        .sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          if (b.channel_score !== a.channel_score) return b.channel_score - a.channel_score;
+          return parseISTDate(b.created_at) - parseISTDate(a.created_at);
+        });
+
+      const winner = ranked[0];
+      if (!winner) continue;
+
+      const eventAt = parseISTDate(winner.created_at);
+      if (!eventAt) continue;
+
+      const ageHours = (Date.now() - eventAt.getTime()) / (1000 * 60 * 60);
+
+      // Reminder 1 after 3h, but not if too late to safely fit Reminder 2 inside 24h
+      if (ageHours > 18) continue;
+
+      if (await hasOrderAfterRetargetingEvent(env, phone, winner.created_at)) continue;
+
+      const sameScoreItems = ranked
+        .filter(e =>
+          e.score === winner.score &&
+          cleanRetargetingProductName(e.product_name)
+        )
+        .sort((a, b) => {
+          if (b.channel_score !== a.channel_score) return b.channel_score - a.channel_score;
+          return parseISTDate(b.created_at) - parseISTDate(a.created_at);
+        });
+
+      const picked = [];
+      const usedCategories = new Set();
+
+      for (const item of sameScoreItems) {
+        const cleanName = cleanRetargetingProductName(item.product_name);
+        const categoryKey = String(item.category || cleanName).toLowerCase();
+
+        if (picked.some(p => cleanRetargetingProductName(p.product_name) === cleanName)) continue;
+        if (usedCategories.has(categoryKey) && picked.length > 0) continue;
+
+        picked.push(item);
+        usedCategories.add(categoryKey);
+
+        if (picked.length === 2) break;
+      }
+
+      const items = picked.length ? picked : [winner];
+
+const { results: prior } = await env.DB.prepare(`
+  SELECT *
+  FROM retargeting_reminders
+  WHERE phone = ?
+    AND datetime(created_at) >= datetime('now', '-7 days')
+  ORDER BY created_at DESC
+  LIMIT 2
+`).bind(phone).all();
+
+const sentCount = prior?.length || 0;
+const lastReminder = prior?.[0];
+
+// ✅ Phone-level hard cap: max 2 reminders in 7 days
+if (sentCount >= 2) continue;
+
+// ✅ First reminder for this phone
+if (sentCount === 0) {
+  await sendRetargetingReminder(env, phone, winner, items, 1);
+  continue;
+}
+
+// ✅ Second reminder for this phone only after 6 hours
+if (!lastReminder?.created_at) continue;
+
+const lastReminderAt = parseUTCDate(lastReminder.created_at);
+if (!lastReminderAt) continue;
+
+const hoursSinceReminder = (Date.now() - lastReminderAt.getTime()) / (1000 * 60 * 60);
+
+if (hoursSinceReminder < 6) continue;
+if (ageHours >= 24) continue;
+
+// ✅ If customer replied after reminder 1, stop reminder 2
+// unless they created a newer stronger/different event after that reply
+const replyAfterReminder = await env.DB.prepare(`
+  SELECT created_at
+  FROM messages
+  WHERE phone = ?
+    AND direction = 'incoming'
+    AND datetime(created_at) > datetime(?)
+  ORDER BY created_at DESC
+  LIMIT 1
+`).bind(phone, lastReminder.created_at).first();
+
+if (replyAfterReminder?.created_at) {
+  const newerEventAfterReply = await env.DB.prepare(`
+    SELECT id
+    FROM catalogue_events
+    WHERE phone = ?
+      AND id != ?
+      AND event_type IN ('ViewContent', 'ViewProduct', 'AddToWishlist', 'AddToCart', 'InitiateCheckout')
+      AND product_name IS NOT NULL
+      AND TRIM(product_name) != ''
+      AND datetime(created_at) > datetime(?, '+5 hours', '+30 minutes')
+      AND (
+        CASE event_type
+          WHEN 'InitiateCheckout' THEN 4
+          WHEN 'AddToCart' THEN 3
+          WHEN 'AddToWishlist' THEN 2
+          WHEN 'ViewContent' THEN 1
+          WHEN 'ViewProduct' THEN 1
+          ELSE 1
+        END
+      ) >= ?
+    LIMIT 1
+  `).bind(
+    phone,
+    winner.id,
+    replyAfterReminder.created_at,
+    RETARGETING_EVENT_SCORE[winner.event_type] || 1
+  ).first();
+
+  if (!newerEventAfterReply) continue;
+}
+
+await sendRetargetingReminder(env, phone, winner, items, 2);
+    } catch (e) {
+      console.error('Retargeting reminder error for', phone, e);
+    }
+  }
 }
 
 async function sendWhatsAppList(env, phone, text, buttonLabel, sections, footer = null) {
@@ -2681,46 +5159,120 @@ async function createShiprocketOrder(env, { order, customer, items }) {
   const token = await shiprocketToken(env);
   const orderDate = new Date().toISOString().slice(0, 10);
 
+  const pickupLocation = String(env.SHIPROCKET_PICKUP_LOCATION || '').trim();
+
+  const fullName = String(customer.name || 'Customer').trim();
+  const nameParts = fullName.split(/\s+/).filter(Boolean);
+  const firstName = nameParts[0] || 'Customer';
+  const lastName = nameParts.slice(1).join(' ') || '.';
+
+  const email = String(customer.email || '').trim().toLowerCase();
+  const phone = String(customer.phone || '').replace(/\D/g, '').slice(-10);
+  const pincode = String(customer.pincode || '').replace(/\D/g, '').slice(-6);
+
+  if (!pickupLocation)
+    throw new Error('Missing Shiprocket pickup location');
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    throw new Error('Missing valid customer email');
+
+  if (!phone || phone.length !== 10)
+    throw new Error('Missing valid phone');
+
+  if (!customer.address)
+    throw new Error('Missing address');
+
+  if (!customer.city)
+    throw new Error('Missing city');
+
+  if (!customer.state)
+    throw new Error('Missing state');
+
+  if (!pincode || pincode.length !== 6)
+    throw new Error('Missing valid pincode');
+
+  if (!Array.isArray(items) || !items.length)
+    throw new Error('No order items found');
+
   const orderItems = items.map(i => ({
-    name: i.name,
-    sku: i.sku,
-    units: i.qty,
-    selling_price: i.price,
+    name: String(i.name || i.sku || 'KAAPAV Jewellery').slice(0, 120),
+    sku: String(i.sku || `KP-${Date.now()}`).slice(0, 50),
+    units: Number(i.qty || i.quantity || 1),
+    selling_price: Number(i.price || 0),
     discount: 0,
     tax: 0,
   }));
 
   const res = await fetch('https://apiv2.shiprocket.in/v1/external/orders/create/adhoc', {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
     body: JSON.stringify({
       order_id: order.orderNumber,
       order_date: orderDate,
-      pickup_location: 'Primary', // set this in Shiprocket dashboard
+      pickup_location: pickupLocation,
       channel_id: '',
-      comment: 'WhatsApp Order',
-      billing_customer_name: customer.name.split(' ')[0],
-      billing_last_name: customer.name.split(' ').slice(1).join(' ') || '.',
+      comment: 'KAAPAV Order',
+
+      billing_customer_name: firstName,
+      billing_last_name: lastName,
       billing_address: customer.address,
       billing_address_2: '',
-      billing_city: customer.city || 'Delhi',
-      billing_pincode: customer.pincode || '110001',
-      billing_state: customer.state || 'Delhi',
+      billing_city: customer.city,
+      billing_pincode: pincode,
+      billing_state: customer.state,
       billing_country: 'India',
-      billing_email: `orders@kaapav.com`,
-      billing_phone: customer.phone.replace(/\D/g, '').slice(-10),
+      billing_email: email,
+      billing_phone: phone,
+
       shipping_is_billing: true,
+
       order_items: orderItems,
       payment_method: 'Prepaid',
-      shipping_charges: 0,
+      shipping_charges: Number(order.shipping || 0),
       giftwrap_charges: 0,
       transaction_charges: 0,
       total_discount: 0,
-      sub_total: order.total,
-      length: 10, breadth: 10, height: 5, weight: 0.3,
+      sub_total: Number(order.total || 0),
+
+      length: 10,
+      breadth: 10,
+      height: 5,
+      weight: 0.3,
     })
   });
-  const data = await res.json();
+
+  const text = await res.text();
+
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch (_) {
+    data = { raw: text };
+  }
+
+  console.log(
+    'SHIPROCKET_CREATE_ORDER',
+    JSON.stringify({
+      status: res.status,
+      ok: res.ok,
+      data
+    })
+  );
+
+  if (!res.ok) {
+    const msg =
+      data?.message ||
+      data?.error ||
+      (data?.errors ? JSON.stringify(data.errors) : '') ||
+      text ||
+      `Shiprocket HTTP ${res.status}`;
+
+    throw new Error(msg);
+  }
+
   return data;
 }
 
@@ -3550,6 +6102,139 @@ async function checkDuplicateOrder(env, phone, items) {
   } catch { return null; }
 }
 
+function cleanCheckoutSku(value) {
+  return String(value || '').trim();
+}
+
+function cleanCheckoutQty(value) {
+  const n = Math.floor(Number(value || 1));
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(n, 20);
+}
+
+async function priceCatalogueItems(env, rawItems) {
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
+    return {
+      success: false,
+      status: 400,
+      error: 'Cart is empty',
+    };
+  }
+
+  const requestedMap = new Map();
+
+  for (const item of rawItems) {
+    const sku = cleanCheckoutSku(item?.sku);
+    if (!sku) continue;
+
+    const key = sku.toUpperCase();
+    const qty = cleanCheckoutQty(item?.qty ?? item?.quantity ?? 1);
+
+    requestedMap.set(key, {
+      sku,
+      qty: (requestedMap.get(key)?.qty || 0) + qty,
+    });
+  }
+
+  const skuKeys = [...requestedMap.keys()];
+
+  if (skuKeys.length === 0) {
+    return {
+      success: false,
+      status: 400,
+      error: 'Valid product SKU required',
+    };
+  }
+
+  const placeholders = skuKeys.map(() => '?').join(',');
+
+  const productResult = await env.DB.prepare(`
+    SELECT
+      sku,
+      name,
+      price,
+      category,
+      stock,
+      track_inventory,
+      is_active,
+      image_url
+    FROM products
+    WHERE UPPER(sku) IN (${placeholders})
+  `).bind(...skuKeys).all();
+
+  const products = productResult.results || [];
+  const productMap = new Map(
+    products.map((p) => [String(p.sku || '').trim().toUpperCase(), p])
+  );
+
+  const pricedItems = [];
+  let subtotal = 0;
+  let itemCount = 0;
+
+  for (const key of skuKeys) {
+    const req = requestedMap.get(key);
+    const product = productMap.get(key);
+
+    if (!product) {
+      return {
+        success: false,
+        status: 404,
+        error: `Product not found: ${req.sku}`,
+      };
+    }
+
+    if (Number(product.is_active ?? 1) === 0) {
+      return {
+        success: false,
+        status: 409,
+        error: `${product.name || product.sku} is not available`,
+      };
+    }
+
+    const price = Math.round(Number(product.price || 0));
+
+    if (!Number.isFinite(price) || price <= 0) {
+      return {
+        success: false,
+        status: 409,
+        error: `${product.name || product.sku} price is not valid`,
+      };
+    }
+
+    const trackInventory = Number(product.track_inventory ?? 1);
+    const stock = Number(product.stock ?? 0);
+
+    if (trackInventory !== 0 && stock < req.qty) {
+      return {
+        success: false,
+        status: 409,
+        error: `Only ${Math.max(0, stock)} left for ${product.name || product.sku}`,
+      };
+    }
+
+    const lineTotal = price * req.qty;
+
+    pricedItems.push({
+      sku: product.sku,
+      name: product.name || product.sku,
+      category: product.category || '',
+      price,
+      qty: req.qty,
+      image_url: product.image_url || '',
+    });
+
+    subtotal += lineTotal;
+    itemCount += req.qty;
+  }
+
+  return {
+    success: true,
+    items: pricedItems,
+    subtotal,
+    itemCount,
+  };
+}
+
 // ═══════════════════ RAZORPAY REFUND ═══════════════════
 async function processRazorpayRefund(env, paymentId, amount, orderId) {
   const auth = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`);
@@ -3655,7 +6340,9 @@ if (Array.isArray(statuses) && statuses.length) {
     const msg = value.messages[0];
     const phone = msg.from;
     const contact = value.contacts?.[0];
-    const name = contact?.profile?.name || phone;
+    const name =
+  (contact?.profile?.name || '').trim()
+  || phone;
 
     let text = '';
     let messageType = msg.type;
@@ -3703,7 +6390,96 @@ if (Array.isArray(statuses) && statuses.length) {
         buttonText = msg.interactive.list_reply?.title;
         text = buttonText || '';
       }
-    }
+ } else if (msg.type === 'unsupported') {
+  const unsupportedErrors = Array.isArray(msg.errors)
+    ? msg.errors
+    : Array.isArray(value.errors)
+      ? value.errors
+      : [];
+
+  const firstError = unsupportedErrors[0] || null;
+
+  const unsupportedPayload = {
+    type: msg.type,
+    message_id: msg.id || null,
+    from: msg.from || phone || null,
+    timestamp: msg.timestamp || null,
+    errors: unsupportedErrors,
+    raw: msg,
+  };
+
+const vendorLike = await isVendorUnsupportedPhone(env, msg.from || phone);
+
+if (vendorLike) {
+  text =
+    `⏳ *Vendor/System WhatsApp Message Received*\n\n` +
+    `From: ${msg.from || phone}\n` +
+    `Reason: ${firstError?.title || firstError?.details || 'Message body hidden by Meta'}\n` +
+    `Meta code: ${firstError?.code || '-'}\n` +
+    `Time: ${formatISTDateTime()}\n\n` +
+    `KAAPAV is waiting for the matching Razorpay / Shiprocket / order event to convert this into a readable business alert.`;
+
+  mediaCaption = JSON.stringify({
+    ...unsupportedPayload,
+    kaapav_converted: false,
+    kaapav_pending_vendor_message: true,
+    vendor_sender: msg.from || phone,
+    reason: 'Waiting for matching KAAPAV business event',
+  });
+
+  messageType = 'text';
+
+  try {
+    await saveOwnerInboxAlert(env, ctx, {
+      type: 'unsupported',
+      priority: 'normal',
+      title: 'Vendor WhatsApp Waiting for Conversion',
+      body:
+        `From: ${msg.from || phone}\n` +
+        `Reason: ${firstError?.title || 'Unsupported WhatsApp message'}\n` +
+        `Meta code: ${firstError?.code || '-'}\n` +
+        `Time: ${formatISTDateTime()}`,
+      phone,
+      customerName: name || 'Vendor/System',
+      source: 'whatsapp_pending_conversion',
+      actionType: 'chat',
+      actionLabel: 'Open Chat',
+      meta: unsupportedPayload,
+      dedupeKey: `unsupported_pending:${msg.id}`,
+      sendPush: true,
+    });
+  } catch (e) {
+    console.error('UNSUPPORTED_PENDING_OWNER_ALERT_ERROR', e);
+  }
+} else {
+  text = firstError?.title
+    ? `Unsupported: ${firstError.title}`
+    : '[Unsupported WhatsApp message]';
+
+  mediaCaption = JSON.stringify({
+    ...unsupportedPayload,
+    kaapav_converted: false,
+    reason: 'Customer unsupported message; not auto-converted',
+  });
+
+  messageType = 'unsupported';
+}
+} else if (msg.type === 'reaction') {
+  text = msg.reaction?.emoji ? `Reacted: ${msg.reaction.emoji}` : '[Reaction]';
+  messageType = 'reaction';
+} else if (msg.type === 'location') {
+  text = '📍 Location shared';
+  messageType = 'location';
+} else if (msg.type === 'contacts') {
+  text = '👤 Contact shared';
+  messageType = 'contacts';
+} else if (msg.type === 'sticker') {
+  text = '🎭 Sticker';
+  messageType = 'sticker';
+} else if (msg.type === 'system') {
+  text = '[System message]';
+  messageType = 'system';
+}
 
     const messageId = msg.id;
     const timestamp = new Date(parseInt(msg.timestamp) * 1000).toISOString();
@@ -3719,6 +6495,7 @@ if (Array.isArray(statuses) && statuses.length) {
       messageId, phone, text, messageType,
       buttonId, buttonText, mediaUrl, mediaCaption, timestamp
     ).run();
+
 
     // Upsert chat
     await env.DB.prepare(`
@@ -3738,15 +6515,83 @@ if (Array.isArray(statuses) && statuses.length) {
     `).bind(phone, name, text || messageType, messageType, timestamp).run();
 
     // Upsert customer
-    await env.DB.prepare(`
-      INSERT INTO customers (phone, name, message_count, first_seen, last_seen, updated_at)
-      VALUES (?, ?, 1, datetime('now'), datetime('now'), datetime('now'))
-      ON CONFLICT(phone) DO UPDATE SET
-        name          = excluded.name,
-        message_count = message_count + 1,
-        last_seen     = datetime('now'),
-        updated_at    = datetime('now')
-    `).bind(phone, name).run();
+// Get or create permanent customer ID
+const customerId = await getOrCreateCustomerId(env, phone);
+
+console.log('CUSTOMER UPSERT', {
+  phone,
+  customerId,
+  name
+});
+
+// Upsert customer
+await env.DB.prepare(`
+  INSERT INTO customers (
+    phone,
+    customer_id,
+    name,
+    message_count,
+    first_seen,
+    last_seen,
+    updated_at
+  )
+  VALUES (
+    ?, ?, ?, 1,
+    datetime('now'),
+    datetime('now'),
+    datetime('now')
+  )
+  ON CONFLICT(phone) DO UPDATE SET
+    customer_id = COALESCE(
+      customers.customer_id,
+      excluded.customer_id
+    ),
+    name          = excluded.name,
+    message_count = message_count + 1,
+    last_seen     = datetime('now'),
+    updated_at    = datetime('now')
+`).bind(
+  phone,
+  customerId,
+  name
+).run();
+
+// Owner Inbox alert for unsupported WhatsApp messages.
+// This does NOT decode hidden body. It alerts owner safely.
+if (messageType === 'unsupported') {
+  ctx.waitUntil((async () => {
+    try {
+      let unsupportedMeta = {};
+      try {
+        unsupportedMeta = JSON.parse(mediaCaption || '{}');
+      } catch (_) {}
+
+      const firstError = Array.isArray(unsupportedMeta.errors)
+        ? unsupportedMeta.errors[0]
+        : null;
+
+      await saveOwnerInboxAlert(env, ctx, {
+        type: 'unsupported',
+        priority: 'normal',
+        title: 'Unsupported WhatsApp Message',
+        body:
+          `From: ${name || 'Unknown'} (${phone})\n` +
+          `Time: ${formatISTDateTime()}\n` +
+          `Reason: ${firstError?.title || firstError?.details || 'Meta did not expose readable body'}\n\n` +
+          `Readable content is unavailable from WhatsApp Cloud API.`,
+        phone,
+        customerName: name || 'Unknown',
+        source: 'whatsapp',
+        actionType: 'chat',
+        actionLabel: 'Open Chat',
+        meta: unsupportedMeta,
+        dedupeKey: `unsupported:${messageId}`,
+      });
+    } catch (e) {
+      console.error('OWNER_INBOX_UNSUPPORTED_ALERT_ERROR', e);
+    }
+  })());
+}
 
     // FCM push — fires in parallel, does not block autoresponder
     ctx.waitUntil(sendFCMNotification(env, phone, name, text, messageId));
@@ -3784,36 +6629,129 @@ async function handleLogin(request, env) {
 
 async function handleGetChats(request, env) {
   const url = new URL(request.url);
-  const limit = parseInt(url.searchParams.get('limit') || '50');
-  const offset = parseInt(url.searchParams.get('offset') || '0');
-  const { results } = await env.DB.prepare(
-    `SELECT * FROM chats ORDER BY last_timestamp DESC LIMIT ? OFFSET ?`
-  ).bind(limit, offset).all();
-  return jsonResponse({ success: true, chats: results, total: results.length });
+  const limit = Math.min(
+    parseInt(url.searchParams.get('limit') || '1000000', 10),
+    1000000
+  );
+  const offset = parseInt(url.searchParams.get('offset') || '0', 10);
+
+  const { results } = await env.DB.prepare(`
+    SELECT
+      c.*,
+      COALESCE(c.last_message, lm.text) as last_message,
+      COALESCE(c.last_message_type, lm.message_type) as last_message_type,
+      COALESCE(c.last_timestamp, lm.timestamp, lm.created_at) as last_timestamp,
+      COALESCE(c.last_direction, lm.direction) as last_direction
+    FROM chats c
+    LEFT JOIN (
+      SELECT m1.*
+      FROM messages m1
+      INNER JOIN (
+        SELECT phone, MAX(datetime(COALESCE(timestamp, created_at))) as max_time
+        FROM messages
+        GROUP BY phone
+      ) m2
+      ON m1.phone = m2.phone
+      AND datetime(COALESCE(m1.timestamp, m1.created_at)) = m2.max_time
+    ) lm ON lm.phone = c.phone
+    ORDER BY datetime(COALESCE(c.last_timestamp, lm.timestamp, lm.created_at, c.updated_at, c.created_at)) DESC
+    LIMIT ? OFFSET ?
+  `).bind(limit, offset).all();
+
+  return jsonResponse({
+    success: true,
+    chats: results,
+    total: results.length
+  });
 }
 
 async function handleGetMessages(phone, request, env) {
   const url = new URL(request.url);
-  const limit = parseInt(url.searchParams.get('limit') || '50');
+  const limit = Math.min(
+    parseInt(url.searchParams.get('limit') || '1000000', 10),
+    1000000
+  );
   const before = url.searchParams.get('before');
-  let query = `SELECT * FROM messages WHERE phone = ? ORDER BY timestamp DESC LIMIT ?`;
-  const params = [phone, limit];
-  if (before) { query = `SELECT * FROM messages WHERE phone = ? AND timestamp < ? ORDER BY timestamp DESC LIMIT ?`; params.splice(1, 0, before); }
-  const { results } = await env.DB.prepare(query).bind(...params).all();
-  await env.DB.prepare(`UPDATE chats SET unread_count = 0 WHERE phone = ?`).bind(phone).run();
-  return jsonResponse({ success: true, messages: results.reverse(), total: results.length });
-}
 
+  const rawPhone = decodeURIComponent(String(phone || ''));
+  const digits = rawPhone.replace(/\D/g, '');
+  const phone10 = digits.slice(-10);
+
+  if (!phone10) {
+    return jsonResponse({
+      success: true,
+      messages: [],
+      total: 0
+    });
+  }
+
+  const cleanExpr = `
+    REPLACE(
+      REPLACE(
+        REPLACE(
+          REPLACE(
+            REPLACE(
+              REPLACE(phone, '+', ''),
+            ' ', ''),
+          '-', ''),
+        '(', ''),
+      ')', ''),
+    '@s.whatsapp.net', '')
+  `;
+
+  let query = `
+    SELECT *
+    FROM messages
+    WHERE ${cleanExpr} LIKE '%' || ?
+    ORDER BY datetime(COALESCE(timestamp, created_at)) DESC, id DESC
+    LIMIT ?
+  `;
+
+  let params = [phone10, limit];
+
+  if (before) {
+    query = `
+      SELECT *
+      FROM messages
+      WHERE ${cleanExpr} LIKE '%' || ?
+        AND datetime(COALESCE(timestamp, created_at)) < datetime(?)
+      ORDER BY datetime(COALESCE(timestamp, created_at)) DESC, id DESC
+      LIMIT ?
+    `;
+
+    params = [phone10, before, limit];
+  }
+
+  const { results } = await env.DB.prepare(query).bind(...params).all();
+
+  await env.DB.prepare(`
+    UPDATE chats
+    SET unread_count = 0
+    WHERE ${cleanExpr} LIKE '%' || ?
+  `).bind(phone10).run();
+
+  return jsonResponse({
+    success: true,
+    phone: rawPhone,
+    phone10,
+    total: results.length,
+    messages: results.reverse()
+  });
+}
 async function handleSendMessage(request, env) {
   const body = await request.json();
-  const phone = body.phone || body.to;
+  const rawPhone = body.phone || body.to;
+const { phone91 } = normalizePhone(rawPhone);
+const phone = phone91;
   const text = body.text || body.message;
   const type = body.type || 'text';
   const mediaUrl = body.mediaUrl;
   const mediaCaption = body.mediaCaption;
   const filename = body.filename;
 
-  if (!phone) return errorResponse('phone required');
+  if (!phone) {
+  return errorResponse(`valid phone required. Received: ${rawPhone || ''}`, 400);
+}
 
   let waResult;
   let savedText = text || '';
@@ -3850,21 +6788,51 @@ async function handleSendMessage(request, env) {
     }
 
     if (waResult?.error) {
-      console.error('WhatsApp API error:', JSON.stringify(waResult.error));
-      return errorResponse(`WhatsApp error: ${waResult.error.message || 'Unknown'}`, 502);
-    }
+  console.error('WhatsApp API error:', JSON.stringify({
+    phone,
+    rawPhone,
+    type,
+    error: waResult.error,
+  }));
+
+  return jsonResponse({
+    success: false,
+    error: `WhatsApp error: ${waResult.error.message || 'Unknown'}`,
+    whatsappError: waResult.error,
+    phone,
+    rawPhone,
+    type,
+  }, 502);
+}
 
     const messageId = waResult?.messages?.[0]?.id || `local_${Date.now()}`;
-    const timestamp = new Date().toISOString();
+    const timestamp = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
 
     await env.DB.prepare(`
       INSERT OR IGNORE INTO messages (message_id, phone, text, message_type, direction, media_url, media_caption, status, timestamp, created_at)
       VALUES (?, ?, ?, ?, 'outgoing', ?, ?, 'sent', ?, datetime('now'))
     `).bind(messageId, phone, savedText, type, mediaUrl || null, mediaCaption || null, timestamp).run();
 
-    await env.DB.prepare(`
-      UPDATE chats SET last_message = ?, last_message_type = ?, last_timestamp = ?, last_direction = 'outgoing', updated_at = datetime('now') WHERE phone = ?
-    `).bind(savedText, type, timestamp, phone).run();
+await env.DB.prepare(`
+  INSERT INTO chats (
+    phone,
+    last_message,
+    last_message_type,
+    last_timestamp,
+    last_direction,
+    unread_count,
+    total_messages,
+    updated_at
+  )
+  VALUES (?, ?, ?, ?, 'outgoing', 0, 1, datetime('now'))
+  ON CONFLICT(phone) DO UPDATE SET
+    last_message = excluded.last_message,
+    last_message_type = excluded.last_message_type,
+    last_timestamp = excluded.last_timestamp,
+    last_direction = 'outgoing',
+    total_messages = COALESCE(chats.total_messages, 0) + 1,
+    updated_at = datetime('now')
+`).bind(phone, savedText, type, timestamp).run();
 
     return jsonResponse({ success: true, messageId, timestamp });
 
@@ -3873,10 +6841,160 @@ async function handleSendMessage(request, env) {
     return errorResponse('Failed to send: ' + e.message, 500);
   }
 }
+async function handleGetCatalogueOrders(request, env) {
+  const url = new URL(request.url);
+  const rawPhone = url.searchParams.get('phone') || url.searchParams.get('customer_phone') || '';
+  const { phone91, phonePlain } = normalizePhone(rawPhone);
+
+  if (!phone91) return errorResponse('phone required');
+
+  const { results } = await env.DB.prepare(`
+    SELECT
+      order_id,
+      customer_name,
+      phone,
+      items,
+      item_count,
+      subtotal,
+      shipping_cost,
+shipping_name,
+shipping_phone,
+shipping_address,
+shipping_city,
+shipping_state,
+shipping_pincode,
+      total,
+      status,
+      payment_status,
+      payment_link,
+      courier,
+      tracking_id,
+      tracking_url,
+      awb_number,
+      created_at,
+      updated_at,
+      paid_at,
+      shipped_at,
+      delivered_at,
+      cancelled_at
+    FROM orders
+    WHERE phone = ? OR phone = ?
+    ORDER BY datetime(created_at) DESC
+    LIMIT 50
+  `).bind(phone91, phonePlain).all();
+
+  const orders = (results || []).map(order => {
+    let items = [];
+    try {
+      const parsed = JSON.parse(order.items || '[]');
+      items = Array.isArray(parsed) ? parsed : [];
+    } catch (_) {}
+
+    return {
+      ...order,
+      items
+    };
+  });
+
+  return jsonResponse({
+    success: true,
+    orders,
+    total: orders.length
+  });
+}
+
+function parseOrderItemsForPacking(itemsRaw) {
+  try {
+    const items = typeof itemsRaw === 'string'
+      ? JSON.parse(itemsRaw || '[]')
+      : (itemsRaw || []);
+
+    return Array.isArray(items) ? items : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseProductImagesForPacking(product) {
+  let images = [];
+
+  try {
+    images = typeof product.images === 'string'
+      ? JSON.parse(product.images || '[]')
+      : (product.images || []);
+  } catch {
+    images = [];
+  }
+
+  if (!Array.isArray(images)) images = [];
+
+  if (product.image_url && !images.includes(product.image_url)) {
+    images.unshift(product.image_url);
+  }
+
+  return images.filter(Boolean);
+}
+
+async function enrichOrderForPacking(env, order) {
+  const items = parseOrderItemsForPacking(order.items);
+
+  const skus = [...new Set(
+    items
+      .map(i => String(i.sku || i.product_sku || i.id || '').trim())
+      .filter(Boolean)
+  )];
+
+  if (!skus.length) {
+    return { ...order, items };
+  }
+
+  const placeholders = skus.map(() => '?').join(',');
+
+  const { results } = await env.DB.prepare(`
+    SELECT sku, name, category, price, image_url, images, website_link
+    FROM products
+    WHERE sku IN (${placeholders})
+  `).bind(...skus).all();
+
+  const productMap = {};
+  for (const p of (results || [])) {
+    productMap[String(p.sku)] = p;
+  }
+
+  const packedItems = items.map(item => {
+    const sku = String(item.sku || item.product_sku || item.id || '').trim();
+    const product = productMap[sku] || null;
+    const productImages = product ? parseProductImagesForPacking(product) : [];
+
+    return {
+      ...item,
+      sku,
+      name: item.name || product?.name || sku || 'Jewellery',
+      category: item.category || product?.category || '',
+      price: Number(item.price || product?.price || 0),
+      qty: Number(item.qty || item.quantity || 1),
+
+      product_image_url:
+        item.product_image_url ||
+        item.image_url ||
+        item.image ||
+        productImages[0] ||
+        '',
+
+      product_images: productImages,
+      product_page_url: product?.website_link || ''
+    };
+  });
+
+  return {
+    ...order,
+    items: packedItems
+  };
+}
 
 async function handleGetOrders(request, env) {
   const url = new URL(request.url);
-  const limit = parseInt(url.searchParams.get('limit') || '100');
+  const limit = parseInt(url.searchParams.get('limit') || '1000000');
   const status = url.searchParams.get('status');
   let query = `SELECT * FROM orders ORDER BY created_at DESC LIMIT ?`;
   const params = [limit];
@@ -3887,7 +7005,7 @@ async function handleGetOrders(request, env) {
 
 async function handleGetProducts(request, env) {
   const url = new URL(request.url);
-  const limit = parseInt(url.searchParams.get('limit') || '500');
+  const limit = parseInt(url.searchParams.get('limit') || '100000');
   const category = url.searchParams.get('category');
   // Admin app gets ALL products (no is_active filter)
   let query = `SELECT * FROM products ORDER BY name ASC LIMIT ?`;
@@ -3924,7 +7042,7 @@ async function handleSendProduct(request, env) {
   if (waResult?.error) return errorResponse(waResult.error.message, 502);
 
   const msgId = waResult?.messages?.[0]?.id || `local_${Date.now()}`;
-  const timestamp = new Date().toISOString();
+  const timestamp = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
   await env.DB.prepare(`
     INSERT OR IGNORE INTO messages (message_id, phone, text, message_type, direction, media_url, media_caption, status, timestamp, created_at)
     VALUES (?, ?, ?, ?, 'outgoing', ?, ?, 'sent', ?, datetime('now'))
@@ -4096,7 +7214,7 @@ async function handleUpdateStock(sku, request, env) {
 
 async function handleGetCustomers(request, env) {
   const url = new URL(request.url);
-  const limit = parseInt(url.searchParams.get('limit') || '50');
+  const limit = parseInt(url.searchParams.get('limit') || '1000000');
   const { results } = await env.DB.prepare(`SELECT * FROM customers ORDER BY last_seen DESC LIMIT ?`).bind(limit).all();
   return jsonResponse({ success: true, customers: results, total: results.length });
 }
@@ -4145,7 +7263,7 @@ async function handleSyncCheck(env) {
     env.DB.prepare(`SELECT COUNT(*) as count FROM chats`).first(),
     env.DB.prepare(`SELECT COUNT(*) as count FROM messages`).first(),
   ]);
-  return jsonResponse({ success: true, sync: { chats: chats?.count || 0, messages: messages?.count || 0, timestamp: new Date().toISOString() } });
+  return jsonResponse({ success: true, sync: { chats: chats?.count || 0, messages: messages?.count || 0, timestamp: new Date().toLocaleString('en-IN', {timeZone: 'Asia/Kolkata'}) } });
 }
 
 async function handleRegisterFCM(request, env) {
@@ -4501,8 +7619,6 @@ class AutoResponder {
   constructor(env) {
     this.env = env;
 
-    // ── FAQ category → group_name mapping (matches schema.sql) ──
-    // These are the 10 Browse Topics shown in the WhatsApp list
     this.FAQ_CATEGORIES = [
       { id: 'faq_cat_durability', title: '⏳ Durability',        desc: 'How long it lasts',           group: 'durability' },
       { id: 'faq_cat_size',       title: '📐 Size & Fit',        desc: 'Rings, bracelets, earrings',  group: 'size'       },
@@ -4514,10 +7630,11 @@ class AutoResponder {
       { id: 'faq_cat_brand',      title: '👑 Brand & Contact',   desc: 'About us, social, contact',   group: 'brand'      },
     ];
 
-  // ── Short titles for WhatsApp list (max 24 chars hard limit) ──
     this.FAQ_SHORT_TITLES = {
       'faq_last':            'How long will it last?',
       'faq_tarnish':         'Black or green?',
+      'faq_antitarnish':     'Is it anti-tarnish?',
+      'faq_realgold':        'Is it real gold?',
       'faq_daily':           'Can I wear daily?',
       'faq_plating':         'Plating fade time?',
       'faq_strong':          'Is it strong?',
@@ -4556,62 +7673,142 @@ class AutoResponder {
       'faq_contact':         'How to contact?',
     };
 
-  this.FAQ_DATA = {
-  durability: [
-    { shortcut: 'faq_last',     title: 'How long will it last?',  message: '⏳ *Durability*\n\nWith proper care, KAAPAV jewellery lasts *years* and beyond with proper Care.\n\n✅ Our anti-tarnish coating protects against daily wear\n✅ Keep away from water, sweat, perfume\n✅ Store in the pouch provided\n\n💎 Thousands of happy customers wear it daily!' },
-    { shortcut: 'faq_tarnish',  title: 'Will it turn black/green?', message: '🟢 *Tarnishing*\n\nWith basic care — *no*.\n\n✅ Anti-tarnish coating applied\n✅ Avoid water, sweat, perfume directly\n✅ Wipe dry after wear\n\nIf it does tarnish → gently wipe with dry soft cloth.' },
-    { shortcut: 'faq_daily',    title: 'Can I wear it daily?',    message: '✨ *Daily Wear*\n\nYes! Designed for everyday wear.\n\n✅ Remove before shower/swim\n✅ Apply perfume BEFORE wearing\n✅ Wipe dry after sweating\n\n💎 Proper care = long lasting beauty!' },
-    { shortcut: 'faq_plating',  title: 'How long does plating last?', message: '💛 *Plating Durability*\n\n6 months to 2+ years depending on care.\n\n⚡ Avoid chemicals, water, sweat\n⚡ Store in pouch when not wearing\n⚡ Don\'t rub against hard surfaces\n\n✅ Our plating is thick & premium quality.' },
-    { shortcut: 'faq_strong',   title: 'Is it strong/sturdy?',   message: '💪 *Strength*\n\nYes! Made from high-quality brass/copper alloy base.\n\n✅ Won\'t bend easily\n✅ Clasps are secure & reliable\n✅ Won\'t break under normal wear\n\n⚠️ Avoid dropping on hard surfaces or heavy impact.' },
-  ],
-  size: [
-    { shortcut: 'faq_ring_size',       title: 'Will the ring fit?',       message: '💍 *Ring Size*\n\nMost of our rings are *free size / adjustable*.\n\nFits finger sizes: *(Indian size 14–18 depends on Ring Width)*\n\n✅ Gently adjust to your finger\n✅ Don\'t over-bend\n' },
-    { shortcut: 'faq_bracelet_size',   title: 'Bracelet size?',           message: '📿 *Bracelet Size*\n\nMost bracelets are *adjustable* with extender chain.\n\nFits wrist: *16cm–20cm*\n\n✅ Extender adds 2–3cm extra\n✅ Works for most wrists\n\nMeasure your wrist & message us if unsure!' },
-    { shortcut: 'faq_necklace_length', title: 'Necklace length?',         message: '📏 *Necklace Length*\n\nStandard lengths in our collection:\n\n• *16 inch* — choker style\n• *18 inch* — collarbone (most popular)\n• *20 inch* — just below collarbone\n\nWith extender chain (+2 inch) included on most pieces!' },
-    { shortcut: 'faq_earring_weight',  title: 'Are earrings heavy?',      message: '⚖️ *Earring Weight*\n\nOur earrings are *lightweight* — designed for all-day comfort!\n\n✅ 2–6 grams typically\n✅ No ear pain even after hours\n✅ Secure backs (push-back)\n\n💎 Comfort is our priority!' },
-    { shortcut: 'faq_piercing',        title: 'Do I need pierced ears?',  message: '👂 *Pierced Ears*\n\nAll earrings require *pierced ears*.\n\nWe offer:\n✅ Push-back studs\n' },
-  ],
-  pricing: [
-    { shortcut: 'faq_price',         title: 'What are the prices?',    message: '💰 *Our Prices*\n\n💍 *Earrings & Rings* — ₹249/-\n📿 *Necklace & Bracelet* — ₹499/-\n✨ *Pendant Sets* — ₹699/-\n\n🔥 Already *50% OFF* — MRP crossed out!\n🚚 FREE shipping above ₹498/-\n\n👉 ' + this.env.WEBSITE_URL },
-    { shortcut: 'faq_discount',      title: 'Any discount available?', message: '🎉 *Discounts*\n\n✅ Already *50% OFF* on all products!\n✅ No extra coupon needed\n\n🚚 FREE delivery on orders above ₹498/-\n\n⚡ Prices are *fixed* — already lowest possible.\nWe don\'t negotiate as every piece is handcrafted.' },
-    { shortcut: 'faq_shipping_cost', title: 'Is delivery free?',        message: '🚚 *Shipping Cost*\n\n✅ *FREE* on orders above ₹498/-\n💸 ₹60/- shipping on orders below ₹498/-\n\n💡 Pro tip: Order 2 items to get free shipping!\n\nDelivery in *2–4 working days* via Shiprocket.' },
-    { shortcut: 'faq_combo',         title: 'Any combo deals?',         message: '🎁 *Combo Deals*\n\nYes! Check our website for current combo sets:\n\n✨ Pendant + Earring sets\n✨ Necklace + Bracelet sets\n✨ Full bridal sets\n\n👉 ' + this.env.WEBSITE_URL + '\n\n💬 Message us for custom combinations!' },
-    { shortcut: 'faq_minimum',       title: 'Any minimum order?',       message: '🛒 *Minimum Order*\n\nNo minimum order! Order even *1 piece*.\n\n✅ Single pieces available\n✅ Sets available\n✅ Multiple pieces — no limit!\n\n💡 Order 2+ items → FREE shipping automatically!' },
-  ],
-  ordering: [
-    { shortcut: 'faq_how_order',    title: 'How to place an order?',  message: '🛒 *How to Order*\n\n3 easy ways:\n\n1️⃣ *Website* → browse → add to cart → checkout\n   👉 ' + this.env.WEBSITE_URL + '\n\n2️⃣ *WhatsApp Catalogue* → tap → order\n   👉 ' + this.env.CATALOG_URL + '\n\n3️⃣ *Payment link* 👉 ' + this.env.PAYMENT_URL + '\n\n✅ Payment via UPI / Card / Net Banking' },
-    { shortcut: 'faq_cod',          title: 'Is COD available?',       message: '💸 *Cash on Delivery*\n\n❌ *COD is NOT available.*\n\nWe only accept *online payment*:\n✅ UPI (GPay, PhonePe, Paytm)\n✅ Debit/Credit Card\n✅ Net Banking\n✅ Razorpay Payment Link\n\n🔒 100% secure & instant confirmation.' },
-    { shortcut: 'faq_payment_safe', title: 'Is payment safe?',        message: '🔒 *Payment Safety*\n\n100% SAFE & SECURE!\n\n✅ Powered by *Razorpay* (India\'s #1 payment gateway)\n✅ SSL encrypted\n✅ No card details stored\n✅ RBI compliant\n✅ Instant order confirmation\n\n💎 100,000+ safe transactions processed daily by Razorpay.' },
-    { shortcut: 'faq_confirmation', title: 'Will I get confirmation?', message: '✅ *Order Confirmation*\n\nYes! You\'ll receive:\n\n📱 *WhatsApp message* — instant confirmation\n📧 *Email* — order details (if provided)\n\nYou\'ll get:\n• Order ID (KP-XXXXX)\n• Items ordered\n• Delivery address\n• Tracking details when shipped\n\n💎 We confirm every order personally!' },
-    ],
-  delivery: [
-    { shortcut: 'faq_delivery_time', title: 'How long to deliver?',     message: '🚚 *Delivery Time*\n\n📦 *2–4 working days* across India\n\n• Metro cities: 2–3 days\n• Other cities: 3–4 days\n• Remote areas: 4–7 days\n\n✅ Powered by *Shiprocket*\n✅ Tracking link sent on WhatsApp\n✅ Working days (Mon–Sat)' },
-    { shortcut: 'faq_delivery_area', title: 'Deliver to my area?', message: '📍 *Delivery Coverage*\n\n✅ We deliver *PAN India* — all 28 states!\n\nIncluding:\n• All metro cities\n• Tier 2 & 3 cities\n• Towns & villages\n' },
-    { shortcut: 'faq_packaging',     title: 'Is packaging safe?',       message: '📦 *Packaging*\n\n✅ Each piece individually wrapped\n✅ Bubble wrap protection\n✅ Rigid box for safety\n✅ KAAPAV branded packaging\n✅ 100% damage-proof for transit\n\n🎁 Gift-ready packaging on every order!' },
-    { shortcut: 'faq_track',         title: 'How to track my order?',   message: '📦 *Track Your Order*\n\nOr track directly:\n👉 ' + this.env.TRACKING_URL + '\n\n✅ AWB/tracking number sent on WhatsApp when shipped\n✅ Real-time Shiprocket tracking\n✅ SMS + email updates too!' },
-    { shortcut: 'faq_delayed',       title: 'My order is delayed',      message: '⏰ *Order Delayed?*\n\nSorry for the inconvenience! 🙏\n\nCommon reasons:\n• High demand period\n• Remote location\n• Courier delay\n' },
-  ],
-  returns: [
-    { shortcut: 'faq_return',      title: 'Can I return the order?',  message: '🔄 *Returns Policy*\n\n✅ *7-day return policy*\n\nConditions:\n✅ Unboxing video mandatory\n✅ Item unused & in original packaging\n✅ Return request within 7 days of delivery\n\n⚠️ ₹60/- reverse shipping deducted\n\nMessage us with Order ID + video to start return.' },
-    { shortcut: 'faq_damaged',     title: 'Item arrived damaged',     message: '😟 *Damaged Item*\n\nSo sorry! This shouldn\'t happen. 🙏\n\nDo this IMMEDIATELY:\n1. Record unboxing video (if not done)\n2. Share Order ID + photos/video here\n3. We\'ll replace or refund ASAP!\n\n✅ Damage cases resolved within 24 hours\n✅ Full replacement or refund — your choice!' },
-    { shortcut: 'faq_refund_time', title: 'How long for refund?',    message: '💰 *Refund Timeline*\n\nAfter we receive & verify the return:\n\n⏰ *5–7 working days* to original payment method\n\n• UPI → 2–3 days\n• Card/Net Banking → 5–7 days\n• Bank transfer → 3–5 days\n\n✅ We notify you on WhatsApp at every step!' },
-    { shortcut: 'faq_exchange',    title: 'Can I exchange?',          message: '🔄 *Exchange Policy*\n\n✅ Exchange available within *7 days*\n\nConditions:\n✅ Unboxing video required\n✅ Item unused & undamaged\n✅ Exchange for same or higher value item\n\n⚠️ ₹60/- shipping deducted for both ways\n\nMessage us with Order ID to start exchange!' },
-    { shortcut: 'faq_cancel',      title: 'Can I cancel my order?',  message: '❌ *Order Cancellation*\n\n⚠️ *Orders cannot be cancelled* once placed.\n\nReason: We process & ship within hours!\n\nIf delivered and issue:\n✅ Return within 7 days (with unboxing video)\n✅ Full refund minus ₹60 shipping\n\nPlease order carefully. Sizes & details in product description!' },
-  ],
-  care: [
-    { shortcut: 'faq_care',    title: 'How to care for jewellery?', message: '✨ *Jewellery Care Tips*\n\n💎 To make it last years:\n\n✅ Remove before shower/swimming\n✅ Apply perfume BEFORE wearing\n✅ Wipe dry with soft cloth after use\n✅ Store in pouch when not wearing\n✅ Avoid direct sunlight storage\n\n❌ Don\'t use harsh cleaners\n❌ Don\'t soak in water\n\n💛 5 minutes of care = years of beauty!' },
-    { shortcut: 'faq_perfume', title: 'Can I spray perfume on it?', message: '🌸 *Perfume & Jewellery*\n\n⚠️ Avoid spraying perfume DIRECTLY on jewellery.\n\n✅ Apply perfume first → let it dry → then wear\n✅ This prevents chemical reaction with plating\n✅ Your jewellery stays shiny longer!\n\n💡 Rule: Jewellery is the LAST thing you put on!' },
-    { shortcut: 'faq_sleep',   title: 'Can I sleep wearing it?',   message: '😴 *Sleeping with Jewellery*\n\nWe recommend *removing jewellery before sleep*.\n\nWhy:\n⚠️ Sweat & body heat accelerate tarnishing\n⚠️ Risk of bending delicate pieces\n⚠️ Chain can tangle or break\n\n✅ Store in pouch overnight\n✅ Takes 10 seconds — adds months to lifespan!' },
-  ],
- brand: [
-    { shortcut: 'faq_about',   title: 'About KAAPAV',            message: '👑 *About KAAPAV*\n\n💎 *Where luxury meets attitude. ✨*\n\nKAAPAV is an Indian D2C fashion jewellery brand offering premium anti-tarnish jewellery at honest prices.\n\n✨ 250+ unique designs\n🇮🇳 Made with love in India\n💰 Starting ₹249/- only\n🚚 Free shipping above ₹498/-\n📦 Fast 2–4 day delivery\n\n💖 Luxury for every woman, every day.' },
-    { shortcut: 'faq_social',  title: 'Social media links',      message: '📱 *Follow KAAPAV*\n\n📸 *Instagram:*\n👉 ' + this.env.INSTAGRAM_URL + '\n\n👍 *Facebook:*\n👉 ' + this.env.FACEBOOK_URL + '\n\n🌐 *Website:*\n👉 ' + this.env.WEBSITE_URL + '\n\n💬 *WhatsApp Chat:*\n👉 ' + this.env.WAME_CHAT_URL + '\n\n🤍 Follow us for new arrivals & offers!' },
-    { shortcut: 'faq_contact', title: 'How to contact us',       message: '📞 *Contact KAAPAV*\n\n💬 *WhatsApp* (fastest):\nJust message us here!\n\n📧 *Email:*\ncare.kaapav@gmail.com\n\n🌐 *Website:*\n👉 ' + this.env.WEBSITE_URL + '\n\n⏰ Response time: Within a few hours\n✅ We reply 7 days a week!' },
-  ],
-};
+    this.FAQ_DATA = {
+      durability: [
+        { shortcut: 'faq_last',        title: 'How long will it last?',      message: '⏳ *Durability*\n\nWith proper care, KAAPAV jewellery lasts *years* based on wear & tear!\n\n✅ Anti-tarnish coating on every piece\n✅ Keep away from water, sweat, perfume\n✅ Store in the pouch provided\n\n💎 Thousands of happy customers wear it daily!' },
+        { shortcut: 'faq_antitarnish', title: 'Is it anti-tarnish?',         message: '✨ *Anti-Tarnish Jewellery*\n\nYes! 100% anti-tarnish coated! 💛\n\n✅ Every KAAPAV piece has a special anti-tarnish protective layer\n✅ Will NOT turn black or green with basic care\n✅ Stays shiny & beautiful for years\n\n💡 *Simple care rules:*\n• Remove before shower/swim\n• Apply perfume BEFORE wearing\n• Wipe dry with soft cloth after use\n• Store in pouch when not wearing\n\n💎 Proper care = long lasting beauty!' },
+        { shortcut: 'faq_realgold',    title: 'Is it real gold?',            message: '💛 *About Our Jewellery*\n\nKAAPAV sells *premium artificial fashion jewellery* — not real gold.\n\n✅ High-quality brass/copper alloy base\n✅ Gold-plated with anti-tarnish coating\n✅ Looks exactly like real gold jewellery\n✅ Fraction of the price — starting ₹249/-\n\n💎 *Why choose KAAPAV?*\n• Same look as real gold\n• Safe to wear daily\n• No worry of theft or loss\n• Always on-trend designs\n\n👑 Simple Luxury — Crafted for You!' },
+        { shortcut: 'faq_tarnish',     title: 'Will it turn black/green?',   message: '🟢 *Tarnishing*\n\nWith basic care — *no, it will NOT tarnish*!\n\n✅ 100% anti-tarnish coating applied\n✅ Avoid water, sweat, perfume directly on jewellery\n✅ Wipe dry after wear\n\n💡 If any tarnish occurs → gently wipe with dry soft cloth.\n\n💎 With proper care your jewellery stays shiny for years!' },
+        { shortcut: 'faq_daily',       title: 'Can I wear it daily?',        message: '✨ *Daily Wear*\n\nYes! Designed for everyday wear.\n\n✅ Remove before shower/swim\n✅ Apply perfume BEFORE wearing\n✅ Wipe dry after sweating\n\n💎 Proper care = long lasting beauty!' },
+        { shortcut: 'faq_plating',     title: 'How long does plating last?', message: '💛 *Plating Durability*\n\n6 months to 2+ years depending on care.\n\n⚡ Avoid chemicals, water, sweat\n⚡ Store in pouch when not wearing\n⚡ Don\'t rub against hard surfaces\n\n✅ Our plating is thick & premium quality.' },
+        { shortcut: 'faq_strong',      title: 'Is it strong/sturdy?',        message: '💪 *Strength*\n\nYes! Made from high-quality steel alloy base and depends on Wear & Tear.\n\n✅ Won\'t bend easily\n✅ Clasps are secure & reliable\n✅ Won\'t break under normal wear\n\n⚠️ Avoid dropping on hard surfaces or heavy impact.' },
+      ],
+      size: [
+        { shortcut: 'faq_ring_size',       title: 'Will the ring fit?',       message: '💍 *Ring Size*\n\nMost of our rings are *free size / adjustable*.\n\nFits finger sizes: *(Indian size 14–18 depends on Ring Width)*\n\n✅ Gently adjust to your finger\n✅ Don\'t over-bend\n' },
+        { shortcut: 'faq_bracelet_size',   title: 'Bracelet size?',           message: '📿 *Bracelet Size*\n\nMost bracelets are *adjustable* with extender chain.\n\nFits wrist: *16cm–20cm*\n\n✅ Extender adds 2–3cm extra\n✅ Works for most wrists\n\nMeasure your wrist & message us if unsure!' },
+        { shortcut: 'faq_necklace_length', title: 'Necklace length?',         message: '📏 *Necklace Length*\n\nStandard lengths in our collection:\n\n• *16 inch* — choker style\n• *18 inch* — collarbone (most popular)\n• *20 inch* — just below collarbone\n\nWith extender chain (+2 inch) included on most pieces!' },
+        { shortcut: 'faq_earring_weight',  title: 'Are earrings heavy?',      message: '⚖️ *Earring Weight*\n\nOur earrings are *lightweight* — designed for all-day comfort!\n\n✅ 2–6 grams typically\n✅ No ear pain even after hours\n✅ Secure backs (push-back)\n\n💎 Comfort is our priority!' },
+        { shortcut: 'faq_piercing',        title: 'Do I need pierced ears?',  message: '👂 *Pierced Ears*\n\nAll earrings require *pierced ears*.\n\nWe offer:\n✅ Push-back studs\n' },
+      ],
+      pricing: [
+        { shortcut: 'faq_price',         title: 'What are the prices?',    message: '💰 *Our Prices*\n\n💍 *Earrings & Rings* — ₹249/-\n📿 *Necklace & Bracelet* — ₹499/-\n✨ *Pendant Sets* — ₹699/-\n\n🔥 Already *50% OFF* — MRP crossed out!\n🚚 FREE shipping above ₹498/-\n\n👉 Website — browse & checkout:\n' + this.env.WEBSITE_URL + '\n\n👉 Catalogue — browse & checkout:\n' + this.env.CATALOG_URL},
+        { shortcut: 'faq_discount',      title: 'Any discount available?', message: '🎉 *Offers*\n\n✅ Already *50% OFF* on all products!\n✅ No extra coupon needed\n\n🚚 FREE delivery on orders above ₹498/-\n\n⚡ Prices are *fixed* — already lowest possible.\nWe don\'t negotiate as every piece is handcrafted.\n\n👉 Website — browse & checkout:\n' + this.env.WEBSITE_URL + '\n\n👉 Catalogue — browse & checkout:\n' + this.env.CATALOG_URL},
+        { shortcut: 'faq_shipping_cost', title: 'Is delivery free?',        message: '🚚 *Shipping Cost*\n\n✅ *FREE* on orders above ₹498/-\n💸 ₹60/- shipping on orders below ₹498/-\n\n💡 Pro tip: Order 2 items to get free shipping!\n\nDelivery in *2–5 working days* via Shiprocket.' },
+        { shortcut: 'faq_combo',         title: 'Any combo deals?',         message: '🎁 *Combo Deals*\n\nYes! Check our website for current combo sets:\n\n✨ Pendant & Earring sets\n✨ Necklace & Earring sets\n\n👉 Website — browse & checkout:\n' + this.env.WEBSITE_URL + '\n\n👉 Catalogue — browse & checkout:\n' + this.env.CATALOG_URL},
+        { shortcut: 'faq_minimum',       title: 'Any minimum order?',       message: '🛒 *Minimum Order*\n\nNo minimum order! Order even *1 piece*.\n\n✅ Single pieces available\n✅ Sets available\n✅ Multiple pieces — no limit!\n\n💡 Order 2+ items → FREE shipping automatically!' },
+      ],
+      ordering: [
+        { shortcut: 'faq_how_order',    title: 'How to place an order?',  message: '🛒 *How to Order*\n\n3 easy ways:\n\n1️⃣ *Website* → browse → add to cart → checkout\n   👉 ' + this.env.WEBSITE_URL + '\n\n2️⃣ *WhatsApp Catalogue* → browse → add to cart → checkout\n   👉 ' + this.env.CATALOG_URL + '\n\n3️⃣ *Payment link* 👉 ' + this.env.PAYMENT_URL + '\n\n✅ Payment via UPI / Card / Net Banking' },
+        { shortcut: 'faq_cod',          title: 'Is COD available?',       message: '💸 *Cash on Delivery*\n\n❌ *COD is NOT available.*\n\nWe only accept *online payment*:\n✅ UPI (GPay, PhonePe, Paytm)\n✅ Debit/Credit Card\n✅ Net Banking\n✅ Razorpay Payment Link\n\n🔒 100% secure & instant confirmation.' },
+        { shortcut: 'faq_payment_safe', title: 'Is payment safe?',        message: '🔒 *Payment Safety*\n\n100% SAFE & SECURE!\n\n✅ Powered by *Razorpay* (India\'s #1 payment gateway)\n✅ SSL encrypted\n✅ No card details stored\n✅ RBI compliant\n✅ Instant order confirmation\n\n💎 100,000+ safe transactions processed daily by Razorpay.' },
+        { shortcut: 'faq_confirmation', title: 'Will I get confirmation?', message: '✅ *Order Confirmation*\n\nYes! You\'ll receive:\n\n📱 *WhatsApp message* — instant confirmation\n📧 *Email* — order details (if provided)\n\nYou\'ll get:\n• Order ID (KP-XXXXX)\n• Items ordered\n• Delivery address\n• Tracking details when shipped\n\n💎 We confirm every order personally!' },
+      ],
+      delivery: [
+        { shortcut: 'faq_delivery_time', title: 'How long to deliver?',   message: '🚚 *Delivery Time*\n\n📦 *2–5 working days* across India\n\n• Metro cities: 2–3 days\n• Other cities: 3–4 days\n• Remote areas: 4–7 days\n\n✅ Powered by *Shiprocket*\n✅ Tracking link sent on WhatsApp\n✅ Working days (Mon–Sat)' },
+        { shortcut: 'faq_delivery_area', title: 'Deliver to my area?',    message: '📍 *Delivery Coverage*\n\n✅ We deliver *PAN India* — all 28 states!\n\nIncluding:\n• All metro cities\n• Tier 2 & 3 cities\n• Towns & villages\n' },
+        { shortcut: 'faq_packaging',     title: 'Is packaging safe?',     message: '📦 *Packaging*\n\n✅ Each piece individually wrapped\n✅ Bubble wrap protection\n✅ Rigid box for safety\n✅ KAAPAV branded packaging\n✅ 100% damage-proof for transit\n\n🎁 Gift-ready packaging on every order!' },
+        { shortcut: 'faq_track',         title: 'How to track my order?', message: '📦 *Track Your Order*\n\nOr track directly:\n👉 ' + this.env.TRACKING_URL + '\n\n✅ AWB/tracking number sent on WhatsApp when shipped\n✅ Real-time Shiprocket tracking\n✅ SMS + email updates too!' },
+        { shortcut: 'faq_delayed',       title: 'My order is delayed',    message: '⏰ *Order Delayed?*\n\nSorry for the inconvenience! 🙏\n\nCommon reasons:\n• High demand period\n• Remote location\n• Courier delay\n' },
+      ],
+      returns: [
+        { shortcut: 'faq_return',      title: 'Can I return the order?',  message: '🔄 *Returns Policy*\n\n✅ *7-day return policy*\n\nConditions:\n✅ Unboxing video mandatory\n✅ Item unused & in original packaging\n✅ Return request within 7 days of delivery\n\n⚠️ ₹60/- reverse shipping deducted\n\nMessage us with Order ID + video to start return.' },
+        { shortcut: 'faq_damaged',     title: 'Item arrived damaged',     message: '😟 *Damaged Item*\n\nSo sorry! This shouldn\'t happen. 🙏\n\nDo this IMMEDIATELY:\n1. Record unboxing video (if not done)\n2. Share Order ID + photos/video here\n3. We\'ll replace or refund ASAP!\n\n✅ Damage cases resolved within 24 hours\n✅ Full replacement or refund — your choice!' },
+        { shortcut: 'faq_refund_time', title: 'How long for refund?',     message: '💰 *Refund Timeline*\n\nAfter we receive & verify the return:\n\n⏰ *5–7 working days* to original payment method\n\n• UPI → 2–3 days\n• Card/Net Banking → 5–7 days\n• Bank transfer → 3–5 days\n\n✅ We notify you on WhatsApp at every step!' },
+        { shortcut: 'faq_exchange',    title: 'Can I exchange?',          message: '🔄 *Exchange Policy*\n\n✅ Exchange available within *7 days*\n\nConditions:\n✅ Unboxing video required\n✅ Item unused & undamaged\n✅ Exchange for same or higher value item\n\n⚠️ ₹60/- shipping deducted for both ways\n\nMessage us with Order ID to start exchange!' },
+        { shortcut: 'faq_cancel',      title: 'Can I cancel my order?',   message: '❌ *Order Cancellation*\n\n⚠️ *Orders cannot be cancelled* once placed.\n\nReason: We process & ship within hours!\n\nIf delivered and issue:\n✅ Return within 7 days (with unboxing video)\n✅ Full refund minus ₹60 shipping\n\nPlease order carefully. Sizes & details in product description!' },
+      ],
+      care: [
+        { shortcut: 'faq_care',    title: 'How to care for jewellery?', message: '✨ *Jewellery Care Tips*\n\n💎 To make it last years:\n\n✅ Remove before shower/swimming\n✅ Apply perfume BEFORE wearing\n✅ Wipe dry with soft cloth after use\n✅ Store in pouch when not wearing\n✅ Avoid direct sunlight storage\n\n❌ Don\'t use harsh cleaners\n❌ Don\'t soak in water\n\n💛 5 minutes of care = years of beauty!' },
+        { shortcut: 'faq_perfume', title: 'Can I spray perfume on it?', message: '🌸 *Perfume & Jewellery*\n\n⚠️ Avoid spraying perfume DIRECTLY on jewellery.\n\n✅ Apply perfume first → let it dry → then wear\n✅ This prevents chemical reaction with plating\n✅ Your jewellery stays shiny longer!\n\n💡 Rule: Jewellery is the LAST thing you put on!' },
+        { shortcut: 'faq_sleep',   title: 'Can I sleep wearing it?',   message: '😴 *Sleeping with Jewellery*\n\nWe recommend *removing jewellery before sleep*.\n\nWhy:\n⚠️ Sweat & body heat accelerate tarnishing\n⚠️ Risk of bending delicate pieces\n⚠️ Chain can tangle or break\n\n✅ Store in pouch overnight\n✅ Takes 10 seconds — adds months to lifespan!' },
+      ],
+      brand: [
+{
+  shortcut: 'faq_about',
+  title: 'About KAAPAV',
+  message:
+    '👑 *About KAAPAV*\n\n' +
+    '💎 *Simple Luxury — Crafted for You.*\n\n' +
+    'KAAPAV is an Indian D2C *fashion jewellery* brand created for women who love elegant, premium-looking jewellery without paying real-gold prices.\n\n' +
+    '✨ Contemporary everyday designs\n' +
+    '💛 Premium artificial jewellery\n' +
+    '🛡️ Anti-tarnish coated pieces\n' +
+    '💰 Starting from ₹249/- only\n' +
+    '🚚 Free shipping above ₹498/-\n' +
+    '📦 Fast 2–4 day delivery\n\n' +
+    'Luxury should feel beautiful, easy and wearable — every single day. 🤍'
+},
+
+{
+  shortcut: 'faq_social',
+  title: 'Social media links',
+  message:
+    '📱 *Follow KAAPAV*\n\n' +
+    '✨ New arrivals\n' +
+    '💎 Styling ideas\n' +
+    '🔥 Offers & updates\n' +
+    '🤍 Behind-the-scenes jewellery drops\n\n' +
+    '📸 *Instagram*\n' +
+    '👉 ' + this.env.INSTAGRAM_URL + '\n\n' +
+    '👍 *Facebook*\n' +
+    '👉 ' + this.env.FACEBOOK_URL + '\n\n' +
+    '💛 Follow us and stay close to the KAAPAV sparkle!'
+},
+{
+  shortcut: 'faq_contact',
+  title: 'How to contact us',
+  message:
+    '📞 *Contact KAAPAV*\n\n' +
+    'Need help choosing your jewellery? We’re here for you. 🤍\n\n' +
+    '💬 *WhatsApp* — fastest support\n' +
+    'Just message us here.\n\n' +
+    '📧 *Email*\n' +
+    'care.kaapav@gmail.com\n\n' +
+    '🌐 *Website*\n' +
+    '👉 ' + this.env.WEBSITE_URL + '\n\n' +
+    '📱 *WhatsApp Catalogue*\n' +
+    '👉 ' + this.env.CATALOG_URL + '\n\n' +
+    '⚡ Instant reply'
+},
+      ],
+    };
 
   }
-  
+
+async getWebUrl(phone, category = '') {
+  const customer = await this.env.DB.prepare(`
+    SELECT customer_id
+    FROM customers
+    WHERE phone = ? OR phone = ?
+    LIMIT 1
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  const cid = customer?.customer_id;
+
+  if (!category) {
+    return `https://www.kaapav.com/${cid}`;
+  }
+
+  return `https://www.kaapav.com/${cid}/${category}`;
+}
+
+async getCatUrl(phone) {
+  const customer = await this.env.DB.prepare(`
+    SELECT customer_id
+    FROM customers
+    WHERE phone = ? OR phone = ?
+    LIMIT 1
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  return `https://catalogue.kaapav.com/${customer?.customer_id}`;
+}
+
+async getCategoryUrl(phone, category) {
+  const cid = await createTrackingSession(
+    this.env, phone, category
+  );
+  return `https://catalogue.kaapav.com/${cid}`;
+}
 
   // ── ENTRY POINT ────────────────────────────────────────────────
   async process({ phone, name, text, messageType, buttonId, messageId }) {
@@ -4632,6 +7829,12 @@ class AutoResponder {
       }
     } catch {}
 
+    // ── Skip non-interactive message types ────────────────────
+    if (['image', 'video', 'audio', 'voice', 'sticker', 'document',
+         'unsupported', 'reaction', 'location', 'contacts', 'system'].includes(messageType)) {
+      return;
+    }
+
     // ── 0. Order state machine — check first ─────────────────────
     const convState = await getConvState(phone, this.env);
     if (convState && convState.state.startsWith('order_')) {
@@ -4639,8 +7842,33 @@ class AutoResponder {
       return;
     }
 
-    const input = (buttonId || text || '').trim();
-    const inputLower = input.toLowerCase();
+const input = (buttonId || text || '').trim();
+const inputLower = input.toLowerCase();
+
+// If user is inside biz flow, only continue for biz list/buttons.
+// Normal typed keywords should escape back to normal autoresponder.
+if (convState && convState.state.startsWith('biz_')) {
+  if (
+    buttonId &&
+    (
+      buttonId.startsWith('biz_type_') ||
+      buttonId === 'biz_yes' ||
+      buttonId === 'biz_no'
+    )
+  ) {
+    await this.handleBizEnquiryState(phone, convState.state, convState.data, input);
+    return;
+  }
+
+  if (convState.state !== 'biz_type') {
+    await this.handleBizEnquiryState(phone, convState.state, convState.data, input);
+    return;
+  }
+
+  await clearConvState(phone, this.env);
+  // no return — let normal autoresponder handle order/exchange/hi/etc below
+}
+
 
     // ── 1. Hard button IDs (exact match, no ambiguity) ───────────
     const action = this.resolveButtonId(input);
@@ -4730,6 +7958,10 @@ if (greetRegex.test(inputLower)) {
       'btn_shop_now':      'OPEN_WEBSITE',
       'btn_deals_back':    'HELP_MENU',
 
+       ORDER_OPEN_WEBSITE: 'ORDER_OPEN_WEBSITE',
+       ORDER_OPEN_CATALOG: 'ORDER_OPEN_CATALOG',
+       ORDER_PAY_NOW: 'ORDER_PAY_NOW',
+
       // Post-FAQ buttons
       'faq_more':         null, // handled separately above
       'faq_order':        null, // handled separately above
@@ -4739,7 +7971,13 @@ if (greetRegex.test(inputLower)) {
   }
 
   // ── TEXT TRIGGER → ACTION MAP ──────────────────────────────────
-  resolveTextTrigger(inputLower) {
+resolveTextTrigger(inputLower) {
+
+// ── BIZ_ENQUIRY ─────────────────────────────────────────────
+
+const bizRegex = /\b(content\s*creator|creator|reels?\s*creator|ugc\s*creator|influencer|youtuber|instagrammer|blogger|model|collab(?:oration|orate|otation)?|paid\s+(?:collab(?:oration)?|opportunit(?:y|ies)|partnership|promotion)|brand\s+(?:collab(?:oration)?|collab|deal|partnership)|media\s+kit|press\s+kit|sponsorship|sponsor|affiliate|ambassador|marketing\s+agency|digital\s+marketing|social\s+media\s+marketing|performance\s+marketing|meta\s+ads|facebook\s+ads|instagram\s+ads|google\s+ads|seo|reseller|wholesale|bulk\s+order|distributor|vendor|supplier|business\s+(?:proposal|enquiry|inquiry)|partnership\s+proposal|work\s+with\s+(?:you|your\s+brand)|tie[\s-]?up)\b/i;
+
+if (bizRegex.test(inputLower)) return 'BIZ_ENQUIRY';
 
   // ── ORDER FLOW ─────────────────────────────────────────────
   const orderRegex = new RegExp(
@@ -4753,7 +7991,7 @@ if (greetRegex.test(inputLower)) {
 
   // ── BRACELET ───────────────────────────────────────────────
   const braceletRegex = new RegExp(
-    'bracelet|bangle|bangles|kada|kara|' +
+    'bracelet|br|bangle|bracelets|kada|kara|' +
     '\u0bb5\u0bb3\u0bc8\u0baf\u0bb2\u0bcd|' +  // Tamil: வளையல்
     '\u0c17\u0c3e\u0c1c\u0c41\u0c32\u0c41|' +  // Telugu: గాజులు
     '\u0c2c\u0cb3\u0cc6'                         // Kannada: ಬಳೆ
@@ -4762,7 +8000,7 @@ if (greetRegex.test(inputLower)) {
 
   // ── NECKLACE ───────────────────────────────────────────────
   const necklaceRegex = new RegExp(
-    'necklace|haar|chain|mala|' +
+    'necklace|necklaces|haar|chain|mala|neck|nk|' +
     '\u0bae\u0bbe\u0bb2\u0bc8|' +              // Tamil: மாலை
     '\u0c28\u0c46\u0c15\u0c4d\u0c32\u0c46\u0c38\u0c4d|' + // Telugu: నెక్లెస్
     '\u0cb9\u0cbe\u0cb0'                         // Kannada: ಹಾರ
@@ -4771,7 +8009,7 @@ if (greetRegex.test(inputLower)) {
 
   // ── EARRINGS ───────────────────────────────────────────────
   const earringRegex = new RegExp(
-    'earring|jhumka|bali|stud|tops|jhumke|' +
+    'earring|earrings|ear|jhumka|bali|stud|tops|jhumke|' +
     '\u0b95\u0bbe\u0ba4\u0ba3\u0bbf|' +        // Tamil: காதணி
     '\u0c1a\u0c46\u0c35\u0c3f\u0c2a\u0c4b\u0c17\u0c41\u0c32\u0c41|' + // Telugu: చెవిపోగులు
     '\u0c95\u0cbf\u0cb5\u0cbf\u0caf\u0ccb\u0cb2\u0cc6'  // Kannada: ಕಿವಿಯೋಲೆ
@@ -4780,7 +8018,7 @@ if (greetRegex.test(inputLower)) {
 
   // ── PENDANT SETS ───────────────────────────────────────────
   const pendantSetRegex = new RegExp(
-    'pendant set|jewellery set|full set|set chahiye|' +
+    'pendant set|earring set|pendant sets|set|earring pendant sets|pendant earrings sets|sets|earrings sets|jewellery set|full set|set chahiye|' +
     '\u0ba8\u0b95\u0bc8 \u0b9a\u0bc6\u0b9f\u0bcd|' +    // Tamil: நகை செட்
     '\u0c1c\u0c4d\u0c2f\u0c41\u0c2f\u0c46\u0c32\u0c30\u0c40 \u0c38\u0c46\u0c1f\u0c4d|' + // Telugu: జ్యుయెలరీ సెట్
     '\u0c92\u0ca1\u0cb5\u0cc6 \u0c38\u0cc6\u0c9f\u0ccd'  // Kannada: ಒಡವೆ ಸೆಟ್
@@ -4789,7 +8027,7 @@ if (greetRegex.test(inputLower)) {
 
   // ── PENDANT ────────────────────────────────────────────────
   const pendantRegex = new RegExp(
-    'pendant|locket|mangalsutra|' +
+    'pendant|pendants|locket|mangalsutra|' +
     '\u0bb2\u0bbe\u0b95\u0bcd\u0b95\u0bc6\u0b9f\u0bcd|' + // Tamil: லாக்கெட்
     '\u0c32\u0c3e\u0c15\u0c46\u0c1f\u0c4d|' +             // Telugu: లాకెట్
     '\u0cb2\u0cbe\u0c95\u0cc6\u0c9f\u0ccd'                 // Kannada: ಲಾಕೆಟ್
@@ -4798,29 +8036,39 @@ if (greetRegex.test(inputLower)) {
 
   // ── RINGS ──────────────────────────────────────────────────
   const ringRegex = new RegExp(
-    '\\bring\\b|anguthi|angoothi|' +
+    '\\bring\\b|anguthi|ring|rings|fingerrings|fingerring|finger ring|finger rings|angoothi|' +
     '\u0bae\u0bcb\u0ba4\u0bbf\u0bb0\u0bae\u0bcd|' +  // Tamil: மோதிரம்
     '\u0c09\u0c02\u0c17\u0c30\u0c02|' +               // Telugu: ఉంగరం
     '\u0c89\u0c02\u0c17\u0cb0'                         // Kannada: ಉಂಗರ
   );
   if (ringRegex.test(inputLower)) return 'CAT_RINGS';
 
+// ── WEBSITE ─────────────────────────────────────────────
+const websiteRegex = new RegExp(
+  'website|web site|site|online store|online shop|shop online|kaapav website|kaapav.com|www.kaapav.com|open website|visit website|website link|online shop|shop online|kaapav website|kaapav.com|www.kaapav.com|open website|visit website|website link'
+);
+
+if (websiteRegex.test(inputLower)) return 'OPEN_WEBSITE';
+
   // ── CATALOGUE ──────────────────────────────────────────────
   const catalogRegex = new RegExp(
-    'catalogue|catalog|collection|sab dikhao|all products|poora|' +
+    'catalogue|catalog|collection|collections|catlog|sab dikhao|all products|poora|' +
     '\u0b95\u0bbe\u0b9f\u0bcd\u0b9f\u0bc1|' +  // Tamil: காட்டு
     '\u0c1a\u0c42\u0c2a\u0c3f\u0c02\u0c1a\u0c41|' + // Telugu: చూపించు
     '\u0ca4\u0ccb\u0cb0\u0cbf\u0cb8\u0cc1'      // Kannada: ತೋರಿಸು
   );
-  if (catalogRegex.test(inputLower)) return 'OPEN_CATALOG';
+if (catalogRegex.test(inputLower)) return 'OPEN_CATALOG';
 
   return null;
 }
 
   // ── EXECUTE ACTION ─────────────────────────────────────────────
-  async executeAction(phone, action) {
+  async executeAction(phone, action, input = '') {
     const env = this.env;
 
+    const wLink = await this.getWebUrl(phone);
+    const cLink = await this.getCatUrl(phone);
+   
   const saveOutgoing = async (text, type = 'text', btns = null) => {
   const msgId = `auto_${Date.now()}_${Math.random().toString(36).slice(2)}_${phone}`;
   const isMenu = type === 'buttons' ? 1 : 0;
@@ -4842,12 +8090,19 @@ if (greetRegex.test(inputLower)) {
   `).bind(text, type, phone).run();
 };
 
-    const sendButtons = async (text, btns, footer = null) => {
+const sendButtons = async (text, btns, footer = null) => {
   await sendWhatsAppButtons(env, phone, text, btns, footer);
-  await saveOutgoing('[Menu] ' + text, 'buttons', btns); // full text
+  await saveOutgoing('[Menu] ' + text, 'buttons', btns);
 };
 
-    const sendText = async (text) => {
+const sendCtaUrl = async (text, buttonText, url, footer = null) => {
+  await sendWhatsAppCtaUrl(env, phone, text, buttonText, url, footer);
+  await saveOutgoing('[CTA] ' + text + '\n' + url, 'buttons', [
+    { id: 'cta_url', title: buttonText, url }
+  ]);
+};
+
+const sendText = async (text) => {
       await sendWhatsAppText(env, phone, text);
       await saveOutgoing(text, 'text');
     };
@@ -4986,18 +8241,13 @@ Or browse all topics below 👇`,
         );
         break;
 
-      // ════════════════════════════════════════
-      // BROWSE TOPICS — WhatsApp List (10 categories)
-      // ════════════════════════════════════════
-      case 'BROWSE_TOPICS':
-        await this.sendBrowseTopics(phone);
-        break;
+     // ════════════════════════════════════════
+// OPEN WEBSITE
+// ════════════════════════════════════════
+case 'OPEN_WEBSITE': {
+  const webUrl = await this.getWebUrl(phone);
 
-      // ════════════════════════════════════════
-      // OPEN WEBSITE
-      // ════════════════════════════════════════
-      case 'OPEN_WEBSITE':
-        await sendText(
+  await sendCtaUrl(
 `═══════════════════════════
 🌐 *Visit Our Website*
 ═══════════════════════════
@@ -5008,15 +8258,23 @@ Or browse all topics below 👇`,
 🛍️ All categories
 💳 Easy & secure checkout
 
-👉 ${env.WEBSITE_URL}
-
 ═══════════════════════════
-💎 KAAPAV Fashion Jewellery`
-        );
-        break;
+💎 KAAPAV Fashion Jewellery`,
+    '🌐 Open Website',
+    webUrl
+  );
 
-      case 'OPEN_CATALOG':
-        await sendText(
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
+
+  break;
+}
+
+case 'OPEN_CATALOG': {
+  const catUrl = await this.getCatUrl(phone);
+
+  await sendCtaUrl(
 `═══════════════════════════
 📱 *KAAPAV Catalogue*
 ═══════════════════════════
@@ -5027,18 +8285,26 @@ Or browse all topics below 👇`,
 🛍️ Discover your favourites
 💝 Designed for effortless shopping
 
-👉 ${env.CATALOG_URL}
-
 ═══════════════════════════
-💎 KAAPAV Fashion Jewellery`
-        );
-        break;
+💎 KAAPAV Fashion Jewellery`,
+    '🛍️ Open Catalogue',
+    catUrl
+  );
 
-      // ════════════════════════════════════════
-      // OPEN BESTSELLERS
-      // ════════════════════════════════════════
-      case 'OPEN_BESTSELLERS':
-        await sendText(
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
+
+  break;
+}
+
+// ════════════════════════════════════════
+// OPEN BESTSELLERS
+// ════════════════════════════════════════
+case 'OPEN_BESTSELLERS': {
+  const bestUrl = await this.getWebUrl(phone, 'bestsellers');
+
+  await sendCtaUrl(
 `═══════════════════════════
 🛍️ *Bestselling Pieces*
 ═══════════════════════════
@@ -5049,16 +8315,23 @@ Or browse all topics below 👇`,
 🔥 Trending right now
 ⚡ Limited stock available!
 
-👉 ${env.BESTSELLERS_URL}
-
 ═══════════════════════════
-💎 KAAPAV Fashion Jewellery`
-        );
-        break;
+💎 KAAPAV Fashion Jewellery`,
+    '🛍️ View Bestsellers',
+    bestUrl
+  );
 
-      
-      case 'CAT_BRACELET':
-        await sendText(
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
+
+  break;
+}
+
+case 'CAT_BRACELET': {
+  const webUrl = await this.getWebUrl(phone, 'bracelets');
+
+  await sendCtaUrl(
 `═══════════════════════════
 📿 *KAAPAV Bracelets*
 ═══════════════════════════
@@ -5069,14 +8342,22 @@ Or browse all topics below 👇`,
 💰 Starting ₹499/- only
 🚚 Free shipping above ₹498/-
 
-👉 https://www.kaapav.com/shop/category/all-jewellery-bracelets-13
+💬 Message us to order!`,
+    '📿 Open Bracelets',
+    webUrl
+  );
 
-💬 Message us to order!`
-        );
-        break;
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
 
-      case 'CAT_NECKLACE':
-        await sendText(
+  break;
+}
+
+case 'CAT_NECKLACE': {
+  const webUrl = await this.getWebUrl(phone, 'necklaces');
+
+  await sendCtaUrl(
 `═══════════════════════════
 ✨ *KAAPAV Necklaces*
 ═══════════════════════════
@@ -5087,14 +8368,22 @@ Or browse all topics below 👇`,
 💰 Starting ₹499/- only
 🚚 Free shipping above ₹498/-
 
-👉 https://www.kaapav.com/shop/category/all-jewellery-necklaces-14
+💬 Message us to order!`,
+    '✨ Open Necklaces',
+    webUrl
+  );
 
-💬 Message us to order!`
-        );
-        break;
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
 
-      case 'CAT_EARRINGS':
-        await sendText(
+  break;
+}
+
+case 'CAT_EARRINGS': {
+  const webUrl = await this.getWebUrl(phone, 'earrings');
+
+  await sendCtaUrl(
 `═══════════════════════════
 👂 *KAAPAV Earrings*
 ═══════════════════════════
@@ -5105,14 +8394,22 @@ Or browse all topics below 👇`,
 💰 Starting ₹249/- only
 🚚 Free shipping above ₹498/-
 
-👉 https://www.kaapav.com/shop/category/all-jewellery-earrings-15
+💬 Message us to order!`,
+    '👂 Open Earrings',
+    webUrl
+  );
 
-💬 Message us to order!`
-        );
-        break;
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
 
-      case 'CAT_RINGS':
-        await sendText(
+  break;
+}
+
+case 'CAT_RINGS': {
+  const webUrl = await this.getWebUrl(phone, 'rings');
+
+  await sendCtaUrl(
 `═══════════════════════════
 💍 *KAAPAV Rings*
 ═══════════════════════════
@@ -5123,14 +8420,22 @@ Or browse all topics below 👇`,
 💰 Starting ₹249/- only
 🚚 Free shipping above ₹498/-
 
-👉 https://www.kaapav.com/shop/category/all-jewellery-rings-16
+💬 Message us to order!`,
+    '💍 Open Rings',
+    webUrl
+  );
 
-💬 Message us to order!`
-        );
-        break;
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
 
-      case 'CAT_PENDANT':
-        await sendText(
+  break;
+}
+
+case 'CAT_PENDANT': {
+  const webUrl = await this.getWebUrl(phone, 'pendants');
+
+  await sendCtaUrl(
 `═══════════════════════════
 💎 *KAAPAV Pendants*
 ═══════════════════════════
@@ -5141,14 +8446,22 @@ Or browse all topics below 👇`,
 💰 Starting ₹499/- only
 🚚 Free shipping above ₹498/-
 
-👉 https://www.kaapav.com/shop/category/all-jewellery-pendants-17
+💬 Message us to order!`,
+    '💎 Open Pendants',
+    webUrl
+  );
 
-💬 Message us to order!`
-        );
-        break;
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
 
-      case 'CAT_PENDANT_SETS':
-        await sendText(
+  break;
+}
+
+case 'CAT_PENDANT_SETS': {
+  const webUrl = await this.getWebUrl(phone, 'sets');
+
+  await sendCtaUrl(
 `═══════════════════════════
 🎁 *KAAPAV Pendant Sets*
 ═══════════════════════════
@@ -5159,43 +8472,146 @@ Or browse all topics below 👇`,
 💰 Starting ₹699/- only
 🚚 Free shipping above ₹498/-
 
-👉 https://www.kaapav.com/shop/category/all-jewellery-pendant-sets-18
+💬 Message us to order!`,
+    '🎁 Open Pendant Sets',
+    webUrl
+  );
 
-💬 Message us to order!`
-        );
-        break;
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
 
-      // ════════════════════════════════════════
-      // ORDER FLOW (text trigger only)
-      // ════════════════════════════════════════
-      case 'ORDER_FLOW':
-        await sendText(
+  break;
+}
+
+case 'BIZ_ENQUIRY': {
+  const customerRow = await env.DB.prepare(
+    `SELECT name FROM customers WHERE phone = ? LIMIT 1`
+  ).bind(phone).first();
+  await clearConvState(phone, env);
+
+await setConvState(
+  phone,
+  'biz_type',
+  {
+    name: customerRow?.name || '',
+    initial_message: input || ''
+  },
+  env
+);
+  await sendWhatsAppList(
+    env, phone,
 `═══════════════════════════
-🛒 *Let's Place Your Order!*
+👑 *KAAPAV Business Enquiry*
 ═══════════════════════════
 
-💎 Simple Luxury. Easy Ordering.
+Welcome! Let's get your details.
 
-3 easy ways to order:
+*Step 1 of 5*
+What best describes you? 👇`,
+    '📋 Select Your Role',
+    [{
+      title: 'Your Role',
+      rows: [
+        { id: 'biz_type_influencer',  title: '📸 Influencer / Creator', description: 'Instagram, YouTube, Reels' },
+        { id: 'biz_type_agency',      title: '📣 Marketing Agency',     description: 'Social media, SEO, Ads' },
+        { id: 'biz_type_webdesigner', title: '💻 Web Designer / Dev',   description: 'Website, app, tech' },
+        { id: 'biz_type_reseller',    title: '🛍️ Reseller / Wholesale', description: 'Bulk orders, distribution' },
+        { id: 'biz_type_collab',      title: '🤝 Collaboration',        description: 'Brand deal, sponsorship' },
+        { id: 'biz_type_other',       title: '💼 Other',                description: 'Something else' },
+      ]
+    }],
+    '💎 KAAPAV Fashion Jewellery'
+  );
+  break;
+}
+ case 'ORDER_FLOW': {
+  const webUrl = await this.getWebUrl(phone);
+  const catUrl = await this.getCatUrl(phone);
+  const paymentUrl = env.PAYMENT_URL || 'https://razorpay.me/@kaapav';
 
-1️⃣ *Website* — browse & checkout:
-   👉 ${env.WEBSITE_URL}
+  await sendCtaUrl(
+`🛒 *How to Order*
 
-2️⃣ *Catalogue Website* — browse & order:
-   👉 ${env.CATALOG_URL}
+🌐 *Website*
+Browse → add to cart → checkout
 
-💍 Earrings & Rings → ₹249/-
-📿 Necklace & Bracelet → ₹499/-
-✨ Sets → ₹699/-
-🚚 FREE shipping above ₹498/-
+Tap below to open Website 👇`,
+    '🌐 Open Website',
+    webUrl
+  );
 
-═══════════════════════════
-💎 KAAPAV Fashion Jewellery`
-        );
-        break;
-    }
-  }
+  await new Promise(r => setTimeout(r, 700));
 
+  await sendCtaUrl(
+`📱 *WhatsApp Catalogue*
+
+*Browse inside WhatsApp Catalogue*
+Add products → checkout easily
+
+Tap below to open Catalogue 👇`,
+    '📱 Open Catalogue',
+    catUrl
+  );
+
+  await new Promise(r => setTimeout(r, 700));
+
+  await sendCtaUrl(
+`💳 *Payment Link*
+
+*Pay securely through Razorpay*
+
+✅ UPI
+✅ Card
+✅ Net Banking
+
+Tap below to pay 👇`,
+    '💳 Pay Now',
+    paymentUrl
+  );
+
+  await new Promise(r => setTimeout(r, 800));
+
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
+
+  break;
+}
+
+case 'ORDER_OPEN_WEBSITE': {
+  await sendCtaUrl(
+`🌐 *KAAPAV Website*
+
+Website → browse → add to cart → checkout`,
+    '🌐 Open Website',
+    await this.getWebUrl(phone)
+  );
+
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
+
+  break;
+}
+
+case 'ORDER_OPEN_CATALOG': {
+  await sendCtaUrl(
+`📱 *WhatsApp Catalogue*
+
+Catalogue → browse → add to cart → checkout`,
+    '📱 Open Catalogue',
+    await this.getCatUrl(phone)
+  );
+
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
+
+  break;
+}
+}
+}
   // ── BROWSE TOPICS — WhatsApp List Message ─────────────────────
   // Shows all 10 FAQ categories as a scrollable list
   async sendBrowseTopics(phone) {
@@ -5444,7 +8860,7 @@ Confirm order? 👇`,
       `Address: ${data.address}\n` +
       `PIN: ${data.pincode}\n\n` +
       `🛍️ *Items:*\n${itemLines}\n\n` +
-      `📦 Subtotal: \u20B9${total}\n` +
+      `📦 Subtotal: \u20B9${subtotal}\n` +
       `🚚 Shipping: ${shipping === 0 ? 'FREE' : '\u20B9' + shipping}\n` +
       `💰 *Total: \u20B9${grand}*\n\n` +
       `⏳ Payment link sent. Awaiting payment...`
@@ -5469,7 +8885,7 @@ Confirm order? 👇`,
         `💎 *Order Placed Successfully!*\n\n` +
         `Order ID: *${orderId}*\n\n` +
         `🛍️ *Items:*\n${itemLines}\n\n` +
-        `📦 Subtotal: \u20B9${total}\n` +
+        `📦 Subtotal: \u20B9${subtotal}\n` +
         `🚚 Shipping: ${shipping === 0 ? 'FREE 🎉' : '\u20B9' + shipping}\n` +
         `💰 *Total: \u20B9${grand}*\n\n` +
         `💳 *Complete payment here (valid 24 hrs):*\n${payLink}\n\n` +
@@ -5513,6 +8929,12 @@ Confirm order? 👇`,
   const shortcut = faqIndex[idx];
   if (!shortcut) { await this.sendBrowseTopics(phone); return; }
 
+// ✅ Make "How to Order" FAQ open the same Order Now button menu
+if (shortcut === 'faq_how_order') {
+  await this.executeAction(phone, 'ORDER_FLOW', 'faq_how_order');
+  return;
+}
+
   // Find in hardcoded FAQ_DATA
   let faq = null;
   for (const group of Object.values(this.FAQ_DATA)) {
@@ -5530,103 +8952,359 @@ Confirm order? 👇`,
 
   // ── SEND FAQ ANSWER + post-answer buttons ─────────────────────
   // After answer: [❓ More] [🛒 Order] [🏠 Home]
-  async sendFaqAnswer(phone, faq) {
+async sendFaqAnswer(phone, faq) {
   const env = this.env;
 
-  await sendWhatsAppText(env, phone, faq.message);
-  await new Promise(r => setTimeout(r, 800));
-  await sendWhatsAppButtons(
-    env, phone,
-    'Was that helpful? What would you like to do next?',
-    [
-      { id: 'faq_more',  title: '❓ More Questions' },
-      { id: 'faq_order', title: '🛒 Order Now' },
-      { id: 'faq_home',  title: '🏠 Home' },
-    ],
+  // ✅ Make "How to Order" FAQ behave exactly like Order Now
+  if (
+    faq?.shortcut === 'faq_how_order' ||
+    /how to.*order|place.*order/i.test(faq?.title || '')
+  ) {
+    await this.executeAction(phone, 'ORDER_FLOW', 'faq_how_order');
+    return;
+  }
+
+  const webUrl = await this.getWebUrl(phone);
+  const catUrl = await this.getCatUrl(phone);
+
+  // ✅ FAQ price answer with Website/Catalogue buttons + normal next menu
+if (faq?.shortcut === 'faq_price') {
+  const priceMessage =
+`💰 *Our Prices*
+
+💍 *Earrings & Rings* — ₹249/-
+📿 *Necklace & Bracelet* — ₹499/-
+✨ *Pendant Sets* — ₹699/-
+
+🔥 Already *50% OFF* — MRP crossed out!
+🚚 FREE shipping above ₹498/-
+
+🌐 *Website*
+Tap below to browse on Website 👇`;
+
+  const catalogueMessage =
+`📱 *WhatsApp Catalogue*
+Tap below to browse on Catalogue 👇`;
+
+  const nextButtons = [
+    { id: 'faq_more',  title: '❓ More Questions' },
+    { id: 'faq_order', title: '🛒 Order Now' },
+    { id: 'faq_home',  title: '🏠 Home' },
+  ];
+
+  await sendWhatsAppCtaUrl(
+    env,
+    phone,
+    priceMessage,
+    '🌐 Open Website',
+    webUrl,
     '💎 KAAPAV Fashion Jewellery'
   );
 
-  const msgId1 = `auto_${Date.now()}_faq_${phone}`;
-  await env.DB.prepare(
-    `INSERT OR IGNORE INTO messages
-      (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at)
-     VALUES (?, ?, ?, ?, 'outgoing', 'sent', 1, datetime('now'), datetime('now'))`
-  ).bind(msgId1, phone, faq.message, 'text').run();
+  await new Promise(r => setTimeout(r, 700));
 
-  const msgId2 = `auto_${Date.now() + 1}_faqbtn_${phone}`;
+  await sendWhatsAppCtaUrl(
+    env,
+    phone,
+    catalogueMessage,
+    '📱 Open Catalogue',
+    catUrl,
+    '💎 KAAPAV Fashion Jewellery'
+  );
+
+  await new Promise(r => setTimeout(r, 800));
+
+  await sendWhatsAppButtons(
+    env,
+    phone,
+    'Was that helpful? What would you like to do next?',
+    nextButtons,
+  );
+
+  const now = Date.now();
+
   await env.DB.prepare(
     `INSERT OR IGNORE INTO messages
       (message_id, phone, text, message_type, direction, status,
        is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
      VALUES (?, ?, ?, 'buttons', 'outgoing', 'sent', 1, 1, ?, ?, datetime('now'), datetime('now'))`
   ).bind(
-    msgId2, phone,
-    'Was that helpful? What would you like to do next?',
-    '❓ More Questions|🛒 Order Now|🏠 Home',
+    `auto_${now}_faq_price_website_cta_${phone}`,
+    phone,
+    `[CTA] ${priceMessage}\n${webUrl}`,
+    '🌐 Open Website',
     JSON.stringify([
-      { id: 'faq_more',  title: '❓ More Questions' },
-      { id: 'faq_order', title: '🛒 Order Now' },
-      { id: 'faq_home',  title: '🏠 Home' },
+      { id: 'cta_url', title: '🌐 Open Website', url: webUrl }
     ])
+  ).run();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status,
+       is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
+     VALUES (?, ?, ?, 'buttons', 'outgoing', 'sent', 1, 1, ?, ?, datetime('now'), datetime('now'))`
+  ).bind(
+    `auto_${now + 1}_faq_price_catalogue_cta_${phone}`,
+    phone,
+    `[CTA] ${catalogueMessage}\n${catUrl}`,
+    '📱 Open Catalogue',
+    JSON.stringify([
+      { id: 'cta_url', title: '📱 Open Catalogue', url: catUrl }
+    ])
+  ).run();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status,
+       is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
+     VALUES (?, ?, ?, 'buttons', 'outgoing', 'sent', 1, 1, ?, ?, datetime('now'), datetime('now'))`
+  ).bind(
+    `auto_${now + 2}_faq_price_next_${phone}`,
+    phone,
+    'Was that helpful? What would you like to do next?',
+    nextButtons.map(b => b.title).join('|'),
+    JSON.stringify(nextButtons)
   ).run();
 
   await env.DB.prepare(
     `UPDATE chats SET last_message = ?, last_message_type = 'buttons',
       last_direction = 'outgoing', last_timestamp = datetime('now'), updated_at = datetime('now')
      WHERE phone = ?`
-  ).bind(faq.title, phone).run();
+  ).bind(
+    'Was that helpful? What would you like to do next?',
+    phone
+  ).run();
+
+  return;
 }
 
-  // ── KEYWORD SEARCH across all FAQs ───────────────────────────
+// ✅ FAQ discount answer with direct Website/Catalogue CTA + normal next menu
+if (faq?.shortcut === 'faq_discount') {
+  const discountMessage =
+`🎉 *Offers*
+
+✅ Already *50% OFF* on all products!
+✅ No extra coupon needed
+
+🚚 FREE delivery on orders above ₹498/-
+
+⚡ Prices are *fixed* — already lowest possible.
+We don't negotiate as every piece is handcrafted.
+
+🌐 *Website*
+Tap below to browse on Website 👇`;
+
+  const catalogueMessage =
+`📱 *WhatsApp Catalogue*
+Tap below to browse on Catalogue 👇`;
+
+  const nextButtons = [
+    { id: 'faq_more',  title: '❓ More Questions' },
+    { id: 'faq_order', title: '🛒 Order Now' },
+    { id: 'faq_home',  title: '🏠 Home' },
+  ];
+
+  await sendWhatsAppCtaUrl(
+    env,
+    phone,
+    discountMessage,
+    '🌐 Open Website',
+    webUrl,
+    '💎 KAAPAV Fashion Jewellery'
+  );
+
+  await new Promise(r => setTimeout(r, 700));
+
+  await sendWhatsAppCtaUrl(
+    env,
+    phone,
+    catalogueMessage,
+    '📱 Open Catalogue',
+    catUrl,
+    '💎 KAAPAV Fashion Jewellery'
+  );
+
+  await new Promise(r => setTimeout(r, 800));
+
+  await sendWhatsAppButtons(
+    env,
+    phone,
+    'Was that helpful? What would you like to do next?',
+    nextButtons,
+    '💎 KAAPAV Fashion Jewellery'
+  );
+
+  const now = Date.now();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status,
+       is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
+     VALUES (?, ?, ?, 'buttons', 'outgoing', 'sent', 1, 1, ?, ?, datetime('now'), datetime('now'))`
+  ).bind(
+    `auto_${now}_faq_discount_website_cta_${phone}`,
+    phone,
+    `[CTA] ${discountMessage}\n${webUrl}`,
+    '🌐 Open Website',
+    JSON.stringify([
+      { id: 'cta_url', title: '🌐 Open Website', url: webUrl }
+    ])
+  ).run();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status,
+       is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
+     VALUES (?, ?, ?, 'buttons', 'outgoing', 'sent', 1, 1, ?, ?, datetime('now'), datetime('now'))`
+  ).bind(
+    `auto_${now + 1}_faq_discount_catalogue_cta_${phone}`,
+    phone,
+    `[CTA] ${catalogueMessage}\n${catUrl}`,
+    '📱 Open Catalogue',
+    JSON.stringify([
+      { id: 'cta_url', title: '📱 Open Catalogue', url: catUrl }
+    ])
+  ).run();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status,
+       is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
+     VALUES (?, ?, ?, 'buttons', 'outgoing', 'sent', 1, 1, ?, ?, datetime('now'), datetime('now'))`
+  ).bind(
+    `auto_${now + 2}_faq_discount_next_${phone}`,
+    phone,
+    'Was that helpful? What would you like to do next?',
+    nextButtons.map(b => b.title).join('|'),
+    JSON.stringify(nextButtons)
+  ).run();
+
+  await env.DB.prepare(
+    `UPDATE chats SET last_message = ?, last_message_type = 'buttons',
+      last_direction = 'outgoing', last_timestamp = datetime('now'), updated_at = datetime('now')
+     WHERE phone = ?`
+  ).bind(
+    'Was that helpful? What would you like to do next?',
+    phone
+  ).run();
+
+  return;
+}
+
+  let message = String(faq.message || '');
+
+  if (env.WEBSITE_URL) {
+    message = message.replaceAll(env.WEBSITE_URL, webUrl);
+  }
+
+  if (env.CATALOG_URL) {
+    message = message.replaceAll(env.CATALOG_URL, catUrl);
+  }
+
+  await sendWhatsAppText(env, phone, message);
+
+  await new Promise(r => setTimeout(r, 800));
+
+  const nextButtons = [
+    { id: 'faq_more',  title: '❓ More Questions' },
+    { id: 'faq_order', title: '🛒 Order Now' },
+    { id: 'faq_home',  title: '🏠 Home' },
+  ];
+
+  await sendWhatsAppButtons(
+    env,
+    phone,
+    'Was that helpful? What would you like to do next?',
+    nextButtons,
+    '💎 KAAPAV Fashion Jewellery'
+  );
+
+  const now = Date.now();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at)
+     VALUES (?, ?, ?, 'text', 'outgoing', 'sent', 1, datetime('now'), datetime('now'))`
+  ).bind(
+    `auto_${now}_faq_${phone}`,
+    phone,
+    message
+  ).run();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status,
+       is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
+     VALUES (?, ?, ?, 'buttons', 'outgoing', 'sent', 1, 1, ?, ?, datetime('now'), datetime('now'))`
+  ).bind(
+    `auto_${now + 1}_faqbtn_${phone}`,
+    phone,
+    'Was that helpful? What would you like to do next?',
+    nextButtons.map(b => b.title).join('|'),
+    JSON.stringify(nextButtons)
+  ).run();
+
+  await env.DB.prepare(
+    `UPDATE chats SET last_message = ?, last_message_type = 'buttons',
+      last_direction = 'outgoing', last_timestamp = datetime('now'), updated_at = datetime('now')
+     WHERE phone = ?`
+  ).bind(
+    'Was that helpful? What would you like to do next?',
+    phone
+  ).run();
+}
+
+// ── KEYWORD SEARCH across all FAQs ───────────────────────────
   // Scans keywords JSON array in quick_replies for any word match
   async searchFaqByKeyword(inputLower) {
   if (inputLower.length < 3) return null;
-
   // Simple keyword matching against FAQ titles and shortcuts
   const keywords = {
-    'tarnish|black|green|colour|color':        'faq_tarnish',
-    'last|long|durable|durability':            'faq_last',
-    'daily|everyday|regular':                  'faq_daily',
-    'ring|size|fit':                           'faq_ring_size',
-    'bracelet':                                'faq_bracelet_size',
-    'necklace|length|chain':                   'faq_necklace_length',
-    'earring|heavy|weight|ear':                'faq_earring_weight',
-    'price|cost|rate|₹|rupee':                 'faq_price',
-    'discount|offer|sale|off':                 'faq_discount',
-    'shipping|delivery charge|free ship':      'faq_shipping_cost',
-    'cod|cash on delivery|cash':               'faq_cod',
-    'how to order|place order|ordering':       'faq_how_order',
-    'return|refund|wapas':                     'faq_return',
-    'exchange|replace':                        'faq_exchange',
-    'cancel':                                  'faq_cancel',
-    'track|tracking|status|kahan':             'faq_track',
-    'deliver|delivery time|days':              'faq_delivery_time',
-    'care|clean|maintain':                     'faq_care',
-    'damage|broken|defect':                    'faq_damaged',
-    'about|kaapav|brand':                      'faq_about',
-    'contact|reach|email|phone':               'faq_contact',
-    'instagram|facebook|social':               'faq_social',
-    'payment|pay|safe|secure|upi|card':        'faq_payment_safe',
-    'safe|strong|strong|sturdy':               'faq_strong',
-    'plating|fade':                            'faq_plating',
-    'perfume|spray|chemical':                  'faq_perfume',
-    'sleep|night|wear at night':               'faq_sleep',
-    'piercing|pierced':                        'faq_piercing',
-    'delayed|late|not received':               'faq_delayed',
-    'area|pincode|deliver to':                 'faq_delivery_area',
-    'packaging|pack|box':                      'faq_packaging',
-    'refund time|when refund':                 'faq_refund_time',
-    'confirm|confirmation':                    'faq_confirmation',
-    'combo|set|bundle':                        'faq_combo',
-    'minimum|min order':                       'faq_minimum',
-    'multiple|many|bulk':                      'faq_multiple',
-    'gift pack|gift box|gift wrap':            'faq_gift_pack',
-    'gift order|order.*gift':                  'faq_gift_order',
+    'tarnish|tanish|tarnich|tarish|tarnesh|black|blacken|green|kaala|kala|colour|color|discolor|oxidiz|கருப்பு|పచ్చగా|ಕಪ್ಪು|കറുക്കും|काला|हरा': 'faq_tarnish',
+    'anti.?tarnish|antitarnish|tarnish.?free|non.?tarnish|anti.?rust|rust.?free|won.?t.?tarnish|no.?tarnish|protective coat': 'faq_antitarnish',
+    'real gold|original gold|asli sona|asli gold|pure gold|24k|22k|18k|artificial|imitation|nakli|naqli|fashion jewel|असली|నిజమైన|ಅಸಲಿ|യഥാർത്ഥ|real hai|original hai': 'faq_realgold',
+    'last|long|durable|durability|kitne din|kitna time|how many days|tikai|tikau|teekau|टिकाऊ|tikega|எத்தனை நாள்|ఎంత కాలం|ಎಷ್ಟು ದಿನ|എത്ര ദിവസം|कितने दिन': 'faq_last',
+    'daily|everyday|regular|roz|rozana|har din|தினமும்|ప్రతిరోజూ|ದಿನನಿತ್ಯ|ദിവസവും': 'faq_daily',
+    'ring|size|fit|anguthi|மோதிர|ఉంగరం|ಉಂಗುರ|മോതിരം': 'faq_ring_size',
+    'bracelet|bangle|kada|wrist|வளையல்|గాజులు|ಬಳೆ|വള': 'faq_bracelet_size',
+    'necklace|length|chain|haar|மாலை|నెక్లెస్|ಹಾರ|മാല': 'faq_necklace_length',
+    'earring|heavy|weight|ear|jhumka|bali|காதணி|చెవిపోగు|ಕಿವಿಯೋಲೆ|കമ്മൽ': 'faq_earring_weight',
+    'price|cost|rate|pp|price?|kitna|how much|kitne ka|paisa|amount|sasta|mehnga|affordable|₹|rupee|விலை|ధర|ಬೆಲೆ|വില|दाम|कीमत': 'faq_price',
+    'discount|discounts|offer|offers|sale|off|coupon|promo|chut|छूट|தள்ளுபடி|డిస్కౌంట్|ರಿಯಾಯಿತಿ|കിഴിവ്': 'faq_discount',
+    'shipping|delivery charge|free ship|free delivery|डिलीवरी चार्ज|ஷிப்பிங்|డెలివరీ చార్జ్|ಡೆಲಿವರಿ ಶುಲ್ಕ|ഡെലിവറി ചാർജ്': 'faq_shipping_cost',
+    'cod|cash on delivery|cash|pay on delivery|कैश ऑन|கேஷ் ஆன்|క్యాష్ ఆన్|ಕ್ಯಾಶ್ ಆನ್|ക്യാഷ് ഓൺ': 'faq_cod',
+    'how to order|place order|order|Order|ordering|how order|orders|do order|make order|take order|order karna|order kaise|kaise kharide|எப்படி ஆர்டர்|ఆర్డర్ ఎలా|ಆರ್ಡರ್ ಹೇಗೆ|ഓർഡർ എങ്ങനെ': 'faq_how_order',
+    'return|refund|wapas|money back|வாபஸ்|రిటర్న్|ರಿಟರ್ನ್|റിട്ടേൺ|वापसी': 'faq_return',
+    'exchange|replace|swap|badal|மாற்று|మార్పిడి|ವಿನಿಮಯ|മാറ്റം|बदलना': 'faq_exchange',
+    'cancel|cancellation|रद्द|ரத்து|రద్దు|ರದ್ದು|റദ്ദ്': 'faq_cancel',
+    'track|tracking|status|shiprocket|shiprocket tracking|kahan|where is my order|order kahan|ட்ராக்|ట్రాకింగ్|ಟ್ರ್ಯಾಕಿಂಗ್|ട്രാക്കിംഗ്|ट्रैकिंग': 'faq_track',
+    'deliver|delivery time|days|kab milega|kab aayega|kitne din mein|எத்தனை நாளில்|ఎన్ని రోజుల్లో|ಎಷ್ಟು ದಿನದಲ್ಲಿ|എത്ര ദിവസത്തിൽ': 'faq_delivery_time',
+    'care|clean|maintain|kaise saaf|saaf karo|chamak|dekhbhal|பராமரிப்பு|సంరక్షణ|ಆರೈಕೆ|സൂക്ഷിക്കൽ|देखभाल': 'faq_care',
+    'damage|broken|defect|crack|टूटा|உடைந்த|పగిలింది|ಮುರಿದಿದೆ|തകർന്നത്': 'faq_damaged',
+    'about|kaapav|brand|காபவ்|కాపావ్|ಕಾಪವ್|കാപാവ്': 'faq_about',
+    'contact|reach|email|phone|support|customer care|தொடர்பு|సంప్రదించండి|ಸಂಪರ್ಕ|ബന്ധപ്പെടുക|संपर्क': 'faq_contact',
+    'instagram|facebook|social|insta|fb|சமூக ஊடகம்|సోషల్|ಸಾಮಾಜಿಕ|സോഷ്യൽ': 'faq_social',
+    'payment|pay|safe|secure|upi|card|gpay|phonepe|paytm|சுரக்ஷிதம்|సురక్షిత|ಸುರಕ್ಷಿತ|സുരക്ഷിത|सुरक्षित': 'faq_payment_safe',
+    'strong|sturdy|break|bend|मजबूत|உறுதியான|బలమైన|ಗಟ್ಟಿ|ബലമുള്ള': 'faq_strong',
+    'plating|plate|fade|fading|peel|rang utarna|பூச்சு|రంగు వెళ్ళి|ಲೇಪ|മൂലാം': 'faq_plating',
+    'perfume|spray|chemical|scent|deo|इत्र|பர்஫்யூம்|పెర్ఫ్యూమ్|ಪರ್ಫ್ಯೂಮ್|പെർഫ്യൂം': 'faq_perfume',
+    'sleep|night|wear at night|sote time|सोते वक्त|தூக்கத்தில்|నిద్రలో|ನಿದ್ದೆಯಲ್ಲಿ|ഉറക്കത്തിൽ': 'faq_sleep',
+    'piercing|pierced|ear hole|kaan chidwa|துளை|కన్నం|ಕಿವಿ ಚುಚ್ಚಿ|കാതു കുത്ത്': 'faq_piercing',
+    'delayed|late|not received|order late|தாமதம்|ఆలస్యం|ತಡವಾಗಿದೆ|വൈകി|देरी': 'faq_delayed',
+    'area|pincode|deliver to|my city|my location|யார் பகுதி|నా ఏరియా|ನನ್ನ ಪ್ರದೇಶ|എന്റെ ഏരിയ|मेरे शहर': 'faq_delivery_area',
+    'packaging|pack|box|wrapper|பேக்கேஜிங்|ప్యాకేజింగ్|ಪ್ಯಾಕೇಜಿಂಗ್|പാക്കേജിംഗ്|पैकेजिंग': 'faq_packaging',
+    'refund time|when refund|refund kab|money return|பணம் திரும்ப|డబ్బు తిరిగి|ಹಣ ವಾಪಸ್|പണം തിരിച്ച്|पैसे वापस': 'faq_refund_time',
+    'confirm|confirmation|order confirm|కన్ఫర్మేషన్|உறுதிப்படுத்தல்|ಆರ್ಡರ್ ದೃಢ|ഓർഡർ സ്ഥിരീകരണം|कन्फर्मेशन': 'faq_confirmation',
+    'combo|set|bundle|full set|matching|pair|जोड़ी|தொகுப்பு|కాంబో|ಕಾಂಬೊ|കോംബോ': 'faq_combo',
+    'minimum|min order|ek piece|single piece|1 piece|ஒரு பீஸ்|ఒక్క పీస్|ಒಂದು ಪೀಸ್|ഒരു പീസ്': 'faq_minimum',
+    'multiple|many|bulk|bulk order|bahut saare|பல|అనేక|ಅನೇಕ|പല': 'faq_multiple',
+    'gift pack|gift box|gift wrap|gift packaging|gift ke liye|பரிசு பேக்|గిఫ్ట్ ప్యాక్|ಗಿಫ್ಟ್ ಪ್ಯಾಕ್|ഗിഫ്റ്റ് പ്യാക്ക്': 'faq_gift_pack',
+    'gift order|order.*gift|gift ke liye order|பரிசுக்கு|గిఫ్ట్ కోసం|ಗಿಫ್ಟ್ ಗಾಗಿ|ഗിഫ്റ്റിനായി': 'faq_gift_order',
   };
 
   let matchedShortcut = null;
   for (const [pattern, shortcut] of Object.entries(keywords)) {
-    if (new RegExp(pattern).test(inputLower)) {
+    if (new RegExp(pattern, 'i').test(inputLower)) {
       matchedShortcut = shortcut;
       break;
     }
@@ -5640,6 +9318,278 @@ Confirm order? 👇`,
   }
   return null;
 }
+
+async handleBizEnquiryState(phone, state, data, input) {
+  const env = this.env;
+  const lower = input.toLowerCase();
+
+  // Cancel anytime
+  if (/cancel|stop|quit|nahi|nope/.test(lower)) {
+    await clearConvState(phone, env);
+    await sendWhatsAppText(env, phone,
+      '❌ Enquiry cancelled. No worries!\n\nType *hi* anytime to start again. 💎'
+    );
+    return;
+  }
+
+  switch (state) {
+
+    // ── STEP 1: Type selection (from list) ──
+    case 'biz_type': {
+      const typeMap = {
+        'biz_type_influencer':  { type: 'influencer',   profession: 'Social Media Influencer' },
+        'biz_type_agency':      { type: 'agency',       profession: 'Marketing Agency' },
+        'biz_type_webdesigner': { type: 'web_designer', profession: 'Web Designer / Developer' },
+        'biz_type_reseller':    { type: 'reseller',     profession: 'Reseller / Wholesaler' },
+        'biz_type_collab':      { type: 'collaboration',profession: 'Brand Collaboration' },
+        'biz_type_other':       { type: 'other',        profession: '' },
+      };
+
+const selected = typeMap[input];
+if (!selected) {
+  // Re-send the list — don't send dead-end text
+  await sendWhatsAppList(
+    env, phone,
+`═══════════════════════════
+👑 *KAAPAV Business Enquiry*
+═══════════════════════════
+
+Welcome! Let's get your details.
+
+*Step 1 of 5*
+What best describes you? 👇`,
+    '📋 Select Your Role',
+    [{
+      title: 'Your Role',
+      rows: [
+        { id: 'biz_type_influencer',  title: '📸 Influencer / Creator', description: 'Instagram, YouTube, Reels' },
+        { id: 'biz_type_agency',      title: '📣 Marketing Agency',     description: 'Social media, SEO, Ads' },
+        { id: 'biz_type_webdesigner', title: '💻 Web Designer / Dev',   description: 'Website, app, tech' },
+        { id: 'biz_type_reseller',    title: '🛍️ Reseller / Wholesale', description: 'Bulk orders, distribution' },
+        { id: 'biz_type_collab',      title: '🤝 Collaboration',        description: 'Brand deal, sponsorship' },
+        { id: 'biz_type_other',       title: '💼 Other',                description: 'Something else' },
+      ]
+    }],
+    '💎 KAAPAV Fashion Jewellery'
+  );
+  return;
+}
+
+      data.enquiry_type = selected.type;
+      data.profession   = selected.profession;
+
+      await setConvState(phone, 'biz_profession', data, env);
+      await sendWhatsAppText(env, phone,
+
+        `✅ Got it!\n\n` +
+        `*Step 2 of 5*\n\n` +
+        `What is your exact profession or job title?\n\n` +
+        `_Examples: Fashion Influencer, Digital Marketer, Freelance Web Developer, Bulk Reseller..._`
+      );
+      break;
+    }
+
+    // ── STEP 2: Profession (free text) ──
+    case 'biz_profession': {
+      if (input.length < 3) {
+        await sendWhatsAppText(env, phone, '😊 Please describe your profession briefly:');
+        return;
+      }
+
+      data.profession = input;
+
+      await setConvState(phone, 'biz_brand', data, env);
+      await sendWhatsAppText(env, phone,
+        `*Step 3 of 5*\n\n` +
+        `What is your *Brand / Company / Channel name*?\n\n` +
+        `_Type "skip" if you don't have one_`
+      );
+      break;
+    }
+
+    // ── STEP 3: Brand name ──
+    case 'biz_brand': {
+      data.brand_name = /^skip$/i.test(input.trim()) ? '' : input.trim().slice(0, 60);
+
+      await setConvState(phone, 'biz_insta', data, env);
+      await sendWhatsAppText(env, phone,
+        `*Step 4 of 5*\n\n` +
+        `Share your *Instagram / YouTube / Website link or handle*:\n\n` +
+        `_Examples:_\n` +
+        `• @myhandle\n` +
+        `• instagram.com/myhandle\n` +
+        `• youtube.com/@mychannel\n` +
+        `• mywebsite.com\n\n` +
+        `_Type "skip" if not applicable_`
+      );
+      break;
+    }
+
+    // ── STEP 4: Social / Website link ──
+    case 'biz_insta': {
+      let instaHandle = '';
+      let instaUrl    = '';
+
+      if (!/^skip$/i.test(input.trim())) {
+        const atMatch       = input.match(/@([A-Za-z0-9_.]+)/);
+        const igUrlMatch    = input.match(/instagram\.com\/([A-Za-z0-9_.]+)/i);
+        const ytUrlMatch    = input.match(/youtube\.com\/@?([A-Za-z0-9_.]+)/i);
+        const domainMatch   = input.match(/^(https?:\/\/)?([A-Za-z0-9-]+\.[A-Za-z]{2,}[^\s]*)/i);
+
+        if (igUrlMatch) {
+          instaHandle = '@' + igUrlMatch[1];
+          instaUrl    = `https://instagram.com/${igUrlMatch[1]}`;
+        } else if (ytUrlMatch) {
+          instaHandle = ytUrlMatch[1];
+          instaUrl    = `https://youtube.com/@${ytUrlMatch[1]}`;
+        } else if (atMatch) {
+          instaHandle = '@' + atMatch[1];
+          instaUrl    = `https://instagram.com/${atMatch[1]}`;
+        } else if (domainMatch) {
+          instaHandle = domainMatch[2];
+          instaUrl    = input.startsWith('http') ? input : `https://${input}`;
+        } else {
+          // Raw text handle
+          instaHandle = input.trim();
+          instaUrl    = `https://instagram.com/${input.trim().replace('@', '')}`;
+        }
+      }
+
+      data.insta_handle = instaHandle;
+      data.insta_url    = instaUrl;
+
+      await setConvState(phone, 'biz_message', data, env);
+      await sendWhatsAppText(env, phone,
+        `*Step 5 of 5*\n\n` +
+        `Briefly describe *what you're looking for* or *how you'd like to collaborate* with KAAPAV:\n\n` +
+        `_Keep it short — 1 to 3 sentences is perfect_ 😊`
+      );
+      break;
+    }
+
+    // ── STEP 5: Message / Proposal ──
+    case 'biz_message': {
+      if (input.length < 10) {
+        await sendWhatsAppText(env, phone,
+          '😊 Please share a brief description of what you\'re looking for:'
+        );
+        return;
+      }
+
+      data.raw_message = input;
+
+      await setConvState(phone, 'biz_confirm', data, env);
+
+      await sendWhatsAppButtons(env, phone,
+`═══════════════════════════
+📋 *Review Your Enquiry*
+═══════════════════════════
+
+*Type:* ${data.enquiry_type}
+*Profession:* ${data.profession || '-'}
+*Brand / Channel:* ${data.brand_name || '-'}
+*Social / Website:* ${data.insta_handle || '-'}
+${data.insta_url ? `🔗 ${data.insta_url}` : ''}
+
+*Your message:*
+"${data.raw_message.slice(0, 200)}"
+
+═══════════════════════════
+Confirm & submit? 👇`,
+        [
+          { id: 'biz_yes', title: '✅ Submit Enquiry' },
+          { id: 'biz_no',  title: '❌ Cancel' },
+        ]
+      );
+      break;
+    }
+
+    // ── CONFIRM ──
+    case 'biz_confirm': {
+      if (input === 'biz_yes' || /yes|confirm|submit|haan/.test(lower)) {
+
+        const createdAt = new Date().toLocaleString('sv-SE', {
+          timeZone: 'Asia/Kolkata'
+        }).replace(',', '');
+
+        // Save to D1
+        try {
+          await env.DB.prepare(`
+            INSERT INTO business_enquiries
+              (phone, name, enquiry_type, profession, brand_name,
+               insta_handle, insta_url, raw_message, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', datetime('now'), datetime('now'))
+          `).bind(
+            phone,
+            data.name || '',
+            data.enquiry_type || 'other',
+            data.profession   || '',
+            data.brand_name   || '',
+            data.insta_handle || '',
+            data.insta_url    || '',
+            data.raw_message  || ''
+          ).run();
+        } catch (e) {
+          console.error('BIZ D1 save error:', e);
+        }
+
+        // Sync to Sheets
+        await appendBusinessEnquiryToSheets(env, {
+          created_at:   createdAt,
+          phone,
+          name:         data.name || '',
+          enquiry_type: data.enquiry_type || 'other',
+          profession:   data.profession   || '',
+          brand_name:   data.brand_name   || '',
+          insta_handle: data.insta_handle || '',
+          insta_url:    data.insta_url    || '',
+          raw_message:  data.raw_message  || '',
+          status:       'new',
+          notes:        '',
+        });
+
+        // Owner WA
+        await sendWhatsAppText(env, env.OWNER_PHONE,
+          `📋 *New Business Enquiry*\n\n` +
+          `Type: *${data.enquiry_type}*\n` +
+          `Profession: ${data.profession || '-'}\n` +
+          `From: ${data.name || 'Unknown'} (${phone})\n` +
+          `Brand: ${data.brand_name || '-'}\n` +
+          `Social: ${data.insta_handle || '-'}\n` +
+          (data.insta_url ? `🔗 ${data.insta_url}\n` : '') +
+          `\nMessage:\n"${data.raw_message.slice(0, 300)}"\n\n` +
+          `⚡ Check Business Enquiries sheet.`
+        );
+
+        await clearConvState(phone, env);
+
+        // Confirmation to sender
+        await sendWhatsAppButtons(env, phone,
+          `✅ *Enquiry Submitted!*\n\n` +
+          `Thank you ${(data.name || '').split(' ')[0] || 'there'}! 🙏\n\n` +
+          `We've received your enquiry and will review it.\n` +
+          `Our team will get back to you within *24–48 hours*.\n\n` +
+          `💎 KAAPAV Fashion Jewellery`,
+          [{ id: 'home', title: '🏠 Main Menu' }]
+        );
+
+      } else {
+        await clearConvState(phone, env);
+        await sendWhatsAppText(env, phone,
+          '❌ Enquiry cancelled.\n\nType *hi* anytime to start again! 💎'
+        );
+      }
+      break;
+    }
+
+    default:
+      await clearConvState(phone, env);
+      await sendWhatsAppText(env, phone,
+        'Something went wrong. Type *hi* to start again! 😊'
+      );
+  }
+}
+
 
   // ── HELP PROMPT (fallback) ─────────────────────────────────────
   async sendHelpPrompt(phone) {
@@ -5661,7 +9611,7 @@ Examples:
 Or browse all FAQ topics 👇`,
       [
         { id: 'btn_browse',    title: '📋 Browse Topics' },
-        { id: 'btn_help_back', title: '🏠 Back' },
+        { id: 'btn_help_back', title: '🏠 Main Menu' },
       ],
       '💎 KAAPAV Fashion Jewellery'
     );
@@ -5676,16 +9626,931 @@ Or browse all FAQ topics 👇`,
   }
 }
 
+
+async function autoCancelOldUnpaidCatalogueOrders(env) {
+  const cutoffIso = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+
+  const { results: orders } = await env.DB.prepare(`
+    SELECT order_id, phone, customer_name, total, created_at
+    FROM orders
+    WHERE source = 'catalogue'
+      AND payment_status = 'unpaid'
+      AND status = 'pending'
+      AND datetime(created_at) <= datetime(?)
+    ORDER BY datetime(created_at) ASC
+    LIMIT 50
+  `).bind(cutoffIso).all();
+
+  if (!orders || orders.length === 0) {
+    console.log('AUTO_CANCEL_UNPAID: none');
+    return { cancelled: 0 };
+  }
+
+  let cancelled = 0;
+
+  for (const order of orders) {
+    try {
+      await env.DB.prepare(`
+        UPDATE orders
+        SET
+          status = 'cancelled',
+          cancellation_reason = 'Auto-cancelled: unpaid catalogue order older than 48 hours',
+          cancelled_at = datetime('now'),
+          updated_at = datetime('now')
+        WHERE order_id = ?
+          AND source = 'catalogue'
+          AND payment_status = 'unpaid'
+          AND status = 'pending'
+      `).bind(order.order_id).run();
+
+      await logOrderEvent(
+        env,
+        order.order_id,
+        'order_auto_cancelled',
+        'Unpaid catalogue order auto-cancelled after 48 hours',
+        {
+          phone: order.phone,
+          total: order.total,
+          createdAt: order.created_at,
+          cutoffIso,
+        },
+        'cron'
+      );
+
+      try {
+        await syncOrderToGoogleSheetsSafe(env, order.order_id);
+        await syncSalesToGoogleSheetsSafe(env, order.order_id);
+
+        if (order.phone) {
+          await syncCustomerToGoogleSheetsSafe(env, order.phone);
+          await syncLeadToGoogleSheetsSafe(env, order.phone);
+        }
+      } catch (syncErr) {
+        console.error('AUTO_CANCEL_UNPAID sync error:', syncErr);
+      }
+
+      cancelled++;
+    } catch (e) {
+      console.error('AUTO_CANCEL_UNPAID order error:', order.order_id, e);
+    }
+  }
+
+  console.log(`AUTO_CANCEL_UNPAID: cancelled ${cancelled}`);
+  return { cancelled };
+}
+
+function normalizeCustomerEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function isValidCustomerEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function createCustomerOtp() {
+  const arr = new Uint32Array(1);
+  crypto.getRandomValues(arr);
+  return String(100000 + (arr[0] % 900000));
+}
+
+function createCustomerSessionToken() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function parseDbTime(value) {
+  if (!value) return 0;
+  const s = String(value);
+  const iso = s.includes('T') ? s : s.replace(' ', 'T') + 'Z';
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? t : 0;
+}
+
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(String(value))
+  );
+
+  return [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function hashCustomerOtp(env, email, otp) {
+  return sha256Hex(`${email}:${otp}:${env.JWT_SECRET}`);
+}
+
+async function hashCustomerToken(token) {
+  return sha256Hex(token);
+}
+
+async function sendCustomerOtpEmail(env, email, otp) {
+  if (!env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY missing');
+  }
+
+  const from = env.CUSTOMER_EMAIL_FROM || 'KAAPAV <orders@kaapav.com>';
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from,
+      to: [email],
+      subject: 'Your KAAPAV login OTP',
+      html: `
+        <div style="font-family:Arial,sans-serif;line-height:1.6;color:#1A1A1A">
+          <h2 style="margin:0 0 12px;color:#C49432">KAAPAV Login OTP</h2>
+          <p>Use this OTP to login or create your KAAPAV account:</p>
+          <div style="font-size:30px;font-weight:800;letter-spacing:6px;color:#C49432;margin:18px 0">${otp}</div>
+          <p>This OTP is valid for 10 minutes.</p>
+          <p>If you did not request this, you can safely ignore this email.</p>
+        </div>
+      `,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    console.error('CUSTOMER_OTP_EMAIL_FAILED', data);
+    throw new Error(data?.message || data?.error || 'Failed to send OTP email');
+  }
+
+  return data;
+}
+
+async function getCustomerAuth(request, env) {
+  const auth = request.headers.get('Authorization') || '';
+  if (!auth.startsWith('Bearer ')) return null;
+
+  const token = auth.slice(7).trim();
+  if (!token) return null;
+
+  const tokenHash = await hashCustomerToken(token);
+
+  const session = await env.DB.prepare(`
+    SELECT email, expires_at
+    FROM customer_auth_sessions
+    WHERE token_hash = ?
+      AND datetime(expires_at) > datetime('now')
+    LIMIT 1
+  `).bind(tokenHash).first();
+
+  if (!session?.email) return null;
+
+  await env.DB.prepare(`
+    UPDATE customer_auth_sessions
+    SET last_seen_at = datetime('now')
+    WHERE token_hash = ?
+  `).bind(tokenHash).run();
+
+  return {
+    email: session.email,
+    tokenHash,
+  };
+}
+
+async function handleCustomerSendOtp(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const email = normalizeCustomerEmail(body.email);
+
+  if (!isValidCustomerEmail(email)) {
+    return errorResponse('Valid email required', 400);
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT last_sent_at
+    FROM customer_otps
+    WHERE email = ?
+    LIMIT 1
+  `).bind(email).first();
+
+  if (existing?.last_sent_at) {
+    const lastSent = parseDbTime(existing.last_sent_at);
+    if (lastSent && Date.now() - lastSent < 60 * 1000) {
+      return errorResponse('Please wait 60 seconds before requesting another OTP', 429);
+    }
+  }
+
+  const otp = createCustomerOtp();
+  const otpHash = await hashCustomerOtp(env, email, otp);
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+  await env.DB.prepare(`
+    INSERT INTO customer_otps (
+      email, otp_hash, attempts, expires_at, consumed_at, last_sent_at, created_at
+    )
+    VALUES (?, ?, 0, ?, NULL, datetime('now'), datetime('now'))
+    ON CONFLICT(email) DO UPDATE SET
+      otp_hash = excluded.otp_hash,
+      attempts = 0,
+      expires_at = excluded.expires_at,
+      consumed_at = NULL,
+      last_sent_at = datetime('now')
+  `).bind(email, otpHash, expiresAt).run();
+
+  await sendCustomerOtpEmail(env, email, otp);
+
+  return jsonResponse({
+    success: true,
+    message: 'OTP sent',
+  });
+}
+
+async function handleCustomerVerifyOtp(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const email = normalizeCustomerEmail(body.email);
+  const otp = String(body.otp || '').trim();
+let linkedPhone = normalizePhone91(body.phone);
+const linkedCustomerId = String(body.customerId || body.customer_id || '')
+  .trim()
+  .toUpperCase();
+
+if (linkedCustomerId && !linkedPhone) {
+  const linkedCustomer = await env.DB.prepare(`
+    SELECT phone
+    FROM customers
+    WHERE customer_id = ?
+    LIMIT 1
+  `).bind(linkedCustomerId).first();
+
+  linkedPhone = normalizePhone91(linkedCustomer?.phone);
+}
+  if (!isValidCustomerEmail(email)) {
+    return errorResponse('Valid email required', 400);
+  }
+
+  if (!/^\d{6}$/.test(otp)) {
+    return errorResponse('Valid 6 digit OTP required', 400);
+  }
+
+  const row = await env.DB.prepare(`
+    SELECT otp_hash, attempts, expires_at, consumed_at
+    FROM customer_otps
+    WHERE email = ?
+    LIMIT 1
+  `).bind(email).first();
+
+  if (!row || row.consumed_at) {
+    return errorResponse('OTP expired or invalid', 400);
+  }
+
+  if (Number(row.attempts || 0) >= 5) {
+    return errorResponse('Too many attempts. Request a new OTP.', 429);
+  }
+
+  if (parseDbTime(row.expires_at) < Date.now()) {
+    return errorResponse('OTP expired', 400);
+  }
+
+  const expectedHash = await hashCustomerOtp(env, email, otp);
+
+  if (expectedHash !== row.otp_hash) {
+    await env.DB.prepare(`
+      UPDATE customer_otps
+      SET attempts = COALESCE(attempts, 0) + 1
+      WHERE email = ?
+    `).bind(email).run();
+
+    return errorResponse('Invalid OTP', 400);
+  }
+
+  await env.DB.prepare(`
+    UPDATE customer_otps
+    SET consumed_at = datetime('now')
+    WHERE email = ?
+  `).bind(email).run();
+
+await env.DB.prepare(`
+  INSERT INTO customer_accounts (
+    email, phone, customer_id, created_at, updated_at
+  )
+  VALUES (?, ?, ?, datetime('now'), datetime('now'))
+  ON CONFLICT(email) DO UPDATE SET
+    phone = COALESCE(NULLIF(excluded.phone, ''), customer_accounts.phone),
+    customer_id = COALESCE(NULLIF(excluded.customer_id, ''), customer_accounts.customer_id),
+    updated_at = datetime('now')
+`).bind(email, linkedPhone, linkedCustomerId).run();
+
+  const token = createCustomerSessionToken();
+  const tokenHash = await hashCustomerToken(token);
+  const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+
+  await env.DB.prepare(`
+    INSERT INTO customer_auth_sessions (
+      token_hash, email, expires_at, created_at, last_seen_at
+    )
+    VALUES (?, ?, ?, datetime('now'), datetime('now'))
+  `).bind(tokenHash, email, expiresAt).run();
+
+  const account = await env.DB.prepare(`
+    SELECT email, name, phone, created_at, updated_at
+    FROM customer_accounts
+    WHERE email = ?
+    LIMIT 1
+  `).bind(email).first();
+
+  return jsonResponse({
+    success: true,
+    token,
+    expiresAt,
+    account,
+  });
+}
+
+async function handleCustomerMe(request, env) {
+  const auth = await getCustomerAuth(request, env);
+  if (!auth) return errorResponse('Unauthorized', 401);
+
+  const account = await env.DB.prepare(`
+    SELECT email, name, phone, created_at, updated_at
+    FROM customer_accounts
+    WHERE email = ?
+    LIMIT 1
+  `).bind(auth.email).first();
+
+  const address = await env.DB.prepare(`
+    SELECT id, name, phone, address, city, state, pincode, is_default
+    FROM customer_addresses
+    WHERE email = ?
+    ORDER BY is_default DESC, datetime(updated_at) DESC
+    LIMIT 1
+  `).bind(auth.email).first();
+
+  const wishlistRows = await env.DB.prepare(`
+    SELECT sku
+    FROM customer_wishlist
+    WHERE email = ?
+    ORDER BY datetime(created_at) DESC
+  `).bind(auth.email).all();
+
+  return jsonResponse({
+    success: true,
+    account: account || { email: auth.email },
+    address: address || null,
+    wishlist: (wishlistRows.results || []).map((r) => r.sku),
+  });
+}
+
+async function handleCustomerOrders(request, env) {
+  const auth = await getCustomerAuth(request, env);
+  if (!auth) return errorResponse('Unauthorized', 401);
+
+  const account = await env.DB.prepare(`
+    SELECT email, phone, customer_id
+    FROM customer_accounts
+    WHERE email = ?
+    LIMIT 1
+  `).bind(auth.email).first();
+
+  const email = normalizeCustomerEmail(account?.email || auth.email);
+  const phone91 = normalizePhone91(account?.phone);
+  const phone10 = phone91 ? phone91.slice(-10) : '';
+
+  const result = await env.DB.prepare(`
+    SELECT
+      order_id,
+      email,
+      phone,
+      customer_name,
+      items,
+      item_count,
+      subtotal,
+      discount,
+      discount_code,
+      shipping_cost,
+      total,
+      status,
+      payment_status,
+      payment_method,
+      payment_id,
+      payment_link,
+      tracking_id,
+      tracking_url,
+      courier,
+      awb_number,
+      created_at,
+      updated_at
+    FROM orders
+    WHERE lower(COALESCE(email, '')) = ?
+       OR REPLACE(COALESCE(phone, ''), '+', '') = ?
+       OR REPLACE(COALESCE(phone, ''), '+', '') = ?
+    ORDER BY datetime(created_at) DESC
+    LIMIT 100
+  `).bind(email, phone91, phone10).all();
+
+  return jsonResponse({
+    success: true,
+    orders: result.results || [],
+    identity: {
+      email,
+      phone: phone91,
+      customerId: account?.customer_id || '',
+    },
+  });
+}
+
+async function handleCustomerLogout(request, env) {
+  const auth = await getCustomerAuth(request, env);
+  if (!auth) return jsonResponse({ success: true });
+
+  await env.DB.prepare(`
+    DELETE FROM customer_auth_sessions
+    WHERE token_hash = ?
+  `).bind(auth.tokenHash).run();
+
+  return jsonResponse({
+    success: true,
+  });
+}
+
+
 // ═══════════════════ ROUTER ═══════════════════
 export default {
   async fetch(request, env, ctx) {
-    if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
 
+// ═══ TRACKING ROUTES — kaapav.com/CID and catalogue.kaapav.com/CID ═══
+
+const reqHost = request.headers.get('host') || '';
+const isCatalogueHost = reqHost.startsWith('catalogue.');
+const isMainSiteHost =
+  reqHost === 'kaapav.com' ||
+  reqHost === 'www.kaapav.com';
+
+if ((isCatalogueHost || isMainSiteHost) && method === 'GET') {
+
+  if (path.match(/^\/[A-Z0-9]{6}$/i)) {
+
+const categoryMatch = path.match(
+  /^\/([A-Z0-9]{6})\/([a-z0-9-]+)$/i
+);
+
+if (categoryMatch) {
+
+  const customerId = categoryMatch[1].toUpperCase();
+  const categorySlug = categoryMatch[2].toLowerCase();
+
+  const categoryMap = {
+    bracelets: {
+      url: 'https://www.kaapav.com/shop/category/all-jewellery-bracelets-13',
+      title: 'KAAPAV Bracelets',
+      desc: 'Bracelet Collection'
+    },
+    necklaces: {
+      url: 'https://www.kaapav.com/shop/category/all-jewellery-necklace-19',
+      title: 'KAAPAV Necklaces',
+      desc: 'Necklace Collection'
+    },
+    rings: {
+      url: 'https://www.kaapav.com/shop/category/all-jewellery-rings-20',
+      title: 'KAAPAV Rings',
+      desc: 'Ring Collection'
+    },
+    earrings: {
+      url: 'https://www.kaapav.com/shop/category/all-jewellery-earrings-21',
+      title: 'KAAPAV Earrings',
+      desc: 'Earring Collection'
+    },
+    pendants: {
+      url: 'https://www.kaapav.com/shop/category/all-jewellery-pendant-22',
+      title: 'KAAPAV Pendants',
+      desc: 'Pendant Collection'
+    },
+    sets: {
+      url: 'https://www.kaapav.com/shop/category/all-jewellery-sets-23',
+      title: 'KAAPAV Sets',
+      desc: 'Set Collection'
+    },
+    bestsellers: {
+      url: 'https://www.kaapav.com/shop/category/all-jewellery-12?category=12&search=&order=&tags=16',
+      title: 'KAAPAV Bestsellers',
+      desc: 'Bestseller Collection'
+    }
+  };
+
+  const category = categoryMap[categorySlug];
+
+  if (!category) {
+    return Response.redirect(
+      'https://www.kaapav.com/',
+      302
+    );
+  }
+
+  const customer = await env.DB.prepare(`
+    SELECT phone, customer_id
+    FROM customers
+    WHERE customer_id = ?
+    LIMIT 1
+  `).bind(customerId).first();
+
+  if (!customer) {
+    return Response.redirect(
+      'https://www.kaapav.com/',
+      302
+    );
+  }
+
+  return new Response(
+    getTrackingHtml(
+      customer.phone,
+      customer.customer_id,
+      category.url,
+      category.title,
+      category.desc
+    ),
+    {
+      headers: {
+        'Content-Type': 'text/html;charset=UTF-8',
+        'Cache-Control': 'no-store'
+      }
+    }
+  );
+}
+
+    const customerId = path.slice(1).toUpperCase();
+
+    const customer = await env.DB.prepare(`
+      SELECT phone, customer_id
+      FROM customers
+      WHERE customer_id = ?
+      LIMIT 1
+    `).bind(customerId).first();
+
+    const phone = customer?.phone || '';
+
+    console.log(
+      'CID_MATCH',
+      customerId,
+      !!customer,
+      phone,
+      isMainSiteHost,
+      isCatalogueHost
+    );
+
+    ctx.waitUntil((async () => {
+      try {
+
+        const col = isCatalogueHost
+          ? 'clicked_catalogue'
+          : 'clicked_website';
+
+        if (customer) {
+
+          console.log(
+            'TRACK CLICK',
+            customerId,
+            phone,
+            col
+          );
+
+          await env.DB.prepare(`
+            UPDATE customers
+            SET ${col} = COALESCE(${col}, 0) + 1,
+                updated_at = datetime('now')
+            WHERE phone = ?
+          `).bind(phone).run();
+
+          await env.DB.prepare(`
+            INSERT INTO catalogue_events (
+              phone,
+              event_type,
+              source,
+              created_at
+            )
+            VALUES (
+              ?,
+              ?,
+              ?,
+              datetime('now', '+5 hours', '+30 minutes')
+            )
+          `).bind(
+            phone,
+            isCatalogueHost
+              ? 'CatalogueClick'
+              : 'WebsiteClick',
+            isCatalogueHost
+              ? 'catalogue'
+              : 'website'
+          ).run();
+
+          await syncLeadToGoogleSheetsSafe(env, phone);
+
+          console.log(
+            'TRACK CLICK DONE',
+            customerId,
+            phone
+          );
+        }
+
+      } catch (e) {
+        console.error('CID click log error:', e);
+      }
+    })());
+
+    const redirectBase = isCatalogueHost
+      ? 'https://catalogue.kaapav.com/'
+      : 'https://www.kaapav.com/';
+
+    const ogTitle = isCatalogueHost
+      ? 'KAAPAV Catalogue — Browse & Order'
+      : 'KAAPAV Fashion Jewellery';
+
+    const ogDesc = isCatalogueHost
+      ? 'Browse 250+ designs. Wishlist, cart & order directly.'
+      : 'Shop 250+ handcrafted designs. Starting ₹249/-. Free shipping above ₹498/-.';
+
+
+    return new Response(
+      getTrackingHtml(
+        phone,
+        customerId,
+        redirectBase,
+        ogTitle,
+        ogDesc
+      ),
+      {
+        headers: {
+          'Content-Type': 'text/html;charset=UTF-8',
+          'Cache-Control': 'no-store, no-cache',
+        }
+      }
+    );
+  }
+
+  // catalogue.kaapav.com/* — serve index.html
+  if (isCatalogueHost) {
+    if (path.startsWith('/api/')) {
+      // fall through
+    } else {
+      const html = await env.KV.get('catalogue:index', 'text');
+
+      if (html) {
+        return new Response(html, {
+          headers: {
+            'Content-Type': 'text/html;charset=UTF-8'
+          }
+        });
+      }
+
+      return fetch(request);
+    }
+  }
+
+  // kaapav.com/* — pass through to Odoo
+  if (isMainSiteHost) {
+    return fetch(request);
+  }
+}
+
+const categoryMatch = path.match(
+  /^\/([A-Z0-9]{6})\/([a-z0-9-]+)$/i
+);
+
+if (categoryMatch) {
+
+  const customerId = categoryMatch[1].toUpperCase();
+  const category = categoryMatch[2].toLowerCase();
+
+  const customer = await env.DB.prepare(`
+    SELECT phone, customer_id
+    FROM customers
+    WHERE customer_id = ?
+    LIMIT 1
+  `).bind(customerId).first();
+
+  if (!customer) {
+    return Response.redirect(
+      'https://www.kaapav.com/',
+      302
+    );
+  }
+
+const categoryMap = {
+  bracelets: '/shop/category/all-jewellery-bracelets-13',
+  necklaces: '/shop/category/all-jewellery-necklace-19',
+  rings: '/shop/category/all-jewellery-rings-20',
+  earrings: '/shop/category/all-jewellery-earrings-21',
+  pendants: '/shop/category/all-jewellery-pendant-22',
+  sets: '/shop/category/all-jewellery-sets-23',
+  bestsellers: '/shop/category/all-jewellery-12?category=12&search=&order=&tags=16'
+};
+
+  const destination = categoryMap[category];
+
+  if (!destination) {
+    return Response.redirect(
+      'https://www.kaapav.com/',
+      302
+    );
+  }
+
+  return new Response(
+    getTrackingHtml(
+      customer.phone,
+      customer.customer_id,
+      `https://www.kaapav.com${destination}`,
+      'KAAPAV Fashion Jewellery',
+      'Fashion Jewellery Collection'
+    ),
+    {
+      headers: {
+        'Content-Type': 'text/html;charset=UTF-8',
+        'Cache-Control': 'no-store, no-cache'
+      }
+    }
+  );
+}
+
+if (path.startsWith('/api/customer-id/') && method === 'GET') {
+  const customerId = decodeURIComponent(path.split('/').pop());
+  const customer = await env.DB.prepare(`SELECT phone FROM customers WHERE customer_id = ? LIMIT 1`).bind(customerId).first();
+  const phone = customer?.phone || '';
+
+if (phone) {
+  ctx.waitUntil((async () => {
+
+    await env.DB.prepare(`
+      UPDATE customers
+      SET clicked_website =
+          COALESCE(clicked_website, 0) + 1,
+          updated_at = datetime('now')
+      WHERE phone = ?
+    `).bind(phone).run();
+
+    // ADD THIS
+
+    await env.DB.prepare(`
+      INSERT INTO catalogue_events (
+        phone,
+        event_type,
+        source,
+        created_at
+      )
+      VALUES (
+        ?,
+        'WebsiteClick',
+        'website',
+        datetime('now', '+5 hours', '+30 minutes')
+      )
+    `).bind(phone).run();
+
+    await syncCustomerToGoogleSheetsSafe(env, phone);
+    await syncLeadToGoogleSheetsSafe(env, phone);
+
+  })());
+}
+
+  return jsonResponse({ success: true, phone: customer?.phone || null });
+}
+
+if (path === '/api/customer-events' && method === 'POST') {
+  try {
+    return await handleCustomerEvent(request, env);
+  } catch (e) {
+    console.error('CUSTOMER EVENT ERROR', e);
+    return errorResponse(e.message, 500);
+  }
+}
+
+if (path === '/api/catalogue/events' && method === 'POST') {
+  try {
+    return await handleCustomerEvent(request, env);
+  } catch (e) {
+    console.error('CATALOGUE EVENT ERROR', e);
+    return errorResponse(e.message, 500);
+  }
+}
+    if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
     if (path === '/health') return new Response('OK', { status: 200 });
+
+// ── Link tracking redirects ──
+if (path === '/w' || path === '/c') {
+
+  const phone = url.searchParams.get('t') || 'unknown';
+
+  console.log('CLICK_REDIRECT', path, phone);
+
+  const destination = path === '/w' ? 'website' : 'catalogue';
+  const eventType = path === '/w' ? 'WebsiteClick' : 'CatalogueClick';
+
+  const cid = await createTrackingSession(env, phone, destination);
+
+  const target = path === '/w'
+    ? `https://www.kaapav.com/${cid}`
+    : `https://catalogue.kaapav.com/${cid}`;
+
+  ctx.waitUntil((async () => {
+    try {
+
+      console.log('CLICK_LOG_START', phone, eventType);
+
+const clickCreatedAt = new Date().toLocaleString('sv-SE', {
+  timeZone: 'Asia/Kolkata'
+}).replace(',', '');
+
+await env.DB.prepare(`
+  INSERT INTO catalogue_events (
+    phone,
+    event_type,
+    sku,
+    product_name,
+    category,
+    price,
+    quantity,
+    cart_total,
+    checkout_items,
+    source,
+    utm_source,
+    utm_medium,
+    utm_campaign,
+    created_at
+  )
+  VALUES (
+    ?, ?, '', '', '',
+    0, 1, 0, '',
+    ?, '', '', '',
+    ?
+  )
+`)
+.bind(phone, eventType, destination, clickCreatedAt)
+.run();
+
+const clickCustomer = await env.DB.prepare(`
+  SELECT customer_id, name
+  FROM customers
+  WHERE phone = ?
+  LIMIT 1
+`)
+.bind(phone)
+.first();
+
+await appendCatalogueEventToGoogleSheets(env, {
+  created_at: clickCreatedAt,
+  customer_id: clickCustomer?.customer_id || '',
+  phone,
+  customer_name: clickCustomer?.name || '',
+  event_type: eventType,
+  sku: '',
+  product_name: '',
+  category: '',
+  price: 0,
+  quantity: 1,
+  cart_total: 0,
+  checkout_items: '',
+  source: destination,
+  utm_source: '',
+  utm_medium: '',
+  utm_campaign: '',
+});
+
+      await env.DB.prepare(`
+        UPDATE customers
+        SET ${
+          path === '/w'
+            ? 'clicked_website'
+            : 'clicked_catalogue'
+        } = COALESCE(${
+          path === '/w'
+            ? 'clicked_website'
+            : 'clicked_catalogue'
+        }, 0) + 1,
+        updated_at = datetime('now')
+        WHERE phone = ?
+      `)
+      .bind(phone)
+      .run();
+
+      console.log('CLICK_LOGGED', phone, eventType);
+
+      await syncCustomerToGoogleSheetsSafe(env, phone);
+      await syncLeadToGoogleSheetsSafe(env, phone);
+
+      console.log('CLICK_SYNC_DONE', phone, eventType);
+
+    } catch (e) {
+      console.error('CLICK_LOG_ERROR', e);
+    }
+  })());
+
+  return Response.redirect(target, 302);
+}
+
+
+
+
+
 
 if (path === '/api/debug/run-supabase-sync' && method === 'GET') {
   const key = url.searchParams.get('key');
@@ -6243,80 +11108,347 @@ if (path === '/' || path === '/index.html') {
 }
 
     // ═══ SHIPROCKET WEBHOOK ═══
-    if (path === '/api/shiprocket/webhook' && method === 'POST') {
-      try {
-        const body = await request.json();
-        const srOrderId = String(body.order_id || body.sr_order_id || '');
-        const status = (body.current_status || '').toLowerCase();
-        const awb = body.awb || body.awb_code || '';
-        const courier = body.courier_name || '';
+if (path === '/api/courier/updates' && method === 'POST') {
+  try {
+    const rawBody = await request.text();
 
-        if (!srOrderId) return jsonResponse({ status: 'ok' });
+    console.log('COURIER_WEBHOOK_HIT', JSON.stringify({
+      method,
+      hasBody: !!rawBody,
+      contentType: request.headers.get('content-type') || '',
+      hasApiKey: !!request.headers.get('x-api-key'),
+      hasAuth: !!request.headers.get('authorization')
+    }));
 
-        const order = await env.DB.prepare(
-          `SELECT * FROM orders WHERE shiprocket_order_id = ? OR order_id = ?`
-        ).bind(srOrderId, srOrderId).first();
+    const expectedKey = String(env.SHIPROCKET_WEBHOOK_KEY || '').trim();
+    const receivedKey = String(request.headers.get('x-api-key') || '').trim();
 
-        if (!order) return jsonResponse({ status: 'ok' });
-
-        const statusMap = {
-          'delivered': 'delivered',
-          'shipped': 'shipped',
-          'in transit': 'shipped',
-          'out for delivery': 'shipped',
-          'picked up': 'shipped',
-          'rto initiated': 'cancelled',
-          'rto delivered': 'cancelled',
-          'cancelled': 'cancelled',
-        };
-
-        const newStatus = statusMap[status];
-        if (!newStatus) return jsonResponse({ status: 'ok' });
-
-        const updates = [`status = '${newStatus}'`, `updated_at = datetime('now')`];
-        if (awb) updates.push(`awb_number = '${awb}'`);
-        if (courier) updates.push(`courier = '${courier}'`);
-        if (newStatus === 'delivered') updates.push(`delivered_at = datetime('now')`);
-        if (newStatus === 'shipped' && !order.shipped_at) updates.push(`shipped_at = datetime('now')`);
-
-        await env.DB.prepare(
-          `UPDATE orders SET ${updates.join(', ')} WHERE order_id = ?`
-        ).bind(order.order_id).run();
-
-        await logOrderEvent(env, order.order_id, `shiprocket_${status.replace(/\s+/g, '_')}`, `Shiprocket status: ${status}`, { awb, courier, srOrderId }, 'shiprocket_webhook');
-
-        const name = order.customer_name || 'Customer';
-        const phone = order.phone;
-
-        if (newStatus === 'delivered' && isWhatsAppOrder(order.source)) {
-          await sendWhatsAppText(env, phone,
-            `🎉 *Order Delivered!*\n\nHi ${name.split(' ')[0]}!\n\nOrder ID: *${order.order_id}*\n\n📦 Your KAAPAV jewellery has been delivered!\n\n✨ We hope you love it!\n📸 Share your look on Instagram & tag @kaapavfashionjewellery\n\n💎 Thank you for choosing KAAPAV!`
-          );
-          await sendWhatsAppText(env, env.OWNER_PHONE,
-            `✅ *Order Delivered!*\n\nOrder: *${order.order_id}*\nCustomer: ${name} (${phone})\nAWB: ${awb || order.awb_number || '-'}\n\n📦 Delivered successfully.`
-          );
-        } else if (newStatus === 'shipped' && !order.shipped_at && isWhatsAppOrder(order.source)) {
-          const trackUrl = awb ? `https://www.shiprocket.in/shipment-tracking/?id=${awb}` : '';
-          await sendWhatsAppText(env, phone,
-            `🚚 *Your Order is Shipped!*\n\nHi ${name.split(' ')[0]}!\n\nOrder: *${order.order_id}*\n${awb ? `AWB: *${awb}*\n` : ''}${courier ? `Courier: ${courier}\n` : ''}\n${trackUrl ? `📍 Track: ${trackUrl}\n` : ''}\nDelivery in *2-4 working days*\n\n💎 KAAPAV Fashion Jewellery`
-          );
-        }
-
-        try {
-          await syncOrderToGoogleSheetsSafe(env, order.order_id);
-          await syncShipmentToGoogleSheetsSafe(env, order.order_id);
-          if (phone) {
-            await syncCustomerToGoogleSheetsSafe(env, phone);
-            await syncSalesToGoogleSheetsSafe(env, order.order_id);
-          }
-        } catch (e) { console.error('Shiprocket webhook sync error:', e); }
-
-        return jsonResponse({ status: 'ok' });
-      } catch (e) {
-        console.error('Shiprocket webhook error:', e);
-        return jsonResponse({ status: 'ok' });
-      }
+    if (expectedKey && receivedKey !== expectedKey) {
+      console.error('COURIER_WEBHOOK_AUTH_FAILED');
+      return errorResponse('Unauthorized', 401);
     }
+
+    if (!rawBody || rawBody.trim() === '' || rawBody.trim() === '{}') {
+      return jsonResponse({ status: 'ok', validation: true });
+    }
+
+    const body = JSON.parse(rawBody);
+
+const rawOrderId = String(body.order_id || '').trim();
+const rawSrOrderId = String(
+  body.sr_order_id ||
+  body.shiprocket_order_id ||
+  ''
+).trim();
+
+const rawChannelOrderId = String(
+  body.channel_order_id ||
+  body.order_number ||
+  body.orderId ||
+  ''
+).trim();
+
+const srOrderId = /^[0-9]+$/.test(rawSrOrderId)
+  ? rawSrOrderId
+  : (/^[0-9]+$/.test(rawOrderId) ? rawOrderId : '');
+
+const channelOrderId = rawChannelOrderId || (
+  /^KFJW-/i.test(rawOrderId) ? rawOrderId : ''
+);
+
+    const shipmentId = String(
+      body.shipment_id ||
+      body.shipmentId ||
+      ''
+    );
+
+    const rawStatus = String(
+      body.current_status ||
+      body.status ||
+      body.shipment_status ||
+      ''
+    ).toLowerCase();
+
+    const awb = String(
+      body.awb ||
+      body.awb_code ||
+      body.awb_number ||
+      ''
+    ).trim();
+
+    const courier = String(
+      body.courier_name ||
+      body.courier ||
+      ''
+    ).trim();
+
+    const trackingId = String(
+      body.tracking_id ||
+      body.awb ||
+      body.awb_code ||
+      ''
+    ).trim();
+
+    const trackingUrl = awb
+      ? `https://www.shiprocket.in/shipment-tracking/?id=${awb}`
+      : '';
+
+    if (!srOrderId && !channelOrderId && !shipmentId && !awb) {
+      return jsonResponse({ status: 'ok' });
+    }
+
+    const order = await env.DB.prepare(`
+      SELECT * FROM orders
+      WHERE shiprocket_order_id = ?
+         OR order_id = ?
+         OR shipment_id = ?
+         OR awb_number = ?
+         OR awb_code = ?
+      LIMIT 1
+    `).bind(
+      srOrderId,
+      channelOrderId || srOrderId,
+      shipmentId,
+      awb,
+      awb
+    ).first();
+
+    if (!order) {
+      console.log('SHIPROCKET_WEBHOOK_ORDER_NOT_FOUND', JSON.stringify({
+        srOrderId,
+        channelOrderId,
+        shipmentId,
+        awb,
+        rawStatus
+      }));
+      return jsonResponse({ status: 'ok' });
+    }
+
+const courierCancelled =
+  rawStatus.includes('cancel') ||
+  rawStatus.includes('canceled') ||
+  rawStatus.includes('pickup cancelled') ||
+  rawStatus.includes('pickup canceled') ||
+  rawStatus.includes('shipment cancelled') ||
+  rawStatus.includes('order cancelled');
+
+const statusMap = {
+  'new': 'processing',
+  'ready to ship': 'processing',
+  'pickup scheduled': 'processing',
+  'manifest generated': 'processing',
+  'pickup generated': 'processing',
+  'shipped': 'shipped',
+  'in transit': 'shipped',
+  'picked up': 'shipped',
+  'out for delivery': 'shipped',
+  'delivered': 'delivered',
+  'rto initiated': 'cancelled',
+  'rto delivered': 'cancelled',
+};
+
+const newStatus = courierCancelled
+  ? 'processing'
+  : (statusMap[rawStatus] || (awb ? 'shipped' : order.status || 'processing'));
+
+await env.DB.prepare(`
+  UPDATE orders SET
+    status = ?,
+
+    shiprocket_order_id = CASE
+      WHEN ? = 1 THEN NULL
+      WHEN ? != '' THEN ?
+      ELSE shiprocket_order_id
+    END,
+
+    shipment_id = CASE
+      WHEN ? = 1 THEN NULL
+      WHEN ? != '' THEN ?
+      ELSE shipment_id
+    END,
+
+    awb_number = CASE
+      WHEN ? = 1 THEN NULL
+      WHEN ? != '' THEN ?
+      ELSE awb_number
+    END,
+
+    awb_code = CASE
+      WHEN ? = 1 THEN NULL
+      WHEN ? != '' THEN ?
+      ELSE awb_code
+    END,
+
+    courier = CASE
+      WHEN ? = 1 THEN NULL
+      WHEN ? != '' THEN ?
+      ELSE courier
+    END,
+
+    tracking_id = CASE
+      WHEN ? = 1 THEN NULL
+      WHEN ? != '' THEN ?
+      ELSE tracking_id
+    END,
+
+    tracking_url = CASE
+      WHEN ? = 1 THEN NULL
+      WHEN ? != '' THEN ?
+      ELSE tracking_url
+    END,
+
+    shipped_at = CASE
+      WHEN ? = 1 THEN NULL
+      WHEN ? = 'shipped' AND shipped_at IS NULL THEN datetime('now')
+      ELSE shipped_at
+    END,
+
+    delivered_at = CASE
+      WHEN ? = 1 THEN NULL
+      WHEN ? = 'delivered' AND delivered_at IS NULL THEN datetime('now')
+      ELSE delivered_at
+    END,
+
+    shipping_sent = CASE
+      WHEN ? = 1 THEN 0
+      ELSE shipping_sent
+    END,
+
+    delivery_sent = CASE
+      WHEN ? = 1 THEN 0
+      ELSE delivery_sent
+    END,
+
+    cancellation_reason = CASE
+      WHEN ? = 1 THEN 'Shiprocket courier booking cancelled'
+      ELSE cancellation_reason
+    END,
+
+    updated_at = datetime('now')
+  WHERE order_id = ?
+`).bind(
+  newStatus,
+
+  courierCancelled ? 1 : 0,
+  srOrderId, srOrderId,
+
+  courierCancelled ? 1 : 0,
+  shipmentId, shipmentId,
+
+  courierCancelled ? 1 : 0,
+  awb, awb,
+
+  courierCancelled ? 1 : 0,
+  awb, awb,
+
+  courierCancelled ? 1 : 0,
+  courier, courier,
+
+  courierCancelled ? 1 : 0,
+  trackingId, trackingId,
+
+  courierCancelled ? 1 : 0,
+  trackingUrl, trackingUrl,
+
+  courierCancelled ? 1 : 0,
+  newStatus,
+
+  courierCancelled ? 1 : 0,
+  newStatus,
+
+  courierCancelled ? 1 : 0,
+  courierCancelled ? 1 : 0,
+  courierCancelled ? 1 : 0,
+
+  order.order_id
+).run();
+
+    await logOrderEvent(
+      env,
+      order.order_id,
+      `shiprocket_${rawStatus.replace(/\s+/g, '_') || 'update'}`,
+      `Shiprocket status: ${rawStatus || 'update'}`,
+      { srOrderId, channelOrderId, shipmentId, awb, courier, trackingUrl },
+      'shiprocket_webhook'
+    );
+
+    if (newStatus === 'delivered' && !order.delivered_at && isWhatsAppOrder(order.source)) {
+      await sendWhatsAppText(env, order.phone,
+        `🎉 *Order Delivered!*\n\n` +
+        `Hi ${(order.customer_name || 'Customer').split(' ')[0]}!\n\n` +
+        `Order ID: *${order.order_id}*\n\n` +
+        `📦 Your KAAPAV jewellery has been delivered!\n\n` +
+        `💎 Thank you for choosing KAAPAV!`
+      );
+    }
+
+    if (newStatus === 'shipped' && !order.shipped_at && isWhatsAppOrder(order.source)) {
+await sendWhatsAppCtaUrl(
+  env,
+  order.phone,
+  `🚚 *Your KAAPAV order is on the way!*\n\n` +
+  `Hi ${(order.customer_name || 'Customer').split(' ')[0]}!\n\n` +
+  `Order ID: *${order.order_id}*\n` +
+  `${awb ? `AWB: *${awb}*\n` : ''}` +
+  `${courier ? `Courier: ${courier}\n` : ''}` +
+  `\nTap below to track your parcel anytime.\n\n` +
+  `💎 KAAPAV Fashion Jewellery`,
+  'Track Now',
+  trackingUrl || `https://www.shiprocket.in/shipment-tracking/?id=${awb}`
+);
+    }
+await saveOwnerInboxAlert(env, ctx, {
+  type: 'shipping',
+  priority: newStatus === 'delivered' ? 'high' : 'normal',
+  title:
+    newStatus === 'delivered'
+      ? '✅ Order Delivered'
+      : newStatus === 'shipped'
+        ? '🚚 Order Shipped'
+        : '📦 Shiprocket Update',
+  body:
+    `Order: ${order.order_id}\n` +
+    `Customer: ${order.customer_name || 'Customer'} (${order.phone})\n` +
+    `Status: ${rawStatus || newStatus || 'update'}\n` +
+    `${awb ? `AWB: ${awb}\n` : ''}` +
+    `${courier ? `Courier: ${courier}\n` : ''}` +
+    `Time: ${formatISTDateTime()}`,
+  orderId: order.order_id,
+  phone: order.phone,
+  customerName: order.customer_name || 'Customer',
+  amount: order.total,
+  source: order.source || 'shiprocket',
+  actionType: 'order_detail',
+  actionLabel: 'Open Order',
+  actionUrl: trackingUrl || '',
+  meta: {
+    rawStatus,
+    newStatus,
+    srOrderId,
+    channelOrderId,
+    shipmentId,
+    awb,
+    courier,
+    trackingUrl,
+  },
+  dedupeKey: `shiprocket_update:${order.order_id}:${rawStatus || newStatus}:${awb || shipmentId || srOrderId || ''}`,
+});
+
+    try {
+      await syncOrderToGoogleSheetsSafe(env, order.order_id);
+      await syncShipmentToGoogleSheetsSafe(env, order.order_id);
+      await syncCustomerToGoogleSheetsSafe(env, order.phone);
+      await syncSalesToGoogleSheetsSafe(env, order.order_id);
+    } catch (e) {
+      console.error('Shiprocket webhook sync error:', e);
+    }
+
+    return jsonResponse({ status: 'ok' });
+  } catch (e) {
+    console.error('Shiprocket webhook error:', e);
+    return jsonResponse({ status: 'ok' });
+  }
+}
 
     // ═══ RAZORPAY WEBHOOK ═══
     if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && method === 'POST') {
@@ -6352,19 +11484,54 @@ if (path === '/' || path === '/index.html') {
 
     if (!order) return jsonResponse({ status: 'ok' });
 
-    // Idempotent — skip if already paid
-    if (order.payment_status === 'paid') return jsonResponse({ status: 'ok' });
+// Idempotent — order may already be marked paid by frontend/app.
+// Still create owner inbox alert once.
+if (order.payment_status === 'paid') {
+  await saveOwnerInboxAlert(env, ctx, {
+    type: 'payment',
+    priority: 'high',
+    title: '💰 Razorpay Payment Received',
+    body:
+      `${formatINR(amount)} received\n` +
+      `Order: ${orderId}\n` +
+      `Customer: ${order.customer_name || 'Customer'} (${order.phone || ''})\n` +
+      `Time: ${formatISTDateTime()}\n` +
+      `Payment ID: ${paymentId}\n` +
+      `Source: ${order.source || 'catalogue'}`,
+    orderId,
+    phone: order.phone || '',
+    customerName: order.customer_name || 'Customer',
+    amount,
+    source: order.source || 'catalogue',
+    actionType: 'order_detail',
+    actionLabel: 'Open Order',
+    meta: {
+      paymentId,
+      method: event.payload?.payment?.entity?.method || '',
+      alreadyPaid: true,
+    },
+    dedupeKey: `payment_received:${paymentId || orderId}`,
+  });
 
-    // Update order status
-    await env.DB.prepare(`
-      UPDATE orders SET
-        payment_status = 'paid',
-        status         = 'confirmed',
-        payment_id     = ?,
-        paid_at        = datetime('now'),
-        updated_at     = datetime('now')
-      WHERE order_id = ?
-    `).bind(paymentId, orderId).run();
+  return jsonResponse({ status: 'ok', alreadyPaid: true });
+}
+
+
+// Update payment status only. Razorpay must never mark shipment as shipped.
+await env.DB.prepare(`
+  UPDATE orders SET
+    payment_status = 'paid',
+    status         = 'confirmed',
+    payment_id     = ?,
+    payment_method = ?,
+    paid_at        = datetime('now'),
+    updated_at     = datetime('now')
+  WHERE order_id = ?
+`).bind(
+  paymentId,
+  event.payload?.payment?.entity?.method || 'razorpay',
+  orderId
+).run();
 
     await logOrderEvent(env, orderId, 'payment_confirmed', 'Payment confirmed via payment_link.paid webhook', {
   paymentId,
@@ -6423,25 +11590,33 @@ if (path === '/' || path === '/index.html') {
           try { await generateAndSendInvoice(env, orderId); } catch (e) { console.error('Auto invoice error:', e); }
         }
 
-        // Owner WA — ALWAYS
-        await sendWhatsAppText(env, env.OWNER_PHONE,
-      `💰 *Payment Received!*\n\n` +
-      `Order: *${orderId}*\n` +
-      `Customer: ${customerName} (${phone})\n` +
-      `Amount: \u20B9${amount}\n` +
-      `Payment ID: ${paymentId}\n` +
-      `Source: ${order.source || 'whatsapp'}\n\n` +
-      `🛍️ *Items:*\n${itemLines}\n\n` +
-      `📦 Total: \u20B9${order.total}\n\n` +
-      `✅ Open app → Orders → Book Shiprocket.`
-    );
-
-       // FCM push to Flutter app
-    ctx.waitUntil(sendFCMNotification(
-      env, phone, customerName,
-      `💰 Payment received! Order ${orderId} — \u20B9${amount}`,
-      `pay_${paymentId}`
-    ));
+await saveOwnerInboxAlert(env, ctx, {
+  type: 'payment',
+  priority: 'high',
+  title: '💰 Razorpay Payment Received',
+  body:
+    `${formatINR(amount)} received\n` +
+    `Order: ${orderId}\n` +
+    `Customer: ${customerName} (${phone})\n` +
+    `Time: ${formatISTDateTime()}\n` +
+    `Payment ID: ${paymentId}\n` +
+    `Source: ${order.source || 'catalogue'}\n\n` +
+    `Items:\n${itemLines}\n\n` +
+    `Next: Book Shiprocket.`,
+  orderId,
+  phone,
+  customerName,
+  amount,
+  source: order.source || 'catalogue',
+  actionType: 'order_detail',
+  actionLabel: 'Open Order',
+  meta: {
+paymentId,
+method: event.payload?.payment?.entity?.method || '',
+    items: itemLines,
+  },
+  dedupeKey: `payment_received:${payment.id || orderId}`,
+});
   }
 
   // ── payment.captured ──────────────────────────────────────────
@@ -6477,13 +11652,42 @@ if (path === '/' || path === '/index.html') {
               ) VALUES (?, ?, ?, '[]', 0, ?, 0, ?, 'confirmed', 'paid', ?, 'razorpay', datetime('now'), 'website', datetime('now'), datetime('now'))
             `).bind(newOrderId, phone, name, amount, amount, payment.id).run();
 
-            if (phone) {
-              await env.DB.prepare(`
-                INSERT INTO customers (phone, name, email, first_seen, last_seen, updated_at)
-                VALUES (?, ?, ?, datetime('now'), datetime('now'), datetime('now'))
-                ON CONFLICT(phone) DO UPDATE SET name = excluded.name, last_seen = datetime('now'), updated_at = datetime('now')
-              `).bind(phone, name, email).run();
-            }
+if (phone) {
+
+  const customerId =
+    await getOrCreateCustomerId(env, phone);
+
+  await env.DB.prepare(`
+    INSERT INTO customers (
+      phone,
+      customer_id,
+      name,
+      email,
+      first_seen,
+      last_seen,
+      updated_at
+    )
+    VALUES (
+      ?, ?, ?, ?,
+      datetime('now'),
+      datetime('now'),
+      datetime('now')
+    )
+    ON CONFLICT(phone) DO UPDATE SET
+      customer_id = COALESCE(
+        customers.customer_id,
+        excluded.customer_id
+      ),
+      name = excluded.name,
+      last_seen = datetime('now'),
+      updated_at = datetime('now')
+  `).bind(
+    phone,
+    customerId,
+    name,
+    email
+  ).run();
+}
 
             await logOrderEvent(env, newOrderId, 'order_created', 'Auto-created from Odoo/website payment.captured', { paymentId: payment.id, amount }, 'razorpay_webhook');
 
@@ -6502,17 +11706,73 @@ if (path === '/' || path === '/index.html') {
               );
             }
 
-            await sendWhatsAppText(env, env.OWNER_PHONE,
-              `💰 *Website Payment Received (Auto-Created)*\n\nOrder: *${newOrderId}*\nCustomer: ${name} (${phone})\nAmount: ₹${amount}\nPayment ID: ${payment.id}\n\n⚠️ Items unknown — check Odoo dashboard.\n✅ Order auto-created in D1.`
-            );
+            await saveOwnerInboxAlert(env, ctx, {
+  type: 'payment',
+  priority: 'high',
+  title: 'Website Payment Received',
+  body:
+    `${formatINR(amount)} received\n` +
+    `Order: ${newOrderId}\n` +
+    `Customer: ${name} (${phone})\n` +
+    `Time: ${formatISTDateTime()}\n` +
+    `Payment ID: ${payment.id}\n` +
+    `Source: website\n\n` +
+    `Items unknown — check Odoo dashboard.\n` +
+    `Order auto-created in D1.`,
+  orderId: newOrderId,
+  phone,
+  customerName: name,
+  amount,
+  source: 'website',
+  actionType: 'order_detail',
+  actionLabel: 'Open Order',
+  meta: {
+    paymentId: payment.id,
+    method: payment.method || '',
+    autoCreated: true,
+  },
+  dedupeKey: `payment_received:${payment.id || newOrderId}`,
+});
           }
         } catch (e) { console.error('Odoo auto-create error:', e); }
 
         return jsonResponse({ status: 'ok' });
       }
 
-      // Idempotent — skip if already paid
-      if (order.payment_status === 'paid') return jsonResponse({ status: 'ok' });
+// Idempotent — order may already be marked paid by frontend/app.
+// Still create owner inbox alert once.
+if (order.payment_status === 'paid') {
+  const amount = payment.amount / 100;
+
+  await saveOwnerInboxAlert(env, ctx, {
+    type: 'payment',
+    priority: 'high',
+    title: '💰 Razorpay Payment Received',
+    body:
+      `${formatINR(amount)} received\n` +
+      `Order: ${orderId}\n` +
+      `Customer: ${order.customer_name || 'Customer'} (${order.phone || ''})\n` +
+      `Time: ${formatISTDateTime()}\n` +
+      `Payment ID: ${payment.id}\n` +
+      `Method: ${payment.method || 'razorpay'}\n` +
+      `Source: ${order.source || 'catalogue'}`,
+    orderId,
+    phone: order.phone || '',
+    customerName: order.customer_name || 'Customer',
+    amount,
+    source: order.source || 'catalogue',
+    actionType: 'order_detail',
+    actionLabel: 'Open Order',
+    meta: {
+      paymentId: payment.id,
+      method: payment.method || '',
+      alreadyPaid: true,
+    },
+    dedupeKey: `payment_received:${payment.id || orderId}`,
+  });
+
+  return jsonResponse({ status: 'ok', alreadyPaid: true });
+}
 
       const amount = payment.amount / 100;
 
@@ -6575,7 +11835,7 @@ if (path === '/' || path === '/index.html') {
             `Hi ${customerName.split(' ')[0]}! 🎉\n\n` +
             `Order ID: *${orderId}*\n` +
             `Amount Paid: \u20B9${amount}\n` +
-            `Payment ID: ${paymentId}\n\n` +
+            `Payment ID: ${payment.id}\n\n` +
             `📦 Your order is confirmed!\n` +
             `We will pack & ship within *24 hours*.\n` +
             `You will get your tracking details here on WhatsApp once shipped. 🚚\n\n` +
@@ -6587,127 +11847,313 @@ if (path === '/' || path === '/index.html') {
           try { await generateAndSendInvoice(env, orderId); } catch (e) { console.error('Auto invoice error:', e); }
         }
 
-        // Owner WA — ALWAYS notify owner regardless of source
-        await sendWhatsAppText(env, env.OWNER_PHONE,
-      `💰 *Payment Received!*\n\n` +
-      `Order: *${orderId}*\n` +
-      `Customer: ${customerName} (${phone})\n` +
-      `Amount: \u20B9${amount}\n` +
-      `Payment ID: ${payment.id}\n` +
-      `Source: ${order.source || 'website'}\n\n` +
-      `🛍️ *Items:*\n${itemLines}\n\n` +
-      `📦 Total: \u20B9${order.total}\n\n` +
-      `✅ Open app → Orders → Book Shiprocket.`
-    );
+await saveOwnerInboxAlert(env, ctx, {
+  type: 'payment',
+  priority: 'high',
+  title: 'Razorpay Payment Received',
+  body:
+    `${formatINR(amount)} received\n` +
+    `Order: ${orderId}\n` +
+    `Customer: ${customerName} (${phone})\n` +
+    `Time: ${formatISTDateTime()}\n` +
+    `Payment ID: ${payment.id}\n` +
+    `Source: ${order.source || 'catalogue'}\n\n` +
+    `Items:\n${itemLines}\n\n` +
+    `Next: Book Shiprocket.`,
+  orderId,
+  phone,
+  customerName,
+  amount,
+  source: order.source || 'catalogue',
+  actionType: 'order_detail',
+  actionLabel: 'Open Order',
+  meta: {
+    paymentId: payment.id,
+    method: payment.method || '',
+    items: itemLines,
+  },
+  dedupeKey: `payment_received:${payment.id || orderId}`,
+});
 
-    
-    // FCM push to Flutter app
-    ctx.waitUntil(sendFCMNotification(
-      env, phone, customerName,
-      `💰 Payment received! Order ${orderId} — \u20B9${amount}`,
-      `pay_${payment.id}`
-    ));
-  }
+     }
 
   return jsonResponse({ status: 'ok' });
 }
 
  
-  if (path === '/api/orders/catalogue' && method === 'POST') {
+  if (path === '/api/orders/catalogue' && method === 'GET') {
+  return handleGetCatalogueOrders(request, env);
+}
+
+if (path === '/api/orders/catalogue' && method === 'POST') {
   const body = await request.json();
-  const { name, phone, address, city, state, pincode, items, total } = body;
-    if (!phone || !items?.length) return errorResponse('phone and items required');
 
-    // Duplicate order check
-    const dupeId = await checkDuplicateOrder(env, phone, items);
-    if (dupeId) return errorResponse(`Duplicate order detected: ${dupeId}. Wait 5 minutes or complete existing order.`, 409);
+  const { name, phone, address, city, state, pincode } = body;
 
-    const orderId = await generateOrderId(env);
-  const itemsJson = JSON.stringify(items);
-  const itemCount = items.reduce((s, i) => s + i.qty, 0);
-  const shipping = total >= 498 ? 0 : 60;
-  const grandTotal = total + shipping;
-  await env.DB.prepare(`
-    INSERT INTO orders (order_id, phone, customer_name, items, item_count, subtotal, shipping_cost, total,
-      shipping_name, shipping_address, shipping_city, shipping_state, shipping_pincode,
-      status, payment_status, source, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unpaid', 'catalogue', datetime('now'), datetime('now'))
-  `).bind(orderId, phone, name || phone, itemsJson, itemCount, total, shipping, grandTotal,
-    name || '', address || '', city || '', state || '', pincode || '').run();
+  const rawItems = Array.isArray(body.items) ? body.items : [];
 
-  await logOrderEvent(env, orderId, 'order_created', 'Catalogue order created', {
-  phone,
-  customerName: name || phone,
-  total: grandTotal,
-  itemCount,
-}, 'catalogue');
+  const customerEmail = String(body.email || '').trim().toLowerCase();
 
-  try {
-    await syncOrderToGoogleSheetsSafe(env, orderId);
-    await syncCustomerToGoogleSheetsSafe(env, phone);
-    await syncLeadToGoogleSheetsSafe(env, phone);
-    await syncSalesToGoogleSheetsSafe(env, orderId);
-    await rebuildSourcePerformanceSheet(env);
-  } catch (e) {
-    console.error('Google Sheets sync error (catalogue order):', e);
-    await appendSyncFailureToGoogleSheets(env, {
-      destination: 'google_sheets',
-      entity_type: 'order',
-      entity_id: orderId,
-      action: 'catalogue_order_created',
-      error_message: e.message,
-      retry_count: 0,
-      status: 'failed',
-    });
-  } 
- const itemsText = items.map(i => `• ${i.name} x${i.qty} — ₹${i.price * i.qty}`).join('\n');
-  
-await sendWhatsAppText(env, phone,
-    `💎 *KAAPAV Order Summary*\n\nOrder ID: *${orderId}*\n\n${itemsText}\n\n` +
-    `Subtotal: ₹${total}\nShipping: ₹${shipping}\n*Total: ₹${grandTotal}*\n\n` +
-    `⏳ Complete payment to confirm your order.`
-  );
-
-  // Owner WA — new catalogue order
-await sendWhatsAppText(env, env.OWNER_PHONE,
-  `🛒 *New Catalogue Order!*\n\n` +
-  `Order ID: *${orderId}*\n` +
-  `Customer: ${name || 'Customer'} (${phone})\n` +
-  `Address: ${address || '-'}, ${pincode || '-'}\n\n` +
-  `🛍️ *Items:*\n${itemsText}\n\n` +
-  `📦 Subtotal: \u20B9${total}\n` +
-  `🚚 Shipping: ${shipping === 0 ? 'FREE' : '\u20B9' + shipping}\n` +
-  `💰 *Total: \u20B9${grandTotal}*\n\n` +
-  `⏳ Payment link sent. Awaiting payment...`
-); 
-
-  try {
-    const payLink = await createRazorpayLink(env, {
-      amount: grandTotal, name: name || 'Customer',
-      phone, orderId, description: `KAAPAV Order ${orderId}`
-    });
-    await env.DB.prepare(`UPDATE orders SET payment_link = ? WHERE order_id = ?`).bind(payLink, orderId).run();
-    await sendWhatsAppText(env, phone, `💳 *Pay here:*\n${payLink}\n\n_Link valid for 24 hours_`);
-  } catch(e) { console.error('Razorpay error:', e); }
-  try {
-    await syncOrderToGoogleSheetsSafe(env, orderId);
-    await syncCustomerToGoogleSheetsSafe(env, phone);
-    await syncLeadToGoogleSheetsSafe(env, phone);
-    await syncSalesToGoogleSheetsSafe(env, orderId);
-    await rebuildSourcePerformanceSheet(env);
-  } catch (e) {
-    console.error('Google Sheets sync error (manual order):', e);
-    await appendSyncFailureToGoogleSheets(env, {
-      destination: 'google_sheets',
-      entity_type: 'order',
-      entity_id: orderId,
-      action: 'manual_order_created',
-      error_message: e.message,
-      retry_count: 0,
-      status: 'failed',
-    });
+  if (!customerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
+    return errorResponse('Valid email required', 400);
   }
-  return jsonResponse({ success: true, orderId, total: grandTotal });
+
+  if (!phone || !rawItems.length) {
+    return errorResponse('phone and items required', 400);
+  }
+
+  // Server-side product pricing. Never trust browser price/subtotal.
+  const priced = await priceCatalogueItems(env, rawItems);
+
+  if (!priced.success) {
+    return errorResponse(priced.error, priced.status || 400);
+  }
+
+  const items = priced.items;
+  const subtotal = priced.subtotal;
+  const itemCount = priced.itemCount;
+
+  const rawCouponCode = String(
+    body.couponCode || body.discountCode || body.coupon || ''
+  ).trim().toUpperCase();
+
+  // Duplicate order check uses server-priced clean items
+  const dupeId = await checkDuplicateOrder(env, phone, items);
+
+  if (dupeId) {
+    return errorResponse(
+      `Duplicate order detected: ${dupeId}. Wait 5 minutes or complete existing order.`,
+      409
+    );
+  }
+
+  const orderId = await generateOrderId(env);
+  const itemsJson = JSON.stringify(items);
+
+
+const shipping = subtotal >= 498 ? 0 : 50;
+
+let discount = 0;
+let discountCode = '';
+
+if (rawCouponCode) {
+  const coupon = await env.DB.prepare(
+    `SELECT * FROM coupons WHERE UPPER(code) = ? AND is_active = 1`
+  ).bind(rawCouponCode).first();
+
+  if (!coupon) return errorResponse('Invalid coupon code', 400);
+
+  const now = new Date().toISOString();
+
+  if (coupon.expires_at && coupon.expires_at < now) {
+    return errorResponse('Coupon expired', 400);
+  }
+
+  if (coupon.starts_at && coupon.starts_at > now) {
+    return errorResponse('Coupon not active yet', 400);
+  }
+
+  if (coupon.usage_limit > 0 && coupon.used_count >= coupon.usage_limit) {
+    return errorResponse('Coupon usage limit reached', 400);
+  }
+
+  if (coupon.min_order > 0 && subtotal < coupon.min_order) {
+    return errorResponse(`Minimum order ₹${coupon.min_order} required`, 400);
+  }
+
+  if (coupon.type === 'percent') {
+    discount = Math.round((subtotal * Number(coupon.value || 0)) / 100);
+
+    if (coupon.max_discount > 0) {
+      discount = Math.min(discount, Number(coupon.max_discount));
+    }
+  } else {
+    discount = Math.round(Number(coupon.value || 0));
+  }
+
+  discount = Math.max(0, Math.min(discount, subtotal));
+  discountCode = coupon.code;
+}
+
+const grandTotal = Math.max(0, subtotal - discount + shipping);
+const total = subtotal; // legacy alias
+
+const customerId = await getOrCreateCustomerId(env, phone);
+
+await env.DB.prepare(`
+  INSERT INTO orders (
+    order_id,
+    customer_id,
+    email,
+    phone,
+    customer_name,
+    items,
+    item_count,
+    subtotal,
+    shipping_cost,
+    discount,
+    discount_code,
+    total,
+    shipping_name,
+    shipping_phone,
+    shipping_address,
+    shipping_city,
+    shipping_state,
+    shipping_pincode,
+    status,
+    payment_status,
+    source,
+    created_at,
+    updated_at
+  )
+  VALUES (
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+    'pending',
+    'unpaid',
+    'catalogue',
+    datetime('now'),
+    datetime('now')
+  )
+`).bind(
+  orderId,
+  customerId,
+  customerEmail,
+  phone,
+  name || phone,
+  itemsJson,
+  itemCount,
+  subtotal,
+  shipping,
+  discount,
+  discountCode,
+  grandTotal,
+  name || '',
+  phone || '',
+  address || '',
+  city || '',
+  state || '',
+  pincode || ''
+).run();
+
+
+await env.DB.prepare(`
+  INSERT INTO customers (
+    phone,
+    customer_id,
+    name,
+    email,
+    address,
+    city,
+    state,
+    pincode,
+    first_seen,
+    last_seen,
+    updated_at
+  )
+  VALUES (
+    ?, ?, ?, ?, ?, ?, ?, ?,
+    datetime('now'),
+    datetime('now'),
+    datetime('now')
+  )
+  ON CONFLICT(phone) DO UPDATE SET
+    customer_id = COALESCE(customers.customer_id, excluded.customer_id),
+    name = CASE WHEN excluded.name != '' THEN excluded.name ELSE customers.name END,
+    email = CASE WHEN excluded.email != '' THEN excluded.email ELSE customers.email END,
+    address = CASE WHEN excluded.address != '' THEN excluded.address ELSE customers.address END,
+    city = CASE WHEN excluded.city != '' THEN excluded.city ELSE customers.city END,
+    state = CASE WHEN excluded.state != '' THEN excluded.state ELSE customers.state END,
+    pincode = CASE WHEN excluded.pincode != '' THEN excluded.pincode ELSE customers.pincode END,
+    last_seen = datetime('now'),
+    updated_at = datetime('now')
+`).bind(
+  phone,
+  customerId,
+  name || '',
+  customerEmail,
+  address || '',
+  city || '',
+  state || '',
+  pincode || ''
+).run();
+
+const itemsText = items
+  .map(i => `• ${i.name} x${i.qty} — ₹${i.price * i.qty}`)
+  .join('\n');
+
+const bgTask = (async () => {
+  try {
+    await logOrderEvent(env, orderId, 'order_created', 'Catalogue order created', {
+      phone,
+      customerName: name || phone,
+      total: grandTotal,
+      itemCount,
+      discount: typeof discount !== 'undefined' ? discount : 0,
+      discountCode: typeof discountCode !== 'undefined' ? discountCode : '',
+    }, 'catalogue');
+
+    await syncOrderToGoogleSheetsSafe(env, orderId);
+    await syncCustomerToGoogleSheetsSafe(env, phone);
+    await syncLeadToGoogleSheetsSafe(env, phone);
+    await syncSalesToGoogleSheetsSafe(env, orderId);
+    await rebuildSourcePerformanceSheet(env);
+
+    // Owner alert only. Customer pays in browser Razorpay.
+await saveOwnerInboxAlert(env, ctx, {
+  type: 'order',
+  priority: 'high',
+  title: '🛒 New Catalogue Order',
+  body:
+    `Order: ${orderId}\n` +
+    `Customer: ${name || 'Customer'} (${phone})\n` +
+    `Total: ${formatINR(grandTotal)}\n` +
+    `Time: ${formatISTDateTime()}\n\n` +
+    `Items:\n${itemsText}\n\n` +
+    `Customer is opening Razorpay checkout.`,
+  orderId,
+  phone,
+  customerName: name || 'Customer',
+  amount: grandTotal,
+  source: 'catalogue',
+  actionType: 'order_detail',
+  actionLabel: 'Open Order',
+  meta: {
+    subtotal,
+    discount: typeof discount !== 'undefined' ? discount : 0,
+    discountCode: typeof discountCode !== 'undefined' ? discountCode : '',
+    shipping,
+    items,
+  },
+  dedupeKey: `order_created:${orderId}`,
+});
+  } catch (e) {
+    console.error('Catalogue order background task error:', e);
+
+    try {
+      await appendSyncFailureToGoogleSheets(env, {
+        destination: 'background',
+        entity_type: 'order',
+        entity_id: orderId,
+        action: 'catalogue_order_background',
+        error_message: e.message,
+        retry_count: 0,
+        status: 'failed',
+      });
+    } catch (_) {}
+  }
+})();
+
+ctx.waitUntil(bgTask);
+
+return jsonResponse({
+  success: true,
+  orderId,
+  subtotal,
+  discount: typeof discount !== 'undefined' ? discount : 0,
+  discountCode: typeof discountCode !== 'undefined' ? discountCode : '',
+  shipping,
+  total: grandTotal
+});
 } 
 
  
@@ -6833,6 +12279,106 @@ await sendWhatsAppText(env, env.OWNER_PHONE,
 
 
     if (path === '/api/auth/login' && method === 'POST') return handleLogin(request, env);
+    
+if (path === '/api/debug/last-catalogue-events' && method === 'GET') {
+  const { results } = await env.DB.prepare(`
+    SELECT * FROM catalogue_events ORDER BY created_at DESC LIMIT 10
+  `).all();
+  return jsonResponse({ success: true, events: results });
+}
+
+// ═══ COURIER WEBHOOK HEALTH / VALIDATION ═══
+if (path === '/api/courier/updates' && (method === 'GET' || method === 'HEAD' || method === 'OPTIONS')) {
+  return new Response(method === 'HEAD' ? null : JSON.stringify({
+    success: true,
+    endpoint: 'courier_updates',
+    status: 'ready'
+  }), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key, X-API-Key',
+      'Access-Control-Allow-Methods': 'GET, HEAD, POST, OPTIONS'
+    }
+  });
+}
+
+// ═══ PUBLIC CATALOGUE COUPON VALIDATE ═══
+// Must stay BEFORE authMiddleware. Catalogue visitors do not have admin token.
+if (path === '/api/catalogue/coupons/validate' && method === 'POST') {
+  const body = await request.json().catch(() => ({}));
+
+  const normalizedCode = String(body.code || '')
+    .trim()
+    .toUpperCase();
+
+  const subtotal = Math.max(
+    0,
+    Number(body.subtotal ?? body.orderTotal ?? 0)
+  );
+
+  if (!normalizedCode) return errorResponse('code required', 400);
+
+  // For now catalogue public coupon is only MANCHUR
+  if (normalizedCode !== 'MANCHUR') {
+    return errorResponse('Invalid coupon code', 404);
+  }
+
+  const coupon = await env.DB.prepare(
+    `SELECT * FROM coupons WHERE UPPER(code) = ? AND is_active = 1`
+  ).bind(normalizedCode).first();
+
+  if (!coupon) return errorResponse('Invalid coupon code', 404);
+
+  const now = new Date().toISOString();
+
+  if (coupon.expires_at && coupon.expires_at < now) {
+    return errorResponse('Coupon expired', 400);
+  }
+
+  if (coupon.starts_at && coupon.starts_at > now) {
+    return errorResponse('Coupon not active yet', 400);
+  }
+
+  if (coupon.usage_limit > 0 && coupon.used_count >= coupon.usage_limit) {
+    return errorResponse('Coupon usage limit reached', 400);
+  }
+
+  if (coupon.min_order > 0 && subtotal < coupon.min_order) {
+    return errorResponse(`Minimum order ₹${coupon.min_order} required`, 400);
+  }
+
+  let discount = 0;
+
+  if (coupon.type === 'percent') {
+    discount = Math.round((subtotal * Number(coupon.value || 0)) / 100);
+
+    if (coupon.max_discount > 0) {
+      discount = Math.min(discount, Number(coupon.max_discount));
+    }
+  } else {
+    discount = Math.round(Number(coupon.value || 0));
+  }
+
+  discount = Math.max(0, Math.min(discount, subtotal));
+
+  return jsonResponse({
+    success: true,
+    coupon: {
+      code: coupon.code,
+      type: coupon.type,
+      value: Number(coupon.value || 0),
+      discount,
+      maxDiscount: Number(coupon.max_discount || 0),
+    },
+  });
+}
+
+if (path === '/api/customer/link-identity' && method === 'POST') {
+  return handleCustomerLinkIdentity(request, env);
+}
+
     if (path === '/api/auth/me' && method === 'GET') {
       const user = await authMiddleware(request, env);
       if (!user) return errorResponse('Unauthorized', 401);
@@ -6844,9 +12390,51 @@ await sendWhatsAppText(env, env.OWNER_PHONE,
       return jsonResponse({ success: true, token });
     }
 
-  
-    // PUBLIC — no auth needed, must be BEFORE auth wall
-    if (path === '/api/push/fcm-register' && method === 'POST') return handleRegisterFCM(request, env);
+     // ═══ CUSTOMER PROFILE AUTH — PUBLIC / TOKEN-BASED ═══
+if (path === '/api/customer/auth/send-otp' && method === 'POST') {
+  return handleCustomerSendOtp(request, env);
+}
+
+if (path === '/api/customer/auth/verify-otp' && method === 'POST') {
+  return handleCustomerVerifyOtp(request, env);
+}
+
+if (path === '/api/customer/me' && method === 'GET') {
+  return handleCustomerMe(request, env);
+}
+
+if (path === '/api/customer/orders' && method === 'GET') {
+  return handleCustomerOrders(request, env);
+}
+
+if (path === '/api/customer/logout' && method === 'POST') {
+  return handleCustomerLogout(request, env);
+}
+
+// PUBLIC — no auth needed, must be BEFORE auth wall
+
+// ═══ CUSTOMER PROFILE AUTH — PUBLIC / TOKEN-BASED ═══
+if (path === '/api/customer/auth/send-otp' && method === 'POST') {
+  return handleCustomerSendOtp(request, env);
+}
+
+if (path === '/api/customer/auth/verify-otp' && method === 'POST') {
+  return handleCustomerVerifyOtp(request, env);
+}
+
+if (path === '/api/customer/me' && method === 'GET') {
+  return handleCustomerMe(request, env);
+}
+
+if (path === '/api/customer/orders' && method === 'GET') {
+  return handleCustomerOrders(request, env);
+}
+
+if (path === '/api/customer/logout' && method === 'POST') {
+  return handleCustomerLogout(request, env);
+}
+
+if (path === '/api/push/fcm-register' && method === 'POST') return handleRegisterFCM(request, env);
 
         const syncKey = request.headers.get('x-sync-key');
     const hasValidSyncKey = syncKey && syncKey === env.SYNC_API_KEY;
@@ -6877,10 +12465,27 @@ await sendWhatsAppText(env, env.OWNER_PHONE,
       }
     }
     
-    const user = await authMiddleware(request, env);
-    if (!user) return errorResponse('Unauthorized', 401);
+const user = await authMiddleware(request, env);
+if (!user) return errorResponse('Unauthorized', 401);
 
-    if (path === '/api/chats' && method === 'GET') return handleGetChats(request, env);
+if (path === '/api/owner-inbox' && method === 'GET') {
+  return handleGetOwnerInbox(request, env);
+}
+
+if (path.match(/^\/api\/owner-inbox\/\d+\/read$/) && method === 'POST') {
+  return handleMarkOwnerAlertRead(path, env);
+}
+
+if (path === '/api/owner-inbox/read-all' && method === 'POST') {
+  return handleMarkOwnerInboxReadAll(env);
+}
+if (path === '/api/admin/reconcile-unsupported' && method === 'POST') {
+  return handleReconcileUnsupported(request, env, ctx);
+}
+if (path === '/api/admin/backfill-owner-inbox' && method === 'POST') {
+  return handleBackfillOwnerInbox(request, env);
+}
+if (path === '/api/chats' && method === 'GET') return handleGetChats(request, env);
     if (path.match(/^\/api\/chats\/(.+)\/messages$/) && method === 'GET') {
       const phone = path.match(/^\/api\/chats\/(.+)\/messages$/)[1];
       return handleGetMessages(phone, request, env);
@@ -6955,7 +12560,7 @@ if (path === '/api/messages/saved' && method === 'GET') {
       const status = url.searchParams.get('status');
       const from = url.searchParams.get('from');
       const to = url.searchParams.get('to');
-      const limit = parseInt(url.searchParams.get('limit') || '50');
+      
 
       let where = [];
       let params = [];
@@ -6981,7 +12586,7 @@ if (path === '/api/messages/saved' && method === 'GET') {
     // ═══ CUSTOMER SEARCH ═══
     if (path === '/api/customers/search' && method === 'GET') {
       const q = url.searchParams.get('q') || '';
-      const limit = parseInt(url.searchParams.get('limit') || '50');
+      const limit = parseInt(url.searchParams.get('limit') || '500000');
 
       if (!q) return jsonResponse({ success: true, customers: [], total: 0 });
 
@@ -7004,12 +12609,14 @@ if (path === '/api/messages/saved' && method === 'GET') {
 
     // ═══ COUPON VALIDATE ═══
     if (path === '/api/coupons/validate' && method === 'POST') {
-      const { code, orderTotal } = await request.json();
-      if (!code) return errorResponse('code required');
+const { code, orderTotal } = await request.json();
+const normalizedCode = String(code || '').trim().toUpperCase();
 
-      const coupon = await env.DB.prepare(
-        `SELECT * FROM coupons WHERE code = ? AND is_active = 1`
-      ).bind(code.toUpperCase()).first();
+if (!normalizedCode) return errorResponse('code required');
+
+const coupon = await env.DB.prepare(
+  `SELECT * FROM coupons WHERE UPPER(code) = ? AND is_active = 1`
+).bind(normalizedCode).first();
 
       if (!coupon) return errorResponse('Invalid coupon code', 404);
 
@@ -7042,7 +12649,7 @@ if (path === '/api/messages/saved' && method === 'GET') {
         INSERT INTO coupons (code, type, value, min_order, max_discount, usage_limit, starts_at, expires_at, is_active, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
       `).bind(
-        (b.code || '').toUpperCase(), b.type || 'percent', b.value || 0,
+        String(b.code || '').trim().toUpperCase(), b.type || 'percent', b.value || 0,
         b.min_order || 0, b.max_discount || 0, b.usage_limit || 0,
         b.starts_at || null, b.expires_at || null
       ).run();
@@ -7051,7 +12658,11 @@ if (path === '/api/messages/saved' && method === 'GET') {
 
     // ═══ BROADCAST CRUD + SEND ═══
     if (path === '/api/broadcasts' && method === 'GET') {
-      const { results } = await env.DB.prepare(`SELECT * FROM broadcasts ORDER BY created_at DESC LIMIT 50`).all();
+      const limit = Math.min(Number(url.searchParams.get('limit') || 500), 1000);
+
+const { results } = await env.DB.prepare(
+  `SELECT * FROM broadcasts ORDER BY created_at DESC LIMIT ?`
+).bind(limit).all();
       return jsonResponse({ success: true, broadcasts: results });
     }
     if (path === '/api/broadcasts' && method === 'POST') {
@@ -7146,16 +12757,22 @@ if (path === '/api/messages/saved' && method === 'GET') {
 
     if (path === '/api/orders' && method === 'GET') return handleGetOrders(request, env);
      
-    // GET single order
+// GET single order
 if (path.match(/^\/api\/orders\/[^/]+$/) && method === 'GET') {
   const orderId = decodeURIComponent(path.split('/')[3]);
+
   const order = await env.DB.prepare(
     `SELECT * FROM orders WHERE order_id = ?`
   ).bind(orderId).first();
+
   if (!order) return errorResponse('Order not found', 404);
-  // Parse JSON fields
-  try { order.items = JSON.parse(order.items || '[]'); } catch {}
-  return jsonResponse({ success: true, order });
+
+  const packedOrder = await enrichOrderForPacking(env, order);
+
+  return jsonResponse({
+    success: true,
+    order: packedOrder
+  });
 }
 
  // ── PATCH /api/orders/:id/details — admin edit customer/shipping details ──
@@ -7465,12 +13082,37 @@ if (path === '/api/orders/manual' && method === 'POST') {
   ).run();
 
   // Upsert customer
-  await env.DB.prepare(`
-    INSERT INTO customers (phone, name, first_seen, last_seen, updated_at)
-    VALUES (?, ?, datetime('now'), datetime('now'), datetime('now'))
-    ON CONFLICT(phone) DO UPDATE SET
-      name = excluded.name, last_seen = datetime('now'), updated_at = datetime('now')
-  `).bind(phone, name).run();
+const customerId =
+  await getOrCreateCustomerId(env, phone);
+
+await env.DB.prepare(`
+  INSERT INTO customers (
+    phone,
+    customer_id,
+    name,
+    first_seen,
+    last_seen,
+    updated_at
+  )
+  VALUES (
+    ?, ?, ?,
+    datetime('now'),
+    datetime('now'),
+    datetime('now')
+  )
+  ON CONFLICT(phone) DO UPDATE SET
+    customer_id = COALESCE(
+      customers.customer_id,
+      excluded.customer_id
+    ),
+    name = excluded.name,
+    last_seen = datetime('now'),
+    updated_at = datetime('now')
+`).bind(
+  phone,
+  customerId,
+  name
+).run();
 
   return jsonResponse({ success: true, orderId, total: grandTotal });
 }
@@ -7520,18 +13162,50 @@ if (path.match(/^\/api\/orders\/[^/]+\/ship$/) && method === 'POST') {
     return errorResponse('Order already shipped', 400);
   }
 
+if (order.shiprocket_order_id || order.shipment_id) {
+  return jsonResponse({
+    success: true,
+    alreadyBooked: true,
+    shiprocketOrderId: order.shiprocket_order_id || '',
+    shipmentId: order.shipment_id || '',
+    message: 'Shiprocket order already created',
+  });
+}
+
   // Parse items
   let items = [];
   try { items = JSON.parse(order.items || '[]'); } catch(e) {}
 
   const customerName = order.customer_name || 'Customer';
   const phone        = order.phone;
+const customerRow = await env.DB.prepare(
+  `SELECT email FROM customers WHERE phone = ?`
+).bind(phone).first();
+
+const customerEmail = customerRow?.email || '';
+
+if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
+  return errorResponse('Customer email missing. Update customer email before creating Shiprocket order.', 400);
+}
 
   // Book Shiprocket
   let srOrderId = null;
   let srError   = null;
 
   try {
+console.log(
+  'SHIPROCKET_PAYLOAD_CHECK',
+  JSON.stringify({
+    orderId,
+    customerName,
+    phone,
+    address: order.shipping_address,
+    city: order.shipping_city,
+    state: order.shipping_state,
+    pincode: order.shipping_pincode,
+    itemCount: items.length
+  })
+);
     const srData = await createShiprocketOrder(env, {
       order: {
         orderNumber: orderId,
@@ -7553,20 +13227,37 @@ if (path.match(/^\/api\/orders\/[^/]+\/ship$/) && method === 'POST') {
       })),
     });
 
-    if (srData.order_id) {
-      srOrderId = String(srData.order_id);
+if (srData.order_id) {
+  srOrderId = String(srData.order_id);
 
-      // Update order in D1
-      await env.DB.prepare(`
-        UPDATE orders SET
-          shiprocket_order_id = ?,
-          status              = 'processing',
-          updated_at          = datetime('now')
-        WHERE order_id = ?
-      `).bind(srOrderId, orderId).run();
+  const srShipmentId = srData.shipment_id ? String(srData.shipment_id) : '';
+  const srAwbCode = srData.awb_code ? String(srData.awb_code) : '';
+  const srCourier = srData.courier_name || '';
 
-      await logOrderEvent(env, orderId, 'shiprocket_booked', 'Shiprocket booked successfully', {
+  await env.DB.prepare(`
+    UPDATE orders SET
+      shiprocket_order_id = ?,
+      shipment_id         = ?,
+      awb_code            = ?,
+      awb_number          = CASE WHEN ? != '' THEN ? ELSE awb_number END,
+      courier             = CASE WHEN ? != '' THEN ? ELSE courier END,
+      status              = 'processing',
+      updated_at          = datetime('now')
+    WHERE order_id = ?
+  `).bind(
+    srOrderId,
+    srShipmentId,
+    srAwbCode,
+    srAwbCode, srAwbCode,
+    srCourier, srCourier,
+    orderId
+  ).run();
+
+await logOrderEvent(env, orderId, 'shiprocket_booked', 'Shiprocket booked successfully', {
   shiprocketOrderId: srOrderId,
+  shipmentId: srShipmentId,
+  awbCode: srAwbCode,
+  courier: srCourier,
 }, 'admin');
       try {
         await syncOrderToGoogleSheetsSafe(env, orderId);
@@ -7607,17 +13298,33 @@ if (path.match(/^\/api\/orders\/[^/]+\/ship$/) && method === 'POST') {
         `\ud83d\udca0 KAAPAV Fashion Jewellery`
       );
 
-      // Owner WA \u2014 Shiprocket booked confirmation
-      await sendWhatsAppText(env, env.OWNER_PHONE,
-        `\u2705 *Shiprocket Order Created!*\n\n` +
-        `Order: *${orderId}*\n` +
-        `Shiprocket ID: *${srOrderId}*\n` +
-        `Customer: ${customerName} (${phone})\n` +
-        `Amount: \u20B9${order.total}\n\n` +
-        `\ud83d\udce6 *Items:*\n${itemLines}\n\n` +
-        `\ud83d\udccd Address: ${order.shipping_address || '-'}, ${order.shipping_city || '-'} \u2014 ${order.shipping_pincode || '-'}\n\n` +
-        `\u27a1\ufe0f Next: Open Shiprocket dashboard \u2192 assign AWB \u2192 press AWB button in app.`
-      );
+await saveOwnerInboxAlert(env, ctx, {
+  type: 'shipping',
+  priority: 'normal',
+  title: '📦 Shiprocket Order Created',
+  body:
+    `Order: ${orderId}\n` +
+    `Shiprocket ID: ${srOrderId}\n` +
+    `Customer: ${customerName} (${phone})\n` +
+    `Amount: ${formatINR(order.total)}\n` +
+    `Time: ${formatISTDateTime()}\n\n` +
+    `Items:\n${itemLines}\n\n` +
+    `Next: Assign AWB / tracking.`,
+  orderId,
+  phone,
+  customerName,
+  amount: order.total,
+  source: order.source || 'app',
+  actionType: 'order_detail',
+  actionLabel: 'Open Order',
+  meta: {
+    shiprocketOrderId: srOrderId,
+    shipmentId: srShipmentId,
+    awbCode: srAwbCode,
+    courier: srCourier,
+  },
+  dedupeKey: `shiprocket_booked:${orderId}:${srOrderId}`,
+});
 
       return jsonResponse({
         success:       true,
@@ -7704,27 +13411,49 @@ if (path.match(/^\/api\/orders\/[^/]+\/awb$/) && method === 'PUT') {
   const name = order.customer_name || 'Customer';
 
   // Customer WA with tracking
-  await sendWhatsAppText(env, order.phone,
-    `🚚 *Your Order is Shipped!*\n\n` +
-    `Hi ${name}! 🎉\n\n` +
-    `Order ID: *${orderId}*\n` +
-    `AWB: *${awb}*\n` +
-    `Courier: ${courier || 'Shiprocket'}\n\n` +
-    `📍 *Track your order:*\n` +
-    `https://www.shiprocket.in/shipment-tracking/?id=${awb}\n\n` +
-    `Estimated delivery: *2–4 working days*\n\n` +
-    `💎 KAAPAV Fashion Jewellery`
-  );
+const trackUrl = `https://www.shiprocket.in/shipment-tracking/?id=${awb}`;
+
+await sendWhatsAppCtaUrl(
+  env,
+  order.phone,
+  `🚚 *Your KAAPAV order is on the way!*\n\n` +
+  `Hi ${name.split(' ')[0]}!\n\n` +
+  `Order ID: *${orderId}*\n` +
+  `AWB: *${awb}*\n` +
+  `Courier: ${courier || 'Shiprocket'}\n\n` +
+  `Tap below to track your parcel anytime.\n\n` +
+  `💎 KAAPAV Fashion Jewellery`,
+  'Track Now',
+  trackUrl
+);
 
   // Owner WA
-  await sendWhatsAppText(env, env.OWNER_PHONE,
-    `🚚 *AWB Updated*\n\n` +
-    `Order: *${orderId}*\n` +
+await saveOwnerInboxAlert(env, ctx, {
+  type: 'shipping',
+  priority: 'normal',
+  title: '🚚 AWB Updated',
+  body:
+    `Order: ${orderId}\n` +
     `Customer: ${name} (${order.phone})\n` +
-    `AWB: *${awb}*\n\n` +
-    `✅ Customer notified on WhatsApp.`
-  );
-
+    `AWB: ${awb}\n` +
+    `Courier: ${courier || 'Shiprocket'}\n` +
+    `Time: ${formatISTDateTime()}\n\n` +
+    `Customer notified on WhatsApp.`,
+  orderId,
+  phone: order.phone,
+  customerName: name,
+  amount: order.total,
+  source: order.source || 'app',
+  actionType: 'order_detail',
+  actionLabel: 'Open Order',
+  actionUrl: trackUrl,
+  meta: {
+    awb,
+    courier: courier || 'Shiprocket',
+    trackingUrl: trackUrl,
+  },
+  dedupeKey: `awb_updated:${orderId}:${awb}`,
+});
   return jsonResponse({ success: true });
 }
 
@@ -8063,7 +13792,7 @@ if (path === '/api/sync/supabase/backfill' && method === 'POST') {
         }
       });
     }
-
+   
     return errorResponse('Not found', 404);
    },
 
@@ -8096,7 +13825,17 @@ try {
 } catch(e) {
   console.error('30-min payment reminder error:', e);
 }
+try {
+  await autoCancelOldUnpaidCatalogueOrders(env);
+} catch (e) {
+  console.error('AUTO_CANCEL_UNPAID cron error:', e);
+}
     console.log('Cron running:', new Date().toISOString());
+try {
+  await processCatalogueRetargetingReminders(env);
+} catch (e) {
+  console.error('Catalogue retargeting cron error:', e);
+}
 
         try {
       const nowUtc = new Date();
@@ -8184,7 +13923,6 @@ try {
       }
     } catch(e) { console.error('Review request error:', e); }
 
-    // ── Abandoned payment recovery (2 hrs after order, unpaid) ─
     try {
       const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
       const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();

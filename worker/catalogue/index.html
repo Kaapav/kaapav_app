@@ -5,7 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>KAAPAV Fashion Jewellery</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://checkout.razorpay.com" crossorigin>
+<link rel="dns-prefetch" href="//checkout.razorpay.com">
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<link rel="preconnect" href="https://checkout.razorpay.com" crossorigin>
+<link rel="dns-prefetch" href="//checkout.razorpay.com">
 <style>
 :root {
   --gold:#C49432;--gold-l:#D4A84B;--gold-d:#A67C28;
@@ -17,6 +21,7 @@
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-height:100vh;overscroll-behavior:none}
+
 
 /* ── HEADER ── */
 .hdr{background:#fff;border-bottom:0.5px solid var(--border);padding:12px 14px 10px;position:sticky;top:0;z-index:100}
@@ -36,6 +41,55 @@ body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-
 .search-inp::placeholder{color:var(--gray-l)}
 .search-inp:focus{border-color:var(--gold)}
 .s-ico{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:13px;pointer-events:none}
+
+/* ── TRUST STRIP ── */
+.trust-strip{
+  margin-top:9px;
+  border:0.5px solid rgba(196,148,50,.22);
+  border-radius:999px;
+  background:linear-gradient(135deg,#fffaf0,#f7efe1);
+  overflow:hidden;
+  box-shadow:0 6px 18px rgba(196,148,50,.08);
+}
+
+.trust-track{
+  display:flex;
+  align-items:center;
+  gap:18px;
+  width:max-content;
+  padding:7px 14px;
+  animation:trustRun 24s linear infinite;
+}
+
+.trust-track span{
+  font-size:10px;
+  letter-spacing:.9px;
+  text-transform:uppercase;
+  color:#5b4218;
+  white-space:nowrap;
+  font-weight:500;
+}
+
+.trust-track i{
+  width:4px;
+  height:4px;
+  border-radius:50%;
+  background:var(--gold);
+  display:block;
+  flex-shrink:0;
+}
+
+.trust-strip:hover .trust-track{animation-play-state:paused}
+
+@keyframes trustRun{
+  from{transform:translateX(0)}
+  to{transform:translateX(-50%)}
+}
+
+@media(max-width:480px){
+  .trust-track{animation-duration:18s;padding:6px 12px}
+  .trust-track span{font-size:9px;letter-spacing:.7px}
+}
 
 /* ── CAT TABS ── */
 .cats{background:var(--dark);border-bottom:0.5px solid rgba(196,148,50,.18);position:sticky;top:var(--hdr-h,88px);z-index:99}
@@ -71,15 +125,72 @@ body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-
 .c-price{display:flex;align-items:baseline;gap:4px;flex-wrap:wrap}
 .c-sale{font-size:13px;font-weight:500;color:var(--dark)}
 .c-mrp{font-size:10px;color:var(--gray-l);text-decoration:line-through}
-.c-disc{font-size:9px;background:#D1FAE5;color:#059669;padding:1px 4px;border-radius:8px;font-weight:500}
-.c-badges{position:absolute;top:7px;left:7px;display:flex;flex-direction:column;gap:3px}
-.bdg{font-size:8px;padding:2px 5px;border-radius:8px;font-weight:500;white-space:nowrap}
-.bdg-feat{background:linear-gradient(135deg,#D4A84B,#C49432);color:#1A1A1A}
+.c-disc{
+  font-size:8px;
+  background:rgba(196,148,50,.12);
+  color:#8A5F16;
+  border:0.5px solid rgba(196,148,50,.28);
+  padding:2px 6px;
+  border-radius:999px;
+  font-weight:500;
+  letter-spacing:.35px;
+  text-transform:uppercase;
+}
+
+.c-badges{
+  position:absolute;
+  top:7px;
+  left:7px;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  max-width:72%;
+}
+
+.bdg{
+  font-size:8px;
+  padding:3px 7px;
+  border-radius:999px;
+  font-weight:500;
+  white-space:nowrap;
+  letter-spacing:.35px;
+  text-transform:uppercase;
+  backdrop-filter:blur(8px);
+  box-shadow:0 4px 12px rgba(0,0,0,.08);
+}
+
+.bdg-feat{
+  background:linear-gradient(135deg,#fff3cf,#D4A84B,#C49432);
+  color:#1A1A1A;
+  border:0.5px solid rgba(255,255,255,.55);
+}
 .c-tags{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px}
 .t-chip{font-size:8px;padding:1px 4px;border-radius:6px;font-weight:400}
-.s-badge{position:absolute;bottom:42px;right:7px;font-size:8px;padding:2px 5px;border-radius:6px;font-weight:500}
-.s-out{background:#FEE2E2;color:#DC2626}
-.s-low{background:#FEF3C7;color:#D97706}
+.s-badge{
+  position:absolute;
+  bottom:42px;
+  right:7px;
+  font-size:8px;
+  padding:3px 7px;
+  border-radius:999px;
+  font-weight:500;
+  letter-spacing:.35px;
+  text-transform:uppercase;
+  backdrop-filter:blur(8px);
+  box-shadow:0 4px 12px rgba(0,0,0,.08);
+}
+
+.s-out{
+  background:rgba(254,226,226,.96);
+  color:#B91C1C;
+  border:0.5px solid rgba(185,28,28,.18);
+}
+
+.s-low{
+  background:rgba(255,247,237,.96);
+  color:#9A5A00;
+  border:0.5px solid rgba(196,148,50,.25);
+}
 
 /* wishlist heart */
 .wl-btn{position:absolute;top:7px;right:7px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.9);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;z-index:2;transition:transform .2s}
@@ -96,7 +207,7 @@ body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-
 .mo.on .m-box{transform:translateY(0)}
 @media(min-width:600px){.mo{align-items:center}.m-box{max-width:460px;margin:auto;border-radius:16px;max-height:86vh}}
 .m-handle{width:34px;height:4px;background:var(--border);border-radius:2px;margin:11px auto 0}
-.m-close{position:fixed;top:16px;right:16px;width:40px;height:40px;border-radius:50%;background:var(--gold);border:2px solid #fff;cursor:pointer;font-size:16px;color:#0A0804;font-weight:700;display:flex;align-items:center;justify-content:center;z-index:201;box-shadow:0 4px 16px rgba(0,0,0,.5);}
+.m-close{position: absolute;top:16px;right:16px;width:40px;height:40px;border-radius:50%;background:var(--gold);border:2px solid #fff;cursor:pointer;font-size:16px;color:#0A0804;font-weight:700;display:flex;align-items:center;justify-content:center;z-index:201;box-shadow:0 4px 16px rgba(0,0,0,.5);}
 .gal{position:relative}
 .g-main{width:100%;aspect-ratio:1;object-fit:cover;background:#f5f0e8;display:block;cursor:zoom-in}
 .g-ph{width:100%;aspect-ratio:1;background:linear-gradient(135deg,#f5f0e8,#ede8df);display:flex;align-items:center;justify-content:center;font-size:56px}
@@ -193,6 +304,333 @@ body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-
 .wi-price{font-size:12px;color:var(--dark2);flex-shrink:0}
 .wi-add{background:var(--dark);color:var(--gold-l);border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-family:var(--font-sans);cursor:pointer;flex-shrink:0}
 
+/* ── ORDERS DRAWER ── */
+.od-phone-box{background:#fff;border:0.5px solid var(--border);border-radius:12px;padding:13px;margin-bottom:12px}
+.od-note{font-size:12px;color:var(--gray);line-height:1.55;margin-bottom:10px}
+.od-inp{width:100%;background:var(--cream);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;font-family:var(--font-sans);font-size:13px;color:var(--dark);outline:none;margin-bottom:9px}
+.od-inp:focus{border-color:var(--gold)}
+.od-load{width:100%;background:var(--dark);color:var(--gold-l);border:none;border-radius:10px;padding:11px;font-family:var(--font-sans);font-size:13px;font-weight:500;cursor:pointer}
+.od-card{background:#fff;border:0.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px;box-shadow:0 2px 10px rgba(0,0,0,.03)}
+.od-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}
+.od-id{font-size:13px;font-weight:600;color:var(--dark);letter-spacing:.3px}
+.od-date{font-size:10px;color:var(--gray);margin-top:2px}
+.od-pill{font-size:9px;text-transform:uppercase;letter-spacing:.5px;border-radius:20px;padding:3px 8px;font-weight:600;white-space:nowrap;background:#F3F4F6;color:#6B7280}
+.od-paid,.od-confirmed,.od-delivered{background:#D1FAE5;color:#059669}
+.od-unpaid,.od-pending{background:#FEF3C7;color:#D97706}
+.od-shipped{background:#DBEAFE;color:#2563EB}
+.od-cancelled,.od-refunded{background:#FEE2E2;color:#DC2626}
+.od-items{border-top:0.5px solid var(--border);border-bottom:0.5px solid var(--border);padding:8px 0;margin:8px 0}
+.od-item{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--dark2);line-height:1.45;margin-bottom:4px}
+.od-item:last-child{margin-bottom:0}
+.od-total{display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:600;color:var(--dark);margin:8px 0 10px}
+.od-actions{display:flex;gap:7px;flex-wrap:wrap}
+.od-btn{flex:1;min-width:88px;text-align:center;text-decoration:none;background:var(--cream);border:0.5px solid var(--border);color:var(--dark);border-radius:8px;padding:8px 9px;font-size:11px;font-weight:500;font-family:var(--font-sans);cursor:pointer}
+.od-pay{background:var(--dark);color:var(--gold-l);border-color:var(--dark)}
+.od-wa{background:#25D366;color:#fff;border-color:#25D366}
+.od-empty{text-align:center;padding:44px 18px;color:var(--gray);font-size:13px;line-height:1.6}
+.od-empty .ei{font-size:42px;margin-bottom:10px}
+
+/* ── PROFILE SHELL ── */
+.pf-hero{
+  background:linear-gradient(135deg,#fffaf0,#fff);
+  border:0.5px solid rgba(196,148,50,.22);
+  border-radius:16px;
+  padding:18px 15px;
+  margin-bottom:12px;
+  text-align:center;
+  box-shadow:0 6px 18px rgba(196,148,50,.08);
+}
+
+.pf-avatar{
+  width:58px;
+  height:58px;
+  border-radius:50%;
+  margin:0 auto 10px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:linear-gradient(135deg,#D4A84B,#C49432);
+  color:#1A1A1A;
+  font-size:26px;
+  box-shadow:0 8px 22px rgba(196,148,50,.22);
+}
+
+.pf-title{
+  font-family:var(--font-serif);
+  font-size:22px;
+  color:var(--dark);
+  line-height:1.25;
+  margin-bottom:4px;
+}
+
+.pf-sub{
+  font-size:12px;
+  color:var(--gray);
+  line-height:1.55;
+}
+
+.pf-card{
+  background:#fff;
+  border:0.5px solid var(--border);
+  border-radius:14px;
+  padding:13px;
+  margin-bottom:10px;
+}
+
+.pf-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:12px 4px;
+  border-bottom:0.5px solid #f0ece4;
+  cursor:pointer;
+}
+
+.pf-row:last-child{border-bottom:none}
+
+.pf-left{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+}
+
+.pf-ico{
+  width:34px;
+  height:34px;
+  border-radius:12px;
+  background:var(--cream);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-shrink:0;
+}
+
+.pf-name{
+  font-size:13px;
+  font-weight:500;
+  color:var(--dark);
+}
+
+.pf-note{
+  font-size:10px;
+  color:var(--gray);
+  margin-top:2px;
+}
+
+.pf-arr{
+  color:var(--gray-l);
+  font-size:18px;
+}
+
+.pf-mini{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+  margin-bottom:10px;
+}
+
+.pf-stat{
+  background:#fff;
+  border:0.5px solid var(--border);
+  border-radius:12px;
+  padding:11px;
+  text-align:center;
+}
+
+.pf-stat strong{
+  display:block;
+  font-size:16px;
+  color:var(--dark);
+}
+
+.pf-stat span{
+  font-size:10px;
+  color:var(--gray);
+}
+
+#auth_otp{
+  margin-bottom:8px;
+}
+
+#ordersDrw .pf-card{
+  scroll-margin-bottom:140px;
+}
+
+/* ── ORDERS MOBILE LAYOUT FIX ── */
+#ordersDrw{
+  z-index:9998;
+}
+
+#ordersDrw .drw-panel{
+  left:0;
+  right:0;
+  width:100%;
+  max-width:none;
+  background:var(--cream);
+}
+
+#ordersDrw .drw-hdr{
+  position:sticky;
+  top:0;
+  z-index:3;
+}
+
+#ordersDrw .drw-body{
+  background:var(--cream);
+  padding:12px 14px 100px;
+}
+
+#ordersDrw .drw-footer{
+  position:sticky;
+  bottom:0;
+  z-index:3;
+  padding:12px 14px calc(12px + env(safe-area-inset-bottom));
+}
+
+#ordersDrw .od-phone-box,
+#ordersDrw .od-card{
+  width:100%;
+  max-width:none;
+  margin-left:0;
+  margin-right:0;
+}
+
+#ordersDrw .od-card{
+  padding:14px;
+  border-radius:14px;
+}
+
+#ordersDrw .od-top{
+  align-items:flex-start;
+}
+
+#ordersDrw .od-id{
+  font-size:14px;
+  line-height:1.25;
+  word-break:break-word;
+}
+
+#ordersDrw .od-pill{
+  flex-shrink:0;
+}
+
+#ordersDrw .od-item{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:flex-start;
+  gap:10px;
+}
+
+#ordersDrw .od-item span{
+  min-width:0;
+  line-height:1.45;
+}
+
+#ordersDrw .od-item strong{
+  white-space:nowrap;
+}
+
+#ordersDrw .od-actions{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+}
+
+#ordersDrw .od-btn{
+  width:100%;
+  min-width:0;
+  flex:none;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:44px;
+}
+
+#ordersDrw .od-wa{
+  grid-column:1 / -1;
+}
+
+@media(min-width:700px){
+  #ordersDrw .drw-panel{
+    left:auto;
+    width:min(100%,430px);
+  }
+}
+
+.od-section{background:#fff;border:0.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px}
+.od-section-title{font-size:11px;color:var(--gray);font-weight:600;text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px}
+.od-kv{display:flex;justify-content:space-between;gap:12px;font-size:12px;color:var(--dark2);padding:5px 0;border-bottom:0.5px solid #f0ece4}
+.od-kv:last-child{border-bottom:none}
+.od-kv span{color:var(--gray);flex-shrink:0}
+.od-kv strong{text-align:right;color:var(--dark);font-weight:500;line-height:1.45}
+.od-address{display:block}
+.od-address span{display:block;margin-bottom:4px}
+.od-address strong{display:block;text-align:left;white-space:normal}
+.od-timeline{display:flex;flex-direction:column;gap:8px}
+.od-step{font-size:12px;color:var(--gray);display:flex;gap:8px;align-items:flex-start}
+.od-step.on{color:var(--dark)}
+.od-dot{width:9px;height:9px;border-radius:50%;background:var(--border);margin-top:4px;flex-shrink:0}
+.od-step.on .od-dot{background:var(--gold)}
+
+/* ── ORDER DETAILS + ORDERS FIX ── */
+#ordersDrw{
+  z-index:9998;
+}
+
+#ordersDrw .drw-panel{
+  left:0;
+  right:0;
+  width:100%;
+  max-width:none;
+  background:var(--cream);
+}
+
+#ordersDrw .od-actions{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+}
+
+#ordersDrw .od-btn{
+  width:100%;
+  min-width:0;
+  flex:none;
+  min-height:44px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+#ordersDrw .od-wa{
+  grid-column:1 / -1;
+}
+
+#orderDetailMo{
+  z-index:10001;
+}
+
+#orderDetailMo .co-box{
+  position:relative;
+  z-index:10002;
+}
+
+.od-section{background:#fff;border:0.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px}
+.od-section-title{font-size:11px;color:var(--gray);font-weight:600;text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px}
+.od-kv{display:flex;justify-content:space-between;gap:12px;font-size:12px;color:var(--dark2);padding:5px 0;border-bottom:0.5px solid #f0ece4}
+.od-kv:last-child{border-bottom:none}
+.od-kv span{color:var(--gray);flex-shrink:0}
+.od-kv strong{text-align:right;color:var(--dark);font-weight:500;line-height:1.45}
+.od-address{display:block}
+.od-address span{display:block;margin-bottom:4px}
+.od-address strong{display:block;text-align:left;white-space:normal}
+.od-timeline{display:flex;flex-direction:column;gap:8px}
+.od-step{font-size:12px;color:var(--gray);display:flex;gap:8px;align-items:flex-start}
+.od-step.on{color:var(--dark)}
+.od-dot{width:9px;height:9px;border-radius:50%;background:var(--border);margin-top:4px;flex-shrink:0}
+.od-step.on .od-dot{background:var(--gold)}
+
 /* ── CHECKOUT MODAL ── */
 .co-mo{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:400;display:flex;align-items:flex-end;opacity:0;pointer-events:none;transition:opacity .22s}
 .co-mo.on{opacity:1;pointer-events:all}
@@ -213,6 +651,27 @@ body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-
 .btn-pay{width:100%;background:var(--dark);color:var(--gold-l);border:none;border-radius:10px;padding:13px;font-family:var(--font-sans);font-size:14px;font-weight:500;cursor:pointer;margin-bottom:8px}
 .btn-pay:disabled{opacity:.5;cursor:not-allowed}
 .pay-secure{text-align:center;font-size:10px;color:var(--gray-l)}
+.co-reassure{
+  background:linear-gradient(135deg,#fffaf0,#fff);
+  border:0.5px solid rgba(196,148,50,.22);
+  border-radius:10px;
+  padding:10px 11px;
+  margin-bottom:12px;
+  font-size:11px;
+  line-height:1.55;
+  color:var(--dark2);
+}
+
+.co-reassure strong{
+  color:var(--dark);
+  font-weight:500;
+}
+
+@media(max-width:480px){
+  .co-box{max-height:94vh}
+  .co-inp{font-size:16px}
+  .btn-pay{min-height:46px}
+}
 
 /* ── SHIMMER ── */
 .sh{background:linear-gradient(90deg,#f0ebe0 25%,#e8e2d6 50%,#f0ebe0 75%);background-size:200% 100%;animation:sh 1.2s infinite}
@@ -267,7 +726,6 @@ body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-
   justify-content:center;
   cursor:pointer;
   z-index:10001;
-  pointer-events:auto;
   box-shadow:0 4px 16px rgba(0,0,0,.5);
 }
 .iv-prev,.iv-next{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.2);border:none;color:#fff;font-size:28px;cursor:pointer;z-index:10;display:flex;align-items:center;justify-content:center}
@@ -336,17 +794,512 @@ body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-
 .share-btn{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;padding:8px 12px;border-radius:12px;border:none;background:var(--cream);flex:1}
 .share-btn-ico{font-size:24px}
 .share-btn-lbl{font-size:10px;color:var(--dark2)}
+
+.footer{
+  background:#F8F6F2;
+  border-top:1px solid #E5DCCB;
+  padding:50px 25px 90px;
+  color:#2B2B2B;
+}
+
+.footer-container{
+  max-width:1200px;
+  margin:auto;
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr;
+  gap:40px;
+}
+
+.footer-logo{
+  text-align:center;
+}
+
+.footer-logo img{
+  width:80px;
+  height:auto;
+  display:block;
+  margin:0 auto 20px;
+}
+
+.contact-title{
+  color:#777;
+  margin-bottom:12px;
+}
+
+.footer-contact a{
+  color:#9A6D18;
+  text-decoration:none;
+  font-weight:500;
+}
+
+.footer-section h4{
+  font-family:Georgia, serif;
+  font-size:15px;
+  letter-spacing:4px;
+  font-weight:600;
+  text-transform:uppercase;
+  margin-bottom:20px;
+}
+
+.footer-section a{
+  display:block;
+  text-decoration:none;
+  color:#9A6D18;
+  margin-bottom:12px;
+  font-size:15px;
+  transition:.2s;
+}
+
+.footer-section a:hover{
+  color:#C49432;
+}
+
+.social-icons{
+  display:flex;
+  gap:14px;
+}
+
+.social-icons a{
+  width:42px;
+  height:42px;
+  background:white;
+  border-radius:12px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  box-shadow:0 4px 12px rgba(0,0,0,.08);
+}
+
+.footer-bottom{
+  text-align:center;
+  margin-top:40px;
+  padding-top:25px;
+  border-top:1px solid #E5DCCB;
+  color:#8B8B8B;
+  font-size:14px;
+}
+
+@media(max-width:768px){
+
+  .footer-container{
+    grid-template-columns:1fr;
+    text-align:center;
+  }
+
+  .social-icons{
+    justify-content:center;
+  }
+
+}
+
 </style>
+
+
+<!-- ═══════════════════════════════════════════════ -->
+<!-- KAAPAV CATALOGUE PIXEL v2.1 COMPLETE           -->
+<!-- ═══════════════════════════════════════════════ -->
+
+<!-- META PIXEL BASE -->
+<script>
+!function(f,b,e,v,n,t,s){
+if(f.fbq)return;
+n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;
+n.push=n;
+n.loaded=!0;
+n.version='2.0';
+n.queue=[];
+t=b.createElement(e);
+t.async=!0;
+t.src=v;
+s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)
+}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+
+fbq('init', '1788777195431410');
+
+console.log('✅ Meta Pixel Base Loaded - ID: 1788777195431410');
+</script>
+
+<noscript>
+<img height="1" width="1" style="display:none" 
+src="https://www.facebook.com/tr?id=1788777195431410&ev=PageView&noscript=1"/>
+</noscript>
+
+<!-- INTELLIGENCE LAYER -->
+<script>
+(function(){
+  console.log('🚀 Loading Intelligence Layer...');
+  
+  // Verify fbq exists
+  if(typeof fbq === 'undefined'){
+    console.error('❌ Meta Pixel (fbq) not found! Base pixel failed to load.');
+    return;
+  }
+  
+  const WORKER_URL='https://kaapav-ad-engine-api.kaapavin.workers.dev';
+  const CAPI_EVENTS = ['AddToCart','InitiateCheckout','Purchase','ViewContent','AddToWishlist'];
+  const PIXEL_ID='1788777195431410';
+  const DOMAIN=window.location.hostname;
+  const SOURCE_SITE='catalogue';
+  
+  const params=new URLSearchParams(window.location.search);
+  const utm={
+    source:params.get('utm_source')||'',
+    medium:params.get('utm_medium')||'',
+    campaign:params.get('utm_campaign')||'',
+    creative:params.get('creative')||'',
+    adset:params.get('adset')||'',
+    ad:params.get('ad')||'',
+    content:params.get('utm_content')||'',
+    fbclid:params.get('fbclid')||''
+  };
+  
+  const device=/Mobi|Android/i.test(navigator.userAgent)?'mobile':'desktop';
+function getCookie(n){const v=`; ${document.cookie}`;const p=v.split(`; ${n}=`);return p.length===2?p.pop().split(';').shift():'';}
+const fbclid=params.get('fbclid')||'';
+const _fbp=getCookie('_fbp');
+const _fbc=getCookie('_fbc')||(fbclid?`fb.1.${Date.now()}.${fbclid}`:'');
+  
+  let sessionId=sessionStorage.getItem('kpv_cat_sid');
+  if(!sessionId){
+    sessionId='kpv_cat_'+Date.now()+'_'+Math.random().toString(36).substr(2,9);
+    sessionStorage.setItem('kpv_cat_sid',sessionId);
+  }
+  
+function logIntelligence(event,extra){
+  try{
+    const payload={
+      event,url:window.location.href,utm,device,source_site:SOURCE_SITE,
+      session_id:sessionId,referrer:document.referrer,timestamp:new Date().toISOString(),
+      pixel_id:PIXEL_ID,domain:DOMAIN,_fbp,_fbc,fbclid,...extra
+    };
+    console.log(`📤 SENDING: ${event}`,{event_id:payload.event_id||'',_fbp,_fbc});
+    fetch(WORKER_URL+'/api/pixel-events',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload),keepalive:true
+    })
+    .then(res=>{console.log(`✅ Worker response: ${res.status} ${event}`);return res.json();})
+    .then(d=>{console.log('✅ Worker data:',d);})
+    .catch(()=>{});
+  }catch(e){}
+}
+  
+function genId(e){return `${sessionId}_${e}_${Date.now()}_${Math.random().toString(36).substr(2,9)}`;}
+function metaTrack(event,data,eid){
+  if(typeof fbq!=='undefined'){
+    const _eid=eid||genId(event);
+    fbq('track',event,data||{},{eventID:_eid});
+    console.log('📊 Meta Event:',event,{eid:_eid,source:'catalogue_app',...(data||{})});
+  }
+}
+  
+  function metaTrackCustom(event,data){
+    if(typeof fbq!=='undefined'){
+      fbq('trackCustom',event,data||{});
+      console.log('📊 Custom Event:',event,data);
+    }
+  }
+  
+  window.kpvTrack={
+    
+    pageView:function(screenName){
+      fbq('track','PageView');
+      metaTrackCustom('ScreenView',{
+        screen_name:screenName||'unknown',
+        source:'catalogue_app'
+      });
+      logIntelligence('PageView',{screen:screenName||'unknown'});
+    },
+    
+    catalogueView:function(){
+      metaTrackCustom('CatalogueView',{
+        page_type:'home',
+        source:'catalogue_app'
+      });
+      logIntelligence('CatalogueView',{});
+    },
+    
+    categoryView:function(categoryName){
+      metaTrackCustom('CatalogueCategoryView',{
+        category:categoryName,
+        page_type:'category',
+        source:'catalogue_app'
+      });
+      logIntelligence('CatalogueCategoryView',{category:categoryName});
+    },
+    
+    viewContent:function(product){
+      const eid=genId('ViewContent');
+      metaTrack('ViewContent',{
+        content_name:product.name,
+        content_type:'product',
+        content_category:product.category||'',
+        content_ids:[product.id||''],
+        value:product.price,
+        currency:'INR',
+        product_id:product.id,
+        product_name:product.name,
+        product_category:product.category||'',
+        product_price:product.price,
+        page_type:'product_detail',
+        source:'catalogue_app',
+        eid
+      });
+      logIntelligence('ViewContent',{
+        event_id:eid,
+	product:product.name,
+        product_id:product.id,
+        price:product.price,
+        category:product.category,
+        image:product.image,
+        eid
+      });
+    },
+    
+    productClick:function(product){
+      metaTrackCustom('CatalogueProductClick',{
+        product_id:product.id,
+        product_name:product.name,
+        product_category:product.category||'',
+        product_price:product.price,
+        page_type:'product_listing',
+        source:'catalogue_app'
+      });
+      logIntelligence('CatalogueProductClick',{
+        product:product.name,
+        product_id:product.id,
+        price:product.price,
+        category:product.category
+      });
+    },
+    
+    addToWishlist:function(product){
+      const eid=genId('AddToWishlist');
+      metaTrack('AddToWishlist',{
+        content_name:product.name,
+        content_ids:[product.id||''],
+        value:product.price,
+        currency:'INR',
+        product_id:product.id,
+        product_name:product.name,
+        product_category:product.category||'',
+        product_price:product.price,
+        source:'catalogue_app',
+        eid
+      });
+      logIntelligence('AddToWishlist',{
+        event_id:eid,
+        product:product.name,
+        product_id:product.id,
+        price:product.price,
+        category:product.category,
+        eid
+      });
+    },
+    
+    addToCart:function(product,quantity){
+      const totalValue=product.price*(quantity||1);
+      const eid=genId('AddToCart');
+      metaTrack('AddToCart',{
+        content_name:product.name,
+        content_ids:[product.id||''],
+        value:totalValue,
+        currency:'INR',
+        num_items:quantity||1,
+        product_id:product.id,
+        product_name:product.name,
+        product_category:product.category||'',
+        product_price:product.price,
+        quantity:quantity||1,
+        source:'catalogue_app',
+        eid
+      });
+      logIntelligence('AddToCart',{
+        product:product.name,
+        product_id:product.id,
+        price:product.price,
+        quantity:quantity||1,
+        category:product.category,
+        event_id:eid
+      });
+    },
+    
+    viewCart:function(cartValue,numItems){
+      metaTrackCustom('ViewCart',{
+        value:cartValue,
+        currency:'INR',
+        num_items:numItems,
+        page_type:'cart',
+        cart_value:cartValue,
+        cart_items:numItems,
+        source:'catalogue_app'
+      });
+      logIntelligence('ViewCart',{
+        value:cartValue,
+        num_items:numItems
+      });
+    },
+    
+    initiateCheckout:function(data){
+      const eid=genId('InitiateCheckout');
+      metaTrack('InitiateCheckout',{
+        value:data.value,
+        currency:'INR',
+        num_items:data.numItems||1,
+        content_ids:data.productIds||[],
+        checkout_value:data.value,
+        checkout_items:data.numItems||1,
+        page_type:'checkout',
+        source:'catalogue_app',
+        eid
+      });
+      logIntelligence('InitiateCheckout',{
+        value:data.value,
+        num_items:data.numItems,
+        products:data.products||[],
+        event_id:eid
+      });
+    },
+    
+    addPaymentInfo:function(value){
+      metaTrack('AddPaymentInfo',{
+        value:value,
+        currency:'INR',
+        payment_method:'razorpay',
+        payment_value:value,
+        source:'catalogue_app'
+      });
+      logIntelligence('AddPaymentInfo',{
+        value:value,
+        payment_method:'razorpay'
+      });
+    },
+    
+purchase:function(data){
+  const eid=genId('Purchase');
+  metaTrack('Purchase',{
+    value:data.value,
+    currency:'INR',
+    transaction_id:data.orderId,
+    num_items:data.numItems||1,
+    content_ids:data.productIds||[],
+    content_type:'product',
+    contents:data.contents||[],
+    order_id:data.orderId,
+    order_value:data.value,
+    order_items:data.numItems||1,
+    payment_method:'razorpay',
+    shipping_method:'shiprocket',
+    source:'catalogue_app',
+    eid
+  });
+logIntelligence('Purchase',{
+  value:data.value,
+  order_id:data.orderId,
+  num_items:data.numItems,
+  product_ids:data.productIds||[],
+  contents:data.contents||[],
+  phone:data.phone||'',
+  name:data.name||'',
+  payment_method:'razorpay',
+  shipping_method:'shiprocket',
+  utm:utm,
+  event_id:eid
+});
+    },
+    
+    whatsappIntent:function(product){
+      metaTrack('Contact');
+      metaTrackCustom('WhatsAppIntent',{
+        product_id:product?(product.id||''):'',
+        product_name:product?(product.name||''):'',
+        product_category:product?(product.category||''):'',
+        product_price:product?(product.price||0):0,
+        contact_type:'whatsapp',
+        source:'catalogue_app'
+      });
+      logIntelligence('WhatsAppIntent',{
+        product:product?product.name:'',
+        product_id:product?product.id:'',
+        price:product?product.price:0
+      });
+    },
+    
+    search:function(query,resultsCount){
+      metaTrack('Search',{
+        search_string:query,
+        search_query:query,
+        search_results:resultsCount||0,
+        source:'catalogue_app'
+      });
+      logIntelligence('Search',{
+        query:query,
+        results_count:resultsCount||0
+      });
+    }
+    
+  };
+  
+  // Initial load
+  logIntelligence('AppLoad',{});
+  metaTrackCustom('CatalogueView',{page_type:'home',source:'catalogue_app'});
+  logIntelligence('CatalogueView',{});
+  
+  // Scroll tracking
+  const scrollMilestones={25:false,50:false,75:false,90:false};
+  window.addEventListener('scroll',function(){
+    const pct=Math.round((window.scrollY/Math.max(document.body.scrollHeight-window.innerHeight,1))*100);
+    Object.keys(scrollMilestones).forEach((m)=>{
+      const milestone=parseInt(m);
+      if(pct>=milestone&&!scrollMilestones[m]){
+        scrollMilestones[m]=true;
+        logIntelligence('ScrollDepth'+milestone,{pct});
+      }
+    });
+  },{passive:true});
+  
+  // Time tracking
+  [15,30,60,120,300].forEach((s)=>{
+    setTimeout(()=>{logIntelligence('TimeOnSite'+s+'s',{seconds:s})},s*1000);
+  });
+  
+  // Exit intent
+  let exitLogged=false;
+  document.addEventListener('mouseleave',function(e){
+    if(e.clientY<=0&&!exitLogged){
+      exitLogged=true;
+      logIntelligence('ExitIntent',{});
+    }
+  });
+  
+  console.log('✅ KAAPAV Catalogue Pixel v2.1 📊 Event Parameters Active');
+  console.log('🔥 window.kpvTrack ready');
+  
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════ -->
+
+<link
+rel="stylesheet"
+href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
 </head>
 <body>
 
 <!-- HEADER -->
 <div class="hdr">
   <div class="hdr-top">
-    <img src="https://www.kaapav.com/web/image/website/3/logo/KAAPAV?unique=974cd0f" alt="KAAPAV" style="height:48px;object-fit:contain">
+    <img src="https://www.kaapav.com/web/image/website/3/logo/KAAPAV?unique=974cd0f" alt="KAAPAV" style="height:64px;object-fit:contain">
     <div class="hdr-btns">
-      <div class="sync-dot" id="sd"></div>
-      <button class="hdr-btn" onclick="openWishlist()">♡ <span id="wlCt">0</span></button>
+      <a href="https://wa.me/919148330016?text=Hi" target="_blank" style="display:flex;align-items:center;gap:5px;text-decoration:none;background:linear-gradient(135deg,#D4A84B,#C49432);color:#1A1A1A;border-radius:20px;padding:5px 10px;font-size:10px;font-family:var(--font-sans);font-weight:500;letter-spacing:.3px;flex-shrink:0">
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="#1A1A1A"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+  Chat
+</a>
+<div class="sync-dot" id="sd"></div>
+      <button class="hdr-btn" onclick="openProfile()">👤 <span>Profile</span></button>
+<button class="hdr-btn" onclick="openWishlist()">♡ <span id="wlCt"></span></button>
       <button class="hdr-btn" onclick="openCart()">🛒 <span class="badge-count" id="cartCt">0</span></button>
     </div>
   </div>
@@ -354,6 +1307,19 @@ body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-
     <input class="search-inp" id="si" type="search" placeholder="Search jewellery, SKU, tags..." autocomplete="off">
     <span class="s-ico">🔍</span>
     <div class="suggestions" id="suggestions"></div>
+  </div>
+
+  <div class="trust-strip">
+    <div class="trust-track">
+      <span>🔒 Secure Payment</span><i></i>
+      <span>🚚 Fast Dispatch</span><i></i>
+      <span>💬 WhatsApp Support</span><i></i>
+      <span>↩ Easy Returns</span><i></i>
+      <span>🔒 Secure Payment</span><i></i>
+      <span>🚚 Fast Dispatch</span><i></i>
+      <span>💬 WhatsApp Support</span><i></i>
+      <span>↩ Easy Returns</span><i></i>
+    </div>
   </div>
 </div>
 
@@ -379,8 +1345,8 @@ body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-
 
 <!-- PRODUCT MODAL -->
 <div class="mo" id="pmo" onclick="closePMO(event)">
-  <button class="m-close" onclick="closePMOd()">✕</button>
   <div class="m-box" id="pbox">
+    <button class="m-close" onclick="closePMOd()">✕</button>
     <div class="m-handle"></div>
     <div class="gal" id="pgal"></div>
     <div class="m-body" id="pbody"></div>
@@ -413,6 +1379,30 @@ body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-
   </div>
 </div>
 
+<!-- ORDERS DRAWER -->
+<div class="drw" id="ordersDrw">
+  <div class="drw-bg" onclick="closeOrders()"></div>
+  <div class="drw-panel">
+    <div class="drw-hdr">
+      <span class="drw-title" id="profileTitle">Profile</span>
+      <button class="drw-close" onclick="closeOrders()">✕</button>
+    </div>
+    <div class="drw-body" id="ordersBody"></div>
+    <div class="drw-footer" id="ordersFoot">
+      <button class="btn-checkout" onclick="fetchCustomerOrders()">Refresh Orders</button>
+    </div>
+  </div>
+</div>
+<!-- ORDER DETAILS MODAL -->
+<div class="co-mo" id="orderDetailMo">
+  <div class="co-box">
+    <div class="co-hdr">
+      <span class="co-title">Order Details</span>
+      <button class="drw-close" onclick="closeOrderDetails()">✕</button>
+    </div>
+    <div class="co-body" id="orderDetailBody"></div>
+  </div>
+</div>
 <!-- CHECKOUT MODAL -->
 <div class="co-mo" id="coMo">
   <div class="co-box">
@@ -467,6 +1457,9 @@ body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-
 </div>
 
 <!-- BOTTOM NAV -->
+<div class="bnav" onclick="openOrders()">
+  <span class="bnav-ico">📦</span><span class="bnav-lbl">ORDERS</span>
+</div>
 <div class="botnav">
   <div class="bnav" onclick="window.open('https://wa.me/919148330016','_blank')">
     <span class="bnav-ico">💬</span><span class="bnav-lbl">CHAT</span>
@@ -481,11 +1474,113 @@ body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-
 
 <script>
 const API = 'https://wa.kaapav.com/api/catalogue';
+const EVENT_API = 'https://wa.kaapav.com/api/catalogue/events';
 const ORDER_API = 'https://wa.kaapav.com/api/orders/catalogue';
+const CUSTOMER_API = 'https://wa.kaapav.com/api/customer';
 const WA = 'https://wa.me/919148330016';
 const RZP_KEY = 'rzp_live_3G5rPyrp66kRAB';
 const FREE_SHIP = 498;
-const SHIP_COST = 60;
+const SHIP_COST = 50;
+
+(async function(){
+
+  try{
+
+    const customerId =
+      location.pathname.replace(/^\/+/,'')
+      .split('/')[0]
+      .toUpperCase();
+
+    if(!customerId) return;
+
+    const res = await fetch(
+      `https://wa.kaapav.com/api/customer-id/${customerId}`
+    );
+
+    const data = await res.json();
+
+if(data?.phone){
+
+  localStorage.setItem('customerPhone', data.phone);
+  localStorage.setItem('phone', data.phone);
+  localStorage.setItem('customer_id', customerId);
+  localStorage.setItem('customerId', customerId);
+
+  trackCatalogueEvent('CatalogueClick');
+
+  console.log(
+    '✅ Catalogue identity loaded:',
+    customerId,
+    data.phone
+  );
+
+}
+
+  }catch(err){
+    console.error(err);
+  }
+
+})();
+
+function getCurrentCustomerId(){
+  const fromPath = location.pathname
+    .replace(/^\/+/, '')
+    .split('/')[0]
+    .trim()
+    .toUpperCase();
+
+  if(/^[A-Z0-9]{6}$/.test(fromPath)){
+    return fromPath;
+  }
+
+  return String(
+    localStorage.getItem('customer_id') ||
+    localStorage.getItem('customerId') ||
+    ''
+  ).trim().toUpperCase();
+}
+
+function getCurrentCustomerPhone(){
+  return String(
+    localStorage.getItem('customerPhone') ||
+    localStorage.getItem('kpv_wa_phone') ||
+    localStorage.getItem('phone') ||
+    ''
+  ).trim();
+}
+
+async function linkCustomerIdentityFromCid(){
+  if(!hasValidCustomerToken()) return;
+
+  const customerId = getCurrentCustomerId();
+  const phone = getCurrentCustomerPhone();
+
+  if(!customerId && !phone) return;
+
+  try{
+    const data = await customerApi('/link-identity', {
+      method:'POST',
+      body: JSON.stringify({
+        customerId,
+        phone,
+      }),
+    });
+
+    console.log('CUSTOMER_IDENTITY_LINKED', data);
+
+    if(data?.phone){
+      localStorage.setItem('customerPhone', data.phone);
+      localStorage.setItem('phone', data.phone);
+    }
+
+    if(data?.customerId){
+      localStorage.setItem('customer_id', data.customerId);
+      localStorage.setItem('customerId', data.customerId);
+    }
+  }catch(e){
+    console.warn('CID link skipped:', e.message);
+  }
+}
 
 const CATS = {
   all:      { emoji:'✨', label:'All' },
@@ -509,6 +1604,195 @@ const TAGS = {
 
 let products=[], filtered=[], activeCat='all', activeSort='default', q='';
 let cart={}, wishlist=new Set(), curProd=null, curQty=1, curGallIdx=0;
+let appliedCoupon = null;
+let customerProfile = null;
+let customerAddress = null;
+let customerWishlist = [];
+let pendingAuthEmail = '';
+
+function getCustomerToken(){
+  return String(localStorage.getItem('kp_customer_token') || '').trim();
+}
+
+function getCustomerTokenExpiry(){
+  return String(localStorage.getItem('kp_customer_token_expires') || '').trim();
+}
+
+function hasValidCustomerToken(){
+  const token = getCustomerToken();
+  const exp = getCustomerTokenExpiry();
+
+  if(!token || !exp) return false;
+
+  const t = Date.parse(exp);
+  return Number.isFinite(t) && t > Date.now();
+}
+
+function saveCustomerSession(data){
+  if(data?.token){
+    localStorage.setItem('kp_customer_token', data.token);
+  }
+
+  if(data?.expiresAt){
+    localStorage.setItem('kp_customer_token_expires', data.expiresAt);
+  }
+
+  if(data?.account?.email){
+    localStorage.setItem('customerEmail', data.account.email);
+  }
+
+  customerProfile = data?.account || null;
+}
+
+function clearCustomerSession(){
+  localStorage.removeItem('kp_customer_token');
+  localStorage.removeItem('kp_customer_token_expires');
+  customerProfile = null;
+  customerAddress = null;
+  customerWishlist = [];
+}
+
+async function customerApi(path, opts = {}){
+  const headers = {
+    ...(opts.headers || {}),
+    'Content-Type': 'application/json',
+  };
+
+  const token = getCustomerToken();
+
+  if(token){
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${CUSTOMER_API}${path}`, {
+    ...opts,
+    headers,
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if(!res.ok || data.success === false){
+    throw new Error(data.error || data.message || 'Request failed');
+  }
+
+  return data;
+}
+
+async function refreshCustomerProfile(){
+  if(!hasValidCustomerToken()){
+    clearCustomerSession();
+    return null;
+  }
+
+  try{
+    const data = await customerApi('/me', { method:'GET' });
+
+    customerProfile = data.account || null;
+    customerAddress = data.address || null;
+    customerWishlist = Array.isArray(data.wishlist) ? data.wishlist : [];
+
+    if(customerProfile?.email){
+      localStorage.setItem('customerEmail', customerProfile.email);
+    }
+
+    return data;
+  }catch(e){
+    clearCustomerSession();
+    return null;
+  }
+}
+
+function normalizeCoupon(v) {
+  return String(v || '').trim().toUpperCase();
+}
+
+function checkoutTotals() {
+  const sub = cartTotal();
+  const ship = sub >= FREE_SHIP ? 0 : SHIP_COST;
+  const discount = appliedCoupon ? Number(appliedCoupon.discount || 0) : 0;
+
+  return {
+    sub,
+    ship,
+    discount,
+    total: Math.max(0, sub - discount + ship),
+  };
+}
+
+function updateCheckoutPayable() {
+  const t = checkoutTotals();
+
+  const discountRow = document.getElementById('co_discount_row');
+  const discountCode = document.getElementById('co_discount_code');
+  const discountAmt = document.getElementById('co_discount_amt');
+  const totalEl = document.getElementById('co_total');
+  const payBtn = document.getElementById('payBtn');
+
+  if (discountRow) {
+    discountRow.style.display = t.discount > 0 ? 'flex' : 'none';
+  }
+
+  if (discountCode) {
+    discountCode.textContent = appliedCoupon?.code ? `(${appliedCoupon.code})` : '';
+  }
+
+  if (discountAmt) {
+    discountAmt.textContent = t.discount;
+  }
+
+  if (totalEl) {
+    totalEl.textContent = `₹${t.total}`;
+  }
+
+  if (payBtn) {
+    payBtn.textContent = `Pay ₹${t.total} with Razorpay`;
+  }
+}
+
+async function applyCoupon() {
+  const input = document.getElementById('co_coupon');
+  const msg = document.getElementById('co_coupon_msg');
+  const code = normalizeCoupon(input?.value);
+
+  if (!code) {
+    toast('Enter coupon code');
+    return;
+  }
+
+  try {
+    const res = await fetch('https://wa.kaapav.com/api/catalogue/coupons/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code,
+        orderTotal: cartTotal(),
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      appliedCoupon = null;
+      updateCheckoutPayable();
+      if (msg) msg.textContent = data.error || data.message || 'Invalid coupon';
+      toast(data.error || data.message || 'Invalid coupon');
+      return;
+    }
+
+    appliedCoupon = data.coupon;
+    updateCheckoutPayable();
+
+    if (msg) {
+      msg.textContent = `${appliedCoupon.code} applied — ₹${appliedCoupon.discount} off`;
+    }
+
+    toast(`${appliedCoupon.code} applied 🎟️`);
+  } catch (e) {
+    appliedCoupon = null;
+    updateCheckoutPayable();
+    toast('Could not apply coupon. Try again.');
+  }
+}
 let showInStockOnly=false, recentSearches=[], shareProd=null;
 try{ recentSearches=JSON.parse(localStorage.getItem('kp_searches')||'[]') }catch{}
 
@@ -519,6 +1803,45 @@ function loadState(){
 }
 function saveCart(){ localStorage.setItem('kp_cart',JSON.stringify(cart)) }
 function saveWL(){ localStorage.setItem('kp_wl',JSON.stringify([...wishlist])) }
+
+async function trackCatalogueEvent(eventName, data = {}) {
+  try {
+    const phone =
+      localStorage.getItem('customerPhone') ||
+      localStorage.getItem('phone') ||
+      '';
+
+    if (!phone) return;
+
+    const params = new URLSearchParams(location.search);
+
+   return await fetch('https://wa.kaapav.com/api/customer-events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone,
+        source: 'catalogue',
+        event: eventName,
+        sku: data.sku || '',
+        product_name: data.product_name || '',
+        category: data.category || '',
+        price: data.price || 0,
+        quantity: data.quantity || 1,
+        cart_total: data.cart_total || 0,
+        checkout_items: JSON.stringify(
+  data.checkout_items || []
+),
+        page_url: location.href,
+        utm_source: params.get('utm_source') || '',
+        utm_medium: params.get('utm_medium') || '',
+        utm_campaign: params.get('utm_campaign') || '',
+        customer_name: localStorage.getItem('customerName') || ''
+      })
+    });
+  } catch (e) {
+    console.error('Catalogue event error', e);
+  }
+}
 
 // ── FETCH ──
 async function fetchProducts(){
@@ -574,7 +1897,7 @@ function renderCats(){
     return `<button class="cat${activeCat===k?' on':''}" onclick="setCat('${k}')">${c.emoji} ${c.label} <span class="n">${n}</span></button>`;
   }).join('');
 }
-function setCat(c){ activeCat=c; applyFilters(); }
+function setCat(c){ activeCat=c; applyFilters(); if(c!=='all'&&typeof kpvTrack!=='undefined') kpvTrack.categoryView(c); }
 
 // sort chips
 document.querySelectorAll('.chip').forEach(b=>{
@@ -605,11 +1928,11 @@ function cardHTML(p){
   // Use JSON.stringify safely for onclick attribute
   const imgsJson=JSON.stringify(imgs).replace(/"/g,'&quot;');
   const imgH=imgs.length
-    ?`<img class="c-img" src="${imgs[0]}" onclick="event.stopPropagation();openImageViewer(JSON.parse(this.dataset.imgs),0)" data-imgs="${imgsJson}" alt="${p.name}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="c-ph" style="display:none">${CATS[p.category]?.emoji||'💎'}</div>`
+    ?`<img class="c-img" src="${imgs[0]}" alt="${p.name}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="c-ph" style="display:none">${CATS[p.category]?.emoji||'💎'}</div>`
     :`<div class="c-ph">${CATS[p.category]?.emoji||'💎'}</div>`;
   const tbdgs=p.tags.slice(0,2).map(t=>{ const tc=TAGS[t]; return tc?`<span class="bdg" style="background:${tc.bg};color:${tc.color}">${tc.emoji} ${t}</span>`:'' }).join('');
-  const feat=p.is_featured?`<span class="bdg bdg-feat">⭐ Featured</span>`:'';
-  const sbdg=p.stock===0?`<span class="s-badge s-out">Sold out</span>`:p.stock<=5?`<span class="s-badge s-low">Only ${p.stock} left</span>`:'';
+ const feat=p.is_featured?`<span class="bdg bdg-feat">Bestseller</span>`:'';
+const sbdg=p.stock===0?`<span class="s-badge s-out">Sold Out</span>`:p.stock<=5?`<span class="s-badge s-low">Only ${p.stock} Left</span>`:'';
   const tagChips=p.tags.slice(0,2).map(t=>{ const tc=TAGS[t]; return tc?`<span class="t-chip" style="background:${tc.bg};color:${tc.color}">${t}</span>`:'' }).join('');
   return `<div class="card" onclick="openProd('${p.sku}')">
     ${imgH}
@@ -621,7 +1944,7 @@ function cardHTML(p){
       <div class="c-name">${p.name}</div>
       <div class="c-price">
         <span class="c-sale">₹${p.price}</span>
-        ${p.compare_price>p.price?`<span class="c-mrp">₹${p.compare_price}</span><span class="c-disc">${disc}% off</span>`:''}
+        ${p.compare_price>p.price?`<span class="c-mrp">₹${p.compare_price}</span><span class="c-disc">${disc}% OFF</span>`:''}
       </div>
       ${tagChips?`<div class="c-tags">${tagChips}</div>`:''}
     </div>
@@ -640,11 +1963,35 @@ function shimmer(){
 // ── WISHLIST ──
 function toggleWL(e, sku){
   e.stopPropagation();
-  if(wishlist.has(sku)){ wishlist.delete(sku); toast('Removed from wishlist'); }
-  else { wishlist.add(sku); toast('Added to wishlist ♡'); }
+
+  const p = products.find(x => x.sku === sku);
+
+  if(wishlist.has(sku)){
+    wishlist.delete(sku);
+    toast('Removed from wishlist');
+  } else {
+    wishlist.add(sku);
+    toast('Added to wishlist ❤️');
+
+    if(p){
+      trackCatalogueEvent('AddToWishlist',{
+        sku:p.sku,
+        product_name:p.name,
+        category:p.category,
+        price:p.price
+      });
+    }
+  }
+
+const _wp=products.find(x=>x.sku===sku); if(_wp&&typeof kpvTrack!=='undefined') kpvTrack.addToWishlist({id:_wp.sku,name:_wp.name,price:_wp.price,category:_wp.category});
   saveWL(); updateWLCount(); renderGrid();
 }
-function updateWLCount(){ document.getElementById('wlCt').textContent=wishlist.size||'♡'; }
+function updateWLCount(){ 
+  const btn=document.querySelector('button.hdr-btn[onclick="openWishlist()"]');
+  const ct=document.getElementById('wlCt');
+  ct.textContent=wishlist.size||'';
+  if(btn) btn.innerHTML=wishlist.size>0?`❤️ <span id="wlCt">${wishlist.size}</span>`:`♡ <span id="wlCt"></span>`;
+}
 function openWishlist(){ document.getElementById('wlDrw').classList.add('on'); renderWL(); }
 function closeWishlist(){ document.getElementById('wlDrw').classList.remove('on'); }
 function renderWL(){
@@ -670,13 +2017,47 @@ function cartTotal(){ return Object.values(cart).reduce((s,i)=>s+i.price*i.qty,0
 function cartCount(){ return Object.values(cart).reduce((s,i)=>s+i.qty,0); }
 function updateCartCount(){ document.getElementById('cartCt').textContent=cartCount()||0; }
 
-function addToCart(sku,qty=1){
-  const p=products.find(x=>x.sku===sku); if(!p) return;
-  if(cart[sku]) cart[sku].qty+=qty;
-  else cart[sku]={sku,name:p.name,price:p.price,image:p.image_url||'',category:p.category,qty};
-  saveCart(); updateCartCount();
+function addToCart(sku, qty = 1) {
+  const p = products.find(x => x.sku === sku);
+  if (!p) return;
+
+  const currentQty = cart[sku] ? cart[sku].qty : 0;
+  const maxCanAdd = p.stock - currentQty;
+
+  if (maxCanAdd <= 0) {
+    toast(`That's all we have in stock right now! 🥰`);
+    return;
+  }
+
+  const actualQty = Math.min(qty, maxCanAdd);
+  if (actualQty < qty) toast(`We only had ${p.stock} left — added what we could! 🛍️`);
+
+  if (cart[sku]) cart[sku].qty += actualQty;
+  else cart[sku] = { sku:p.sku, name:p.name, price:p.price, image:p.image_url || '', category:p.category, qty: actualQty };
+
+  saveCart();
+  updateCartCount();
+
+  trackCatalogueEvent('AddToCart', {
+    sku: p.sku,
+    product_name: p.name,
+    category: p.category,
+    price: p.price,
+    quantity: actualQty
+  });
 }
-function quickAdd(e,sku){ e.stopPropagation(); addToCart(sku,1); toast('Added to cart 🛒'); }
+
+function quickAdd(e, sku) {
+  e.stopPropagation();
+  const _p = products.find(x => x.sku === sku);
+  if (!_p) return;
+  if (_p.stock === 0) { toast('Out of stock 😕'); return; }
+  const currentQty = cart[sku] ? cart[sku].qty : 0;
+  if (currentQty >= _p.stock) { toast(`You've got all ${_p.stock} we have! 🥰`); return; }
+  addToCart(sku, 1);
+  if (typeof kpvTrack !== 'undefined') kpvTrack.addToCart({id:_p.sku,name:_p.name,price:_p.price,category:_p.category}, 1);
+  toast('Added to cart 🛒');
+}
 
 function openCart(){ document.getElementById('cartDrw').classList.add('on'); renderCart(); }
 function closeCart(){ document.getElementById('cartDrw').classList.remove('on'); }
@@ -732,9 +2113,13 @@ function renderCart(){
   `;
 }
 
-function chgQty(sku,d){
-  if(!cart[sku]) return;
-  cart[sku].qty=Math.max(1,cart[sku].qty+d);
+function chgQty(sku, d) {
+  if (!cart[sku]) return;
+  const p = products.find(x => x.sku === sku);
+  const maxQty = p ? p.stock : 999;
+  const newQty = Math.max(1, Math.min(maxQty, cart[sku].qty + d));
+  if (d > 0 && newQty === cart[sku].qty) { toast(`That's all we have in stock right now! 🥰`); return; }
+  cart[sku].qty = newQty;
   saveCart(); updateCartCount(); renderCart();
 }
 function removeCart(sku){ delete cart[sku]; saveCart(); updateCartCount(); renderCart(); }
@@ -747,17 +2132,724 @@ function orderViaWA(){
   window.open(`${WA}?text=${encodeURIComponent(msg)}`, '_blank');
 }
 
+// ── MY ORDERS SCREEN ──
+let ordersCache = [];
+
+function getStoredProfileEmail(){
+  return String(localStorage.getItem('customerEmail') || '')
+    .trim()
+    .toLowerCase();
+}
+
+function openProfile(){
+  document.getElementById('ordersDrw').classList.add('on');
+  if(typeof kpvTrack !== 'undefined') kpvTrack.pageView('profile');
+  renderProfileHome();
+}
+
+async function renderProfileHome(){
+  const email = getStoredProfileEmail();
+  const wlCount = wishlist.size || 0;
+  const cartItems = cartCount();
+
+  document.getElementById('profileTitle').textContent = 'Profile';
+
+  if(hasValidCustomerToken() && !customerProfile){
+    document.getElementById('ordersBody').innerHTML = `
+      <div class="od-empty">
+        <div class="ei">⏳</div>
+        Loading your KAAPAV profile...
+      </div>
+    `;
+
+    await refreshCustomerProfile();
+
+  }
+
+  if(customerProfile?.email){
+    const displayEmail = customerProfile.email;
+    const initial = displayEmail.charAt(0).toUpperCase();
+
+    document.getElementById('ordersBody').innerHTML = `
+      <div class="pf-hero">
+        <div class="pf-avatar">${esc(initial)}</div>
+        <div class="pf-title">Welcome to KAAPAV</div>
+        <div class="pf-sub">
+          Logged in as <strong>${esc(displayEmail)}</strong>
+        </div>
+      </div>
+
+      <div class="pf-mini">
+        <div class="pf-stat">
+          <strong>${wlCount}</strong>
+          <span>Wishlist</span>
+        </div>
+        <div class="pf-stat">
+          <strong>${cartItems}</strong>
+          <span>Cart Items</span>
+        </div>
+      </div>
+
+      <div class="pf-card">
+        <div class="pf-row" onclick="openProfileOrders()">
+          <div class="pf-left">
+            <div class="pf-ico">📦</div>
+            <div>
+              <div class="pf-name">My Orders</div>
+              <div class="pf-note">View order status, payment and tracking</div>
+            </div>
+          </div>
+          <div class="pf-arr">›</div>
+        </div>
+
+        <div class="pf-row" onclick="openProfileWishlist()">
+          <div class="pf-left">
+            <div class="pf-ico">🤍</div>
+            <div>
+              <div class="pf-name">Wishlist</div>
+              <div class="pf-note">${wlCount} saved design${wlCount === 1 ? '' : 's'}</div>
+            </div>
+          </div>
+          <div class="pf-arr">›</div>
+        </div>
+
+        <div class="pf-row" onclick="openProfileCart()">
+          <div class="pf-left">
+            <div class="pf-ico">🛒</div>
+            <div>
+              <div class="pf-name">Cart</div>
+              <div class="pf-note">${cartItems} item${cartItems === 1 ? '' : 's'} in cart</div>
+            </div>
+          </div>
+          <div class="pf-arr">›</div>
+        </div>
+
+        <div class="pf-row" onclick="window.open('${WA}','_blank')">
+          <div class="pf-left">
+            <div class="pf-ico">💬</div>
+            <div>
+              <div class="pf-name">WhatsApp Support</div>
+              <div class="pf-note">Chat with KAAPAV</div>
+            </div>
+          </div>
+          <div class="pf-arr">›</div>
+        </div>
+      </div>
+
+      <div class="pf-card">
+        <div class="od-kv"><span>Email</span><strong>${esc(displayEmail)}</strong></div>
+        <div class="od-kv"><span>Session</span><strong>Active</strong></div>
+      </div>
+    `;
+
+    document.getElementById('ordersFoot').innerHTML = `
+      <button class="btn-checkout" onclick="customerLogout()">Logout</button>
+    `;
+
+    return;
+  }
+
+  document.getElementById('ordersBody').innerHTML = `
+    <div class="pf-hero">
+      <div class="pf-avatar">👤</div>
+      <div class="pf-title">Login / Sign up</div>
+      <div class="pf-sub">
+        Continue with email OTP to view your orders, wishlist and saved address.
+      </div>
+    </div>
+
+    <div class="pf-mini">
+      <div class="pf-stat">
+        <strong>${wlCount}</strong>
+        <span>Wishlist</span>
+      </div>
+      <div class="pf-stat">
+        <strong>${cartItems}</strong>
+        <span>Cart Items</span>
+      </div>
+    </div>
+
+    <div class="pf-card">
+      <div class="co-lbl">Email address</div>
+      <input class="co-inp" id="auth_email" type="email" placeholder="Enter your email" value="${esc(email)}">
+      <button class="btn-checkout" onclick="sendCustomerOtp()">Continue with Email OTP</button>
+      <div class="pf-note" style="text-align:center;line-height:1.5">
+        New customer? Account will be created automatically after OTP verification.
+      </div>
+    </div>
+
+    <div class="pf-card">
+      <div class="pf-row" onclick="openProfileWishlist()">
+        <div class="pf-left">
+          <div class="pf-ico">🤍</div>
+          <div>
+            <div class="pf-name">Wishlist</div>
+            <div class="pf-note">${wlCount} saved design${wlCount === 1 ? '' : 's'} on this device</div>
+          </div>
+        </div>
+        <div class="pf-arr">›</div>
+      </div>
+
+      <div class="pf-row" onclick="openProfileCart()">
+        <div class="pf-left">
+          <div class="pf-ico">🛒</div>
+          <div>
+            <div class="pf-name">Cart</div>
+            <div class="pf-note">${cartItems} item${cartItems === 1 ? '' : 's'} in cart</div>
+          </div>
+        </div>
+        <div class="pf-arr">›</div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('ordersFoot').innerHTML = `
+    <button class="btn-checkout" onclick="closeOrders()">Continue Shopping</button>
+  `;
+}
+
+async function sendCustomerOtp(){
+  const input = document.getElementById('auth_email');
+
+  const email = String(input?.value || pendingAuthEmail || '')
+    .trim()
+    .toLowerCase();
+
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+    toast('Enter valid email');
+    return;
+  }
+
+  pendingAuthEmail = email;
+
+  const bodyEl = document.getElementById('ordersBody');
+
+  bodyEl.innerHTML = `
+    <div class="od-empty">
+      <div class="ei">⏳</div>
+      Sending OTP to <strong>${esc(email)}</strong>...
+    </div>
+  `;
+
+  try{
+    const res = await fetch(`${CUSTOMER_API}/auth/send-otp`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ email }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    console.log('CUSTOMER_OTP_SEND_RESPONSE', res.status, data);
+
+    if(!res.ok || data.success === false){
+      throw new Error(data.error || data.message || 'Could not send OTP');
+    }
+
+    localStorage.setItem('customerEmail', email);
+
+    renderCustomerOtpScreen(email);
+    toast('OTP sent to your email');
+  }catch(e){
+    console.error('OTP send UI error:', e);
+
+    bodyEl.innerHTML = `
+      <div class="pf-hero">
+        <div class="pf-avatar">⚠️</div>
+        <div class="pf-title">OTP could not be sent</div>
+        <div class="pf-sub">${esc(e.message || 'Please try again.')}</div>
+      </div>
+
+      <div class="pf-card">
+        <button class="btn-checkout" onclick="renderProfileHome()">Try Again</button>
+      </div>
+    `;
+
+    toast(e.message || 'Could not send OTP');
+  }
+}
+
+function renderCustomerOtpScreen(email){
+  pendingAuthEmail = String(email || pendingAuthEmail || '')
+    .trim()
+    .toLowerCase();
+
+  document.getElementById('profileTitle').textContent = 'Verify OTP';
+
+  document.getElementById('ordersBody').innerHTML = `
+    <div class="pf-hero">
+      <div class="pf-avatar">✉️</div>
+      <div class="pf-title">Enter OTP</div>
+      <div class="pf-sub">
+        We sent a 6-digit OTP to <strong>${esc(pendingAuthEmail)}</strong>.
+      </div>
+    </div>
+
+    <div class="pf-card">
+      <div class="co-lbl">6-digit OTP</div>
+
+      <input
+        class="co-inp"
+        id="auth_otp"
+        type="tel"
+        inputmode="numeric"
+        maxlength="6"
+        placeholder="Enter OTP"
+        autocomplete="one-time-code"
+        style="text-align:center;font-size:22px;letter-spacing:6px;font-weight:600"
+      >
+
+<button class="btn-checkout" onclick="window.verifyCustomerOtp()" style="margin-top:8px">
+  Verify & Continue
+</button>
+
+<button
+  class="od-load"
+  onclick="resendCustomerOtp()"
+  style="margin-top:8px;background:#fff;color:var(--dark);border:0.5px solid var(--border)"
+>
+  Resend OTP
+</button>
+
+<button
+  class="od-load"
+  onclick="renderProfileHome()"
+  style="margin-top:8px;background:#fff;color:var(--dark);border:0.5px solid var(--border)"
+>
+  ← Change Email
+</button>
+
+      <div class="pf-note" style="text-align:center;margin-top:8px">
+        OTP is valid for 10 minutes.
+      </div>
+    </div>
+  `;
+
+document.getElementById('ordersFoot').innerHTML = '';
+  
+  setTimeout(() => document.getElementById('auth_otp')?.focus(), 150);
+}
+
+function resendCustomerOtp(){
+  if(!pendingAuthEmail){
+    renderProfileHome();
+    return;
+  }
+
+  document.getElementById('ordersBody').innerHTML = `
+    <div class="pf-card">
+      <div class="co-lbl">Email address</div>
+      <input class="co-inp" id="auth_email" type="email" value="${esc(pendingAuthEmail)}">
+    </div>
+  `;
+
+  sendCustomerOtp();
+}
+
+async function verifyCustomerOtp(){
+  const btn = document.querySelector('#ordersBody .btn-checkout');
+  const otp = String(document.getElementById('auth_otp')?.value || '').trim();
+
+  console.log('VERIFY_CLICKED', {
+    otpLength: otp.length,
+    pendingAuthEmail,
+    customerId: typeof getCurrentCustomerId === 'function' ? getCurrentCustomerId() : '',
+    phone: typeof getCurrentCustomerPhone === 'function' ? getCurrentCustomerPhone() : '',
+  });
+
+  if(!/^\d{6}$/.test(otp)){
+    toast('Enter valid 6-digit OTP');
+    return;
+  }
+
+  if(!pendingAuthEmail){
+    pendingAuthEmail = String(localStorage.getItem('customerEmail') || '')
+      .trim()
+      .toLowerCase();
+  }
+
+  if(!pendingAuthEmail){
+    toast('Email missing. Please request OTP again.');
+    renderProfileHome();
+    return;
+  }
+
+  try{
+    if(btn){
+      btn.disabled = true;
+      btn.textContent = 'Verifying...';
+    }
+
+    const data = await customerApi('/auth/verify-otp', {
+      method:'POST',
+      body: JSON.stringify({
+        email: pendingAuthEmail,
+        otp,
+        phone: typeof getCurrentCustomerPhone === 'function' ? getCurrentCustomerPhone() : '',
+        customerId: typeof getCurrentCustomerId === 'function' ? getCurrentCustomerId() : '',
+      }),
+    });
+
+    console.log('VERIFY_SUCCESS', data);
+
+    saveCustomerSession(data);
+    await refreshCustomerProfile();
+
+    if(typeof linkCustomerIdentityFromCid === 'function'){
+      await linkCustomerIdentityFromCid();
+    }
+
+    toast('Logged in successfully');
+    renderProfileHome();
+  }catch(e){
+    console.error('VERIFY_FAILED', e);
+    toast(e.message || 'OTP verification failed');
+
+    if(btn){
+      btn.disabled = false;
+      btn.textContent = 'Verify & Continue';
+    }
+  }
+}
+
+window.verifyCustomerOtp = verifyCustomerOtp;
+
+
+async function customerLogout(){
+  try{
+    if(getCustomerToken()){
+      await customerApi('/logout', { method:'POST' });
+    }
+  }catch(e){
+    console.warn('Logout API failed:', e);
+  }
+
+  clearCustomerSession();
+  toast('Logged out');
+  renderProfileHome();
+}
+
+
+async function openProfileOrders(){
+  document.getElementById('ordersDrw').classList.add('on');
+  document.getElementById('profileTitle').textContent = 'My Orders';
+
+  if(!hasValidCustomerToken()){
+    document.getElementById('ordersBody').innerHTML = `
+      <div class="pf-hero">
+        <div class="pf-avatar">🔐</div>
+        <div class="pf-title">Login required</div>
+        <div class="pf-sub">
+          Login with email OTP to securely view your KAAPAV orders.
+        </div>
+      </div>
+      <div class="pf-card">
+        <button class="btn-checkout" onclick="renderProfileHome()">Login / Sign up</button>
+      </div>
+    `;
+
+    document.getElementById('ordersFoot').innerHTML = `
+      <button class="btn-checkout" onclick="renderProfileHome()">← Back to Profile</button>
+    `;
+    return;
+  }
+
+  document.getElementById('ordersBody').innerHTML = `
+    <div class="od-phone-box">
+      <div class="od-note">Loading your verified KAAPAV orders...</div>
+    </div>
+  `;
+
+  document.getElementById('ordersFoot').innerHTML = `
+    <button class="btn-checkout" onclick="renderProfileHome()">← Back to Profile</button>
+  `;
+
+  await fetchCustomerOrders();
+}
+
+function openProfileWishlist(){
+  closeOrders();
+  openWishlist();
+}
+
+function openProfileCart(){
+  closeOrders();
+  openCart();
+}
+
+function profileLoginComingSoon(){
+  toast('Login/Register is next. Profile shell is ready.');
+}
+
+function esc(v){
+  return String(v ?? '').replace(/[&<>"']/g, m => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
+  }[m]));
+}
+function money(n){ return '₹' + Number(n || 0).toLocaleString('en-IN'); }
+function fmtDate(v){
+  if(!v) return '-';
+  try{
+    return new Date(String(v).replace(' ', 'T')).toLocaleDateString('en-IN', {
+      day:'2-digit', month:'short', year:'numeric'
+    });
+  }catch{ return String(v); }
+}
+function getStoredOrderPhone(){
+  const raw = localStorage.getItem('customerPhone') || localStorage.getItem('phone') || localStorage.getItem('kpv_wa_phone') || '';
+  const d = String(raw).replace(/\D/g,'');
+  if(d.startsWith('91') && d.length >= 12) return d.slice(0, 12);
+  if(d.length >= 10) return '91' + d.slice(-10);
+  return '';
+}
+function saveOrderPhoneFromInput(){
+  const d = String(document.getElementById('od_phone')?.value || '').replace(/\D/g,'').slice(-10);
+  if(d.length !== 10){ toast('Enter valid 10-digit WhatsApp number'); return; }
+  const phone91 = '91' + d;
+  localStorage.setItem('customerPhone', phone91);
+  localStorage.setItem('phone', phone91);
+  fetchCustomerOrders();
+}
+function renderOrdersPhoneForm(note='Enter your WhatsApp number to view your KAAPAV orders.'){
+  const saved = getStoredOrderPhone().replace(/^91/, '');
+  document.getElementById('ordersBody').innerHTML = `
+    <div class="od-phone-box">
+      <div class="od-note">${esc(note)}</div>
+      <input class="od-inp" id="od_phone" type="tel" maxlength="10" placeholder="WhatsApp number" value="${esc(saved)}">
+      <button class="od-load" onclick="saveOrderPhoneFromInput()">Load My Orders</button>
+    </div>
+    <div class="od-empty"><div class="ei">📦</div>Orders will appear here after checkout.</div>
+  `;
+}
+function openOrders(){
+document.getElementById('ordersDrw').classList.add('on');
+  openProfileOrders();
+}
+function closeOrders(){ document.getElementById('ordersDrw').classList.remove('on'); }
+function closeOrderDetails(){ document.getElementById('orderDetailMo').classList.remove('on'); }
+function parseOrderItems(items){
+  if(Array.isArray(items)) return items;
+  try{
+    const parsed = JSON.parse(items || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  }catch{ return []; }
+}
+function orderBadgeClass(o){
+  const payment = String(o.payment_status || '').toLowerCase();
+  const status = String(o.status || '').toLowerCase();
+  return payment === 'paid' ? (status || 'paid') : (payment || status || 'pending');
+}
+function orderBadgeText(o){
+  const payment = String(o.payment_status || '').toLowerCase();
+  const status = String(o.status || 'pending').toLowerCase();
+  if(payment && payment !== 'paid') return payment;
+  return status || payment || 'pending';
+}
+function deliveryAddressHTML(o){
+  const name = esc(o.shipping_name || o.customer_name || '');
+  const phone = esc(o.shipping_phone || o.phone || '');
+  const address = esc(o.shipping_address || '');
+  const city = esc(o.shipping_city || '');
+  const state = esc(o.shipping_state || '');
+  const pin = esc(String(o.shipping_pincode || '').replace(/\D/g,''));
+
+  const line1 = [name, phone].filter(Boolean).join(' • ');
+  const line2 = [address, city, state].filter(Boolean).join(', ');
+  const line3 = pin ? `Pincode: ${pin}` : '';
+
+  return [line1, line2, line3].filter(Boolean).join('<br>') || 'Not available yet';
+}
+
+function orderStep(label, value){
+  return `
+    <div class="od-step ${value ? 'on' : ''}">
+      <span class="od-dot"></span>
+      <span>${esc(label)}${value ? ' — ' + fmtDate(value) : ''}</span>
+    </div>
+  `;
+}
+
+function openOrderDetails(orderId){
+  const o = ordersCache.find(x => String(x.order_id) === String(orderId));
+  if(!o) return;
+
+  const items = parseOrderItems(o.items);
+  const helpText = encodeURIComponent(`Hi KAAPAV, I need help with order ${o.order_id}`);
+
+  document.getElementById('orderDetailBody').innerHTML = `
+    <div class="od-section">
+      <div class="od-section-title">Order</div>
+      <div class="od-kv"><span>Order ID</span><strong>${esc(o.order_id)}</strong></div>
+      <div class="od-kv"><span>Placed</span><strong>${fmtDate(o.created_at)}</strong></div>
+      <div class="od-kv"><span>Status</span><strong>${esc(o.status || 'pending')}</strong></div>
+      <div class="od-kv"><span>Payment</span><strong>${esc(o.payment_status || 'unpaid')}</strong></div>
+    </div>
+
+    <div class="od-section">
+      <div class="od-section-title">Delivery Address</div>
+      <div class="od-kv"><span>Name</span><strong>${esc(o.shipping_name || o.customer_name || '')}</strong></div>
+      <div class="od-kv"><span>Phone</span><strong>${esc(o.shipping_phone || o.phone || '')}</strong></div>
+      <div class="od-kv od-address"><span>Address</span><strong>${deliveryAddressHTML(o)}</strong></div>
+    </div>
+
+    <div class="od-section">
+      <div class="od-section-title">Items</div>
+      ${items.length ? items.map(i => `
+        <div class="od-kv">
+          <span>${esc(i.name || i.sku || 'Jewellery')} × ${Number(i.qty || i.quantity || 1)}</span>
+          <strong>${money(Number(i.price || 0) * Number(i.qty || i.quantity || 1))}</strong>
+        </div>
+      `).join('') : '<div class="od-kv"><span>Items</span><strong>-</strong></div>'}
+    </div>
+
+    <div class="od-section">
+      <div class="od-section-title">Bill Summary</div>
+      <div class="od-kv"><span>Subtotal</span><strong>${money(o.subtotal)}</strong></div>
+      <div class="od-kv"><span>Discount</span><strong>${money(o.discount)}</strong></div>
+      <div class="od-kv"><span>Shipping</span><strong>${Number(o.shipping_cost || 0) === 0 ? 'FREE' : money(o.shipping_cost)}</strong></div>
+      <div class="od-kv"><span>Total</span><strong>${money(o.total)}</strong></div>
+    </div>
+
+    <div class="od-section">
+      <div class="od-section-title">Shipping</div>
+      <div class="od-kv"><span>Courier</span><strong>${esc(o.courier || 'Not assigned yet')}</strong></div>
+      <div class="od-kv"><span>AWB</span><strong>${esc(o.awb_number || 'Not generated yet')}</strong></div>
+      <div class="od-kv"><span>Tracking ID</span><strong>${esc(o.tracking_id || 'Not generated yet')}</strong></div>
+      <div class="od-kv od-address"><span>Ship to</span><strong>${deliveryAddressHTML(o)}</strong></div>
+    </div>
+
+    <div class="od-section">
+      <div class="od-section-title">Timeline</div>
+      <div class="od-timeline">
+        ${orderStep('Order placed', o.created_at)}
+        ${orderStep('Payment received', o.paid_at)}
+        ${orderStep('Shipped', o.shipped_at)}
+        ${orderStep('Delivered', o.delivered_at)}
+        ${o.cancelled_at ? orderStep('Cancelled', o.cancelled_at) : ''}
+      </div>
+    </div>
+
+    <div class="od-actions">
+      ${(o.payment_link && String(o.payment_status).toLowerCase() !== 'paid') ? `<a class="od-btn od-pay" href="${esc(o.payment_link)}" target="_blank">Pay Now</a>` : ''}
+      ${o.tracking_url ? `<a class="od-btn" href="${esc(o.tracking_url)}" target="_blank">Track Order</a>` : ''}
+      <a class="od-btn od-wa" href="${WA}?text=${helpText}" target="_blank">WhatsApp Help</a>
+    </div>
+  `;
+
+  document.getElementById('orderDetailMo').classList.add('on');
+}
+async function fetchCustomerOrders(){
+  if(!hasValidCustomerToken()){
+    renderProfileHome();
+    return;
+  }
+
+  try{
+    const data = await customerApi(`/orders?t=${Date.now()}`, {
+      method:'GET',
+    });
+
+    ordersCache = data.orders || [];
+    renderCustomerOrders(ordersCache);
+  }catch(e){
+    console.error('Orders load error:', e);
+
+    document.getElementById('ordersBody').innerHTML = `
+      <div class="od-empty">
+        <div class="ei">⚠️</div>
+        Could not load your orders.<br>${esc(e.message || 'Please try again.')}
+      </div>
+    `;
+  }
+}
+
+function renderCustomerOrders(orders){
+const email = customerProfile?.email || getStoredProfileEmail();
+const phoneBox = `
+  <div class="od-phone-box">
+    <div class="od-note">Showing orders for verified email <strong>${esc(email)}</strong></div>
+    <button class="od-load" onclick="fetchCustomerOrders()">Refresh Orders</button>
+  </div>
+`;
+
+  if(!orders.length){
+    document.getElementById('ordersBody').innerHTML = phoneBox + `
+      <div class="od-empty">
+        <div class="ei">🛍️</div>
+        No orders found for this number yet.<br>Place an order from the catalogue and it will show here.
+      </div>
+    `;
+    return;
+  }
+
+  document.getElementById('ordersBody').innerHTML = phoneBox + orders.map(o => {
+    const items = parseOrderItems(o.items);
+    const badge = orderBadgeClass(o);
+    const helpText = encodeURIComponent(`Hi KAAPAV, I need help with order ${o.order_id}`);
+    return `
+      <div class="od-card">
+        <div class="od-top">
+          <div>
+            <div class="od-id">${esc(o.order_id)}</div>
+            <div class="od-date">${fmtDate(o.created_at)}</div>
+          </div>
+          <span class="od-pill od-${esc(badge)}">${esc(orderBadgeText(o))}</span>
+        </div>
+
+        <div class="od-items">
+          ${items.length ? items.map(i => `
+            <div class="od-item">
+              <span>${esc(i.name || i.sku || 'Jewellery')} × ${Number(i.qty || i.quantity || 1)}</span>
+              <strong>${money(Number(i.price || 0) * Number(i.qty || i.quantity || 1))}</strong>
+            </div>
+          `).join('') : '<div class="od-item"><span>Items saved in order</span><strong>-</strong></div>'}
+        </div>
+
+        <div class="od-total">
+          <span>Total</span>
+          <strong>${money(o.total)}</strong>
+        </div>
+
+        <div class="od-actions">
+          <button class="od-btn" data-order-id="${esc(o.order_id)}" onclick="openOrderDetails(this.dataset.orderId)">View Details</button>
+          ${(o.payment_link && String(o.payment_status).toLowerCase() !== 'paid') ? `<a class="od-btn od-pay" href="${esc(o.payment_link)}" target="_blank">Pay Now</a>` : ''}
+          ${o.tracking_url ? `<a class="od-btn" href="${esc(o.tracking_url)}" target="_blank">Track</a>` : ''}
+          ${o.awb_number ? `<span class="od-btn">AWB: ${esc(o.awb_number)}</span>` : ''}
+          <a class="od-btn od-wa" href="${WA}?text=${helpText}" target="_blank">Help</a>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
 // ── CHECKOUT ──
 function openCheckout(){
   if(!Object.keys(cart).length){ toast('Cart is empty'); return; }
+  appliedCoupon = null;
   closeCart();
-  const sub=cartTotal(); const ship=sub>=FREE_SHIP?0:SHIP_COST; const total=sub+ship;
+if(typeof kpvTrack!=='undefined') kpvTrack.initiateCheckout({value:cartTotal(),numItems:cartCount(),productIds:Object.keys(cart)});
+trackCatalogueEvent('InitiateCheckout',{
+  cart_total:cartTotal(),
+  total_items:cartCount(),
+  checkout_items:Object.values(cart).map(item=>({
+    sku:item.sku,
+    name:item.name,
+    category:item.category,
+    qty:item.qty,
+    price:item.price,
+  }))
+});
+  const sub = cartTotal();
+const ship = sub >= FREE_SHIP ? 0 : SHIP_COST;
+const total = sub + ship;
   const items=Object.values(cart);
+const savedEmail = localStorage.getItem('customerEmail') || '';
   document.getElementById('coBody').innerHTML=`
     <div style="padding:0 0 15px">
       <div class="co-lbl">Delivery details</div>
       <input class="co-inp" id="co_name" placeholder="Full name *" type="text">
       <input class="co-inp" id="co_phone" placeholder="WhatsApp number * (10 digits)" type="tel" maxlength="10">
+<input class="co-inp" id="co_email" placeholder="Email for order updates *" type="email" value="${esc(savedEmail)}">
       <input class="co-inp" id="co_addr" placeholder="Full address *" type="text">
       <div class="co-row">
         <input class="co-inp" id="co_city" placeholder="City *" type="text">
@@ -766,11 +2858,24 @@ function openCheckout(){
       <input class="co-inp" id="co_state" placeholder="State *" type="text">
     </div>
     <div class="co-sum">
+    <div class="co-reassure">
+      <strong>Order updates made simple.</strong><br>
+      Your order confirmation and courier updates will be sent on WhatsApp + email.
+    </div>
       ${items.map(i=>`<div class="co-item"><span>${i.name} × ${i.qty}</span><span>₹${i.price*i.qty}</span></div>`).join('')}
       <div class="co-item"><span>Shipping</span><span>${ship===0?'FREE':'₹'+ship}</span></div>
-      <div class="co-item tot"><span>Total</span><span>₹${total}</span></div>
+      <div class="co-item" style="gap:8px;align-items:center">
+  <input class="co-inp" id="co_coupon" placeholder="Coupon code" style="margin:0;flex:1;text-transform:uppercase">
+  <button type="button" class="btn-checkout" onclick="applyCoupon()" style="width:auto;margin:0;padding:11px 14px">Apply</button>
+</div>
+<div id="co_coupon_msg" style="font-size:12px;color:var(--gold);margin:4px 0 8px"></div>
+<div class="co-item" id="co_discount_row" style="display:none">
+  <span>Discount <b id="co_discount_code"></b></span>
+  <span>-₹<span id="co_discount_amt">0</span></span>
+</div>
+<div class="co-item tot"><span>Total</span><span id="co_total">₹${total}</span></div>
     </div>
-    <button class="btn-pay" id="payBtn" onclick="doCheckout(${total})">Pay ₹${total} with Razorpay</button>
+<button class="btn-pay" id="payBtn" onclick="doCheckout()">Pay ₹${total} with Razorpay</button>
     <button class="btn-wa-cart" onclick="orderViaWA();closeCheckout()" style="margin-bottom:10px">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
       Or order via WhatsApp
@@ -781,74 +2886,258 @@ function openCheckout(){
 }
 function closeCheckout(){ document.getElementById('coMo').classList.remove('on'); }
 
-async function doCheckout(total){
+let addressWarningShown = false;
+
+function isAddressComplete(address){
+
+  if(!address) return false;
+
+  return (
+    address.length >= 12 &&
+    /\d/.test(address)
+  );
+}
+
+function showPaymentSuccessScreen(orderId) {
+  closeCheckout();
+
+  document.body.style.overflow = '';
+
+  setTimeout(() => {
+    document.querySelectorAll('.razorpay-container').forEach(el => {
+      try { el.remove(); } catch(e) {}
+    });
+  }, 500);
+
+  document.getElementById('grid').innerHTML = `
+    <div style="grid-column:1/-1;text-align:center;padding:60px 20px">
+      <div style="font-size:56px;margin-bottom:16px">🎉</div>
+      <div style="font-family:var(--font-serif);font-size:24px;color:var(--dark);margin-bottom:8px">Payment Received!</div>
+      <div style="font-size:13px;color:var(--gray);margin-bottom:6px">Order ID: <strong>${orderId}</strong></div>
+      <div style="font-size:13px;color:var(--gray);margin-bottom:20px">Confirmation will arrive on WhatsApp shortly ✅</div>
+      <button onclick="openOrders()" style="background:var(--dark);color:var(--gold-l);border:none;border-radius:10px;padding:12px 28px;font-family:var(--font-sans);font-size:13px;cursor:pointer;margin-bottom:10px">View My Orders</button>
+      <br>
+      <button onclick="location.reload()" style="background:var(--cream);color:var(--dark);border:0.5px solid var(--border);border-radius:10px;padding:11px 24px;font-family:var(--font-sans);font-size:13px;cursor:pointer">Continue Shopping</button>
+    </div>
+  `;
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function doCheckout(){
+  const totals = checkoutTotals();
+  const total = totals.total;
   const name=document.getElementById('co_name')?.value.trim();
-  const phone=document.getElementById('co_phone')?.value.trim();
+const phone=document.getElementById('co_phone')?.value.trim();
+const emailRaw = document.getElementById('co_email')?.value.trim().toLowerCase() || '';
+const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw) ? emailRaw : '';
+
+if (emailRaw && !email) {
+  toast('Email looks off — add a valid one for courier updates.');
+  return;
+}
+
+if (!emailRaw) {
+  toast('Please add your email for invoice and courier updates.');
+  return;
+}
+
+if (!email) {
+  toast('Please enter a valid email for invoice and courier updates.');
+  return;
+}
+
+localStorage.setItem('customerEmail', email);
+localStorage.setItem('customerPhone', '91' + phone);
+localStorage.setItem('phone', '91' + phone);
+
   const addr=document.getElementById('co_addr')?.value.trim();
   const city=document.getElementById('co_city')?.value.trim();
   const pin=document.getElementById('co_pin')?.value.trim();
   const state=document.getElementById('co_state')?.value.trim();
-  if(!name||!phone||!addr||!city||!pin||!state){ toast('Please fill all fields'); return; }
+  if(!name||!phone||!email||!addr||!city||!pin||!state){
+  toast('Please fill all fields');
+  return;
+}
+
+let addressWarningShown = false;
+
+if(!isAddressComplete(addr)){
+
+  if(!addressWarningShown){
+
+    alert(
+      '🚚 Almost there! Please enter a complete address with House/Flat No, Area/Locality and Pincode for a smooth delivery.'
+    );
+
+    addressWarningShown = true;
+  }
+
+  return;
+}
   if(phone.length!==10){ toast('Enter valid 10-digit number'); return; }
   if(pin.length!==6){ toast('Enter valid 6-digit pincode'); return; }
 
   const btn=document.getElementById('payBtn');
-  btn.disabled=true; btn.textContent='Please wait...';
+  btn.disabled = true;
+btn.textContent = 'Creating secure checkout...';
 
-  const items=Object.values(cart).map(i=>({sku:i.sku,name:i.name,price:i.price,qty:i.qty}));
+  const items = Object.values(cart).map(i => ({
+  sku: i.sku,
+  name: i.name,
+  category: i.category || '',
+  price: i.price,
+  qty: i.qty,
+  image: i.image || i.image_url || '',
+  image_url: i.image_url || i.image || ''
+}));
   try {
     const res=await fetch(ORDER_API,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name,phone:'91'+phone,address:addr,city,state,pincode:pin,items,total:cartTotal()})
+      body:JSON.stringify({
+  name,
+  phone:'91'+phone,
+  address:addr,
+  email,
+  city,
+  state,
+  pincode:pin,
+  items,
+  subtotal:cartTotal(),
+  shipping:cartTotal()>=FREE_SHIP?0:SHIP_COST,
+  couponCode: appliedCoupon?.code || normalizeCoupon(document.getElementById('co_coupon')?.value),
+discount: totals.discount,
+  total:cartTotal()
+})
     });
-    const data=await res.json();
-    if(!data.success) throw new Error('Order failed');
+const data = await res.json();
 
-    const rzp=new Razorpay({
-      key: RZP_KEY,
-      amount: total*100,
-      currency: 'INR',
-      name: 'KAAPAV Fashion Jewellery',
-      description: 'Order '+data.orderId,
-      prefill:{ name, contact:'+91'+phone },
-      theme:{ color:'#C49432' },
-      handler: async function(resp){
-        try {
-          await fetch('https://wa.kaapav.com/api/orders/confirm', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ orderId: data.orderId, paymentId: resp.razorpay_payment_id, phone: '91'+phone })
-          });
-        } catch(e){ console.error('Confirm error:', e); }
-        cart={};
-        saveCart(); updateCartCount();
-        closeCheckout();
-        document.getElementById('grid').innerHTML=`
-          <div style="grid-column:1/-1;text-align:center;padding:60px 20px">
-            <div style="font-size:56px;margin-bottom:16px">🎉</div>
-            <div style="font-family:var(--font-serif);font-size:24px;color:var(--dark);margin-bottom:8px">Order Placed!</div>
-            <div style="font-size:13px;color:var(--gray);margin-bottom:6px">Order ID: <strong>${data.orderId}</strong></div>
-            <div style="font-size:13px;color:var(--gray);margin-bottom:20px">Check WhatsApp for confirmation ✅</div>
-            <button onclick="location.reload()" style="background:var(--dark);color:var(--gold-l);border:none;border-radius:10px;padding:12px 28px;font-family:var(--font-sans);font-size:13px;cursor:pointer">Continue Shopping</button>
-          </div>`;
+if (!res.ok || !data.success) {
+  throw new Error(data.error || data.message || 'Order failed');
+}
+if (typeof Razorpay === 'undefined') {
+  throw new Error('Razorpay script not loaded. Check checkout.js/network/adblock.');
+}
+const payableTotal = Number(data.total || total);
+btn.textContent = 'Opening Razorpay...';
+const rzp=new Razorpay({
+  key: RZP_KEY,
+  amount: payableTotal * 100,
+  currency: 'INR',
+  name: 'KAAPAV Fashion Jewellery',
+  description: 'Order '+data.orderId,
+  prefill:{ 
+  name, 
+  contact:'+91'+phone,
+  ...(email ? { email } : {})
+},
+  theme:{ color:'#C49432' },
+
+  webview_intent: true,
+  config: {
+    display: {
+      blocks: {
+        banks: {
+          name: 'All Payment Options',
+          instruments: [
+            { method: 'upi' },
+            { method: 'card' },
+            { method: 'wallet' },
+            { method: 'netbanking' }
+          ]
+        }
       },
+      sequence: ['block.banks'],
+      preferences: {
+        show_default_blocks: false
+      }
+    }
+  },
+
+handler: function(resp){
+  const paidOrderId = data.orderId;
+  const paidPhone = '91' + phone;
+  const paidPaymentId = resp.razorpay_payment_id;
+
+  const purchasePayload = {
+    value: payableTotal,
+    orderId: paidOrderId,
+    numItems: cartCount(),
+    productIds: Object.keys(cart),
+    contents: Object.values(cart).map(i => ({
+      id: i.sku,
+      quantity: i.qty,
+      item_price: i.price
+    })),
+    phone: paidPhone,
+    name
+  };
+
+  // Show success screen IMMEDIATELY. Never wait for backend here.
+cart = {};
+saveCart();
+updateCartCount();
+
+showPaymentSuccessScreen(paidOrderId);
+
+  try {
+    if (typeof kpvTrack !== 'undefined') {
+      kpvTrack.purchase(purchasePayload);
+    }
+  } catch(e) {
+    console.error('Purchase tracking error:', e);
+  }
+
+  // Backend confirmation runs in background.
+  fetch('https://wa.kaapav.com/api/orders/confirm', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    keepalive: true,
+    body: JSON.stringify({
+      orderId: paidOrderId,
+      paymentId: paidPaymentId,
+      phone: paidPhone
+    })
+  }).catch(e => {
+    console.error('Background confirm error:', e);
+  });
+},
       modal:{ ondismiss:function(){
-        btn.disabled=false; btn.textContent=`Pay ₹${total} with Razorpay`;
-        toast('Payment cancelled. Your order is saved, check WhatsApp for payment link.');
+        btn.disabled=false; btn.textContent=`Pay ₹${payableTotal} with Razorpay`;
+        toast('Payment cancelled. You can try again from checkout.');
       }}
     });
-    rzp.open();
+    requestAnimationFrame(() => {
+  rzp.open();
+});
   } catch(e){
-    btn.disabled=false; btn.textContent=`Pay ₹${total} with Razorpay`;
-    toast('Something went wrong. Try WhatsApp order.');
+    btn.disabled=false; btn.textContent=`Pay ₹${checkoutTotals().total} with Razorpay`;
+    console.error('Checkout error:', e);
+toast(e.message || 'Something went wrong. Try WhatsApp order.');
   }
 }
 
+/* trackCatalogueEvent('Purchase',{
+  cart_total: total,
+  checkout_items: items.map(i => ({
+    sku: i.sku,
+    name: i.name,
+    qty: i.qty,
+    price: i.price
+  }))
+}); */
 // ── PRODUCT MODAL ──
 function openProd(sku){
   const p=products.find(x=>x.sku===sku); if(!p) return;
   curProd=p; curQty=1; curGallIdx=0;
+if(typeof kpvTrack!=='undefined') kpvTrack.viewContent({id:p.sku,name:p.name,price:p.price,category:p.category,image:p.image_url||''});
+trackCatalogueEvent('ViewContent',{
+  sku:p.sku,
+  product_name:p.name,
+  category:p.category,
+  price:p.price
+});
   const imgs=p.images.length?p.images:(p.image_url?[p.image_url]:[]);
   const disc=p.compare_price>p.price?Math.round((1-p.price/p.compare_price)*100):0;
   const sav=p.compare_price>p.price?p.compare_price-p.price:0;
@@ -937,12 +3226,21 @@ function setGI(i){
   const m=document.getElementById('gm'); if(m) m.src=imgs[i];
   document.querySelectorAll('.g-th').forEach((t,j)=>t.classList.toggle('on',j===i));
 }
-function setQty(d){ curQty=Math.max(1,curQty+d); const v=document.getElementById('qv'); if(v) v.textContent=curQty; }
-function addFromModal(){ if(!curProd) return; addToCart(curProd.sku,curQty); toast('Added to cart 🛒'); closePMOd(); }
+function setQty(d) {
+  if (!curProd) return;
+  const maxQty = curProd.stock || 0;
+  const newQty = Math.max(1, Math.min(maxQty, curQty + d));
+  if (d > 0 && newQty === curQty && curQty === maxQty) { toast(`That's the last of them! 🥰`); return; }
+  curQty = newQty;
+  const v = document.getElementById('qv');
+  if (v) v.textContent = curQty;
+}
+function addFromModal(){ if(!curProd) return; addToCart(curProd.sku,curQty); if(typeof kpvTrack!=='undefined') kpvTrack.addToCart({id:curProd.sku,name:curProd.name,price:curProd.price,category:curProd.category},curQty); toast('Added to cart 🛒'); closePMOd(); }
 function buyNow(){
   if(!curProd) return;
   if(curProd.stock===0){ toast('Out of stock'); return; }
   cart={}; addToCart(curProd.sku,curQty); saveCart(); updateCartCount();
+if(typeof kpvTrack!=='undefined') kpvTrack.addToCart({id:curProd.sku,name:curProd.name,price:curProd.price,category:curProd.category},curQty);
   closePMOd(); setTimeout(openCheckout,300);
 }
 function waOrder(){
@@ -1077,6 +3375,8 @@ function closeShare(e){ if(e.target===document.getElementById('shareMo')||e.curr
 function shareWA(){
   if(!shareProd) return;
   const msg=`Hi! Check out this product from KAAPAV:\n\n*${shareProd.name}*\nPrice: ₹${shareProd.price}\n\n${shareProd.website_link||'https://catalogue.kaapav.com'}`;
+if(typeof kpvTrack!=='undefined') kpvTrack.whatsappIntent(shareProd||null);
+
   window.open('https://wa.me/?text='+encodeURIComponent(msg),'_blank');
   document.getElementById('shareMo').classList.remove('on');
 }
@@ -1112,11 +3412,112 @@ window.addEventListener('scroll',()=>{
 
 // ── INIT ──
 loadState(); updateCartCount(); updateWLCount();
+window.verifyCustomerOtp = verifyCustomerOtp;
+refreshCustomerProfile().then(() => linkCustomerIdentityFromCid());
 shimmer(); fetchProducts();
 setTimeout(fixStickyOffsets, 100);
 window.addEventListener('resize', fixStickyOffsets);
 setInterval(fetchProducts, 30000);
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) fetchProducts(); });
 </script>
+
+<!-- FOOTER -->
+<footer class="footer">
+
+  <div class="footer-container">
+
+    <!-- KAAPAV -->
+
+    <div class="footer-logo">
+
+<img
+  src="https://www.kaapav.com/web/image/website/3/logo/KAAPAV?unique=974cd0f"
+  alt="KAAPAV Logo"
+  loading="lazy">
+
+      <div class="footer-contact">
+
+        Contact us:<br>
+
+        <a href="mailto:care.kaapav@gmail.com">
+          care.kaapav@gmail.com
+        </a>
+
+        <br>
+   <br>
+        <a href="https://wa.me/919148330016">
+          +91 91483 30016
+        </a>
+
+      </div>
+
+    </div>
+
+    <!-- Policies -->
+
+    <div class="footer-section">
+
+      <h4>Policies</h4>
+
+      <a href="https://www.kaapav.com/return-policy" target="_blank">
+        Return & Refund
+      </a>
+
+      <a href="https://www.kaapav.com/privacy" target="_blank">
+        Privacy Policy
+      </a>
+
+      <a href="https://www.kaapav.com/terms" target="_blank">
+        Terms of Service
+      </a>
+
+      <a href="https://www.kaapav.com/about-us" target="_blank">
+        About Us
+      </a>
+
+      <a href="https://www.kaapav.com/contactus" target="_blank">
+        Contact Us
+      </a>
+
+    </div>
+
+    <!-- Social -->
+
+    <div class="footer-section">
+
+      <h4>Follow Us</h4>
+
+   <div class="social-icons">
+
+  <a
+    href="https://instagram.com/kaapavfashionjewellery"
+    target="_blank">
+
+    <i class="fab fa-instagram"></i>
+
+  </a>
+
+  <a
+    href="https://facebook.com"
+    target="_blank">
+
+    <i class="fab fa-facebook-f"></i>
+
+  </a>
+
+</div>
+
+    </div>
+
+  </div>
+
+  <div class="footer-bottom">
+
+    © 2026 KAAPAV. All Rights Reserved.
+
+  </div>
+
+</footer>
+
 </body>
 </html>

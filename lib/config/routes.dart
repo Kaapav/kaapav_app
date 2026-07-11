@@ -13,6 +13,7 @@ import '../screens/customers/customers_screen.dart';
 import '../screens/broadcasts/broadcasts_screen.dart';
 import '../screens/analytics/analytics_screen.dart';
 import '../screens/settings/settings_screen.dart';
+import '../screens/owner_inbox/owner_inbox_screen.dart';
 
 class AppRoutes {
   AppRoutes._();
@@ -35,6 +36,7 @@ class AppRoutes {
   static const String broadcasts = '/broadcasts';
   static const String analytics = '/analytics';
   static const String settings = '/settings';
+  static const String ownerInbox = '/owner-inbox';
 
   // Route generator
   static Route<dynamic> generateRoute(RouteSettings routeSettings) {
@@ -81,6 +83,8 @@ class AppRoutes {
         return _page(const AnalyticsScreen(), routeSettings);
       case settings:
         return _page(const SettingsScreen(), routeSettings);
+      case ownerInbox:
+  return _page(const OwnerInboxScreen(), routeSettings);
       default:
         return _page(const SplashScreen(), routeSettings);
     }
@@ -104,6 +108,10 @@ class AppRoutes {
   static void openProduct(BuildContext context, String sku) {
     Navigator.pushNamed(context, productDetail, arguments: {'sku': sku});
   }
+
+static void openOwnerInbox(BuildContext context) {
+  Navigator.pushNamed(context, ownerInbox);
+}
 
   static void pushAndClearStack(BuildContext context, String route) {
     Navigator.pushNamedAndRemoveUntil(context, route, (r) => false);
@@ -134,6 +142,9 @@ class AppRoutes {
         ?.pushNamed(orderDetail, arguments: {'orderId': orderId});
   }
 
+static void openOwnerInboxFromService() {
+  navigatorKey.currentState?.pushNamed(ownerInbox);
+}
   static void pushAndClearStackFromService(String route) {
     navigatorKey.currentState
         ?.pushNamedAndRemoveUntil(route, (r) => false);

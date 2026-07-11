@@ -11,6 +11,8 @@ import '../providers/order_provider.dart';
 import '../providers/product_provider.dart';
 import '../models/analytics_model.dart';
 import '../widgets/common/shimmer_loading.dart';
+import '../widgets/common/glass_shell.dart';
+import '../widgets/common/glass_card.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -81,6 +83,24 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     return '\u20B9${v.toStringAsFixed(0)}';
   }
 
+  bool _hasActiveShipment(dynamic o) {
+    return (o.shiprocketOrderId ?? '').toString().isNotEmpty ||
+        (o.shipmentId ?? '').toString().isNotEmpty ||
+        (o.awbNumber ?? '').toString().isNotEmpty ||
+        (o.awbCode ?? '').toString().isNotEmpty ||
+        (o.trackingId ?? '').toString().isNotEmpty ||
+        (o.trackingUrl ?? '').toString().isNotEmpty ||
+        o.status == 'shipped' ||
+        o.status == 'delivered';
+  }
+
+  bool _isReadyToShip(dynamic o) {
+    return o.paymentStatus == 'paid' &&
+        (o.status == 'confirmed' || o.status == 'processing') &&
+        !_hasActiveShipment(o);
+  }
+
+
   String _lastSyncLabel([DateTime? providerSyncAt]) {
     final ts = providerSyncAt ?? _lastSyncAt;
     if (ts == null) return 'Syncing...';
@@ -136,12 +156,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         .where((o) => o.paymentStatus == 'unpaid')
         .fold<double>(0, (s, o) => s + o.total);
 
-    final unshipped = orders.where((o) {
-      return o.paymentStatus == 'paid' &&
-          o.status != 'shipped' &&
-          o.status != 'delivered' &&
-          o.status != 'cancelled';
-    }).length;
+    final readyToShipOrders = orders.where(_isReadyToShip).toList();
+    final unshipped = readyToShipOrders.length;
 
     final weekAgo = DateTime.now().subtract(const Duration(days: 7));
     final twoWeeksAgo = DateTime.now().subtract(const Duration(days: 14));
@@ -184,13 +200,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
     final paidValue = paidOrders.fold<double>(0, (s, o) => s + o.total);
     final unpaidValue = unpaidOrders.fold<double>(0, (s, o) => s + o.total);
-
-    final readyToShipOrders = orders.where((o) {
-      return o.paymentStatus == 'paid' &&
-          (o.status == 'confirmed' ||
-              o.status == 'processing' ||
-              o.status == 'pending');
-    }).toList();
 
     final readyToShipValue =
         readyToShipOrders.fold<double>(0, (s, o) => s + o.total);
@@ -250,9 +259,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       ..sort((a, b) => b.value.compareTo(a.value));
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF0F0F0F) : const Color(0xFFF5F5F5),
-      body: SafeArea(
+      backgroundColor: Colors.transparent,
+      body: KaapavGlassShell(
+        isDark: isDark,
         child: state.isLoading && state.stats == null
             ? const ShimmerLoading(type: ShimmerType.dashboard)
             : RefreshIndicator(
@@ -284,53 +293,47 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                     _revenueStrip(state.stats, isDark),
                     const SizedBox(height: 10),
 
-                    GestureDetector(
+                    KaapavGlassCard(
+                      isDark: isDark,
                       onTap: () =>
                           Navigator.pushNamed(context, AppRoutes.analytics),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF1F1F1F) : Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: isDark
-                                ? Colors.white.withValues(alpha: 0.06)
-                                : const Color(0xFFE5E7EB),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                      radius: 18,
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: KaapavTheme.gold.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.bar_chart_rounded,
+                              color: KaapavTheme.gold,
+                              size: 17,
+                            ),
                           ),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                color: KaapavTheme.gold.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Icon(
-                                Icons.bar_chart_rounded,
-                                color: KaapavTheme.gold,
-                                size: 17,
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'View Analytics',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: isDark
+                                    ? Colors.white
+                                    : const Color(0xFF1A1A1A),
                               ),
                             ),
-                            const SizedBox(width: 10),
-                            const Expanded(
-                              child: Text(
-                                'View Analytics',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            const Icon(
-                              Icons.arrow_forward_ios_rounded,
-                              size: 13,
-                              color: Color(0xFF9CA3AF),
-                            ),
-                          ],
-                        ),
+                          ),
+                          const Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            size: 13,
+                            color: Color(0xFF9CA3AF),
+                          ),
+                        ],
                       ),
                     ),
 
@@ -570,124 +573,187 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   }
 
   Widget _header(bool isDark, DashboardStats? stats) {
-    return Row(
+  final unread = stats?.unreadMessages ?? 0;
+  final pending = stats?.pendingOrders ?? 0;
+  final revenue = stats?.todayRevenue ?? 0;
+
+  return KaapavGlassCard(
+    isDark: isDark,
+    radius: 26,
+    padding: const EdgeInsets.all(16),
+    glow: true,
+    accentColor: KaapavTheme.gold,
+    borderColor: KaapavTheme.gold.withValues(alpha: 0.26),
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        KaapavTheme.gold.withValues(alpha: 0.22),
+        KaapavTheme.amethyst.withValues(alpha: 0.10),
+        Colors.white.withValues(alpha: 0.055),
+        Colors.black.withValues(alpha: 0.18),
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _greeting(),
-                style: TextStyle(
-                  fontSize: 13,
-                  color:
-                      isDark ? Colors.white54 : const Color(0xFF9CA3AF),
-                ),
-              ),
-              const SizedBox(height: 3),
-              Row(
-                children: [
-                  Text(
-                    'KAAPAV',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: isDark
-                          ? Colors.white
-                          : const Color(0xFF1A1A1A),
-                    ),
+        Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                gradient: KaapavTheme.luxeGoldGradient,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: KaapavTheme.gold.withValues(alpha: 0.32),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
                   ),
-                  const SizedBox(width: 8),
-                  if (stats != null && stats.unreadMessages > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEF4444),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '${stats.unreadMessages} new',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
                 ],
               ),
-            ],
-          ),
-        ),
-        GestureDetector(
-          onTap: () => Navigator.pushNamed(context, AppRoutes.orders),
-          child: Container(
-            width: 40,
-            height: 40,
-            margin: const EdgeInsets.only(right: 8),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1F1F1F) : Colors.white,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: isDark
-                    ? Colors.white12
-                    : const Color(0xFFE5E7EB),
+              child: const Center(
+                child: Text(
+                  'K',
+                  style: TextStyle(
+                    color: KaapavTheme.bgDeep,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.5,
+                  ),
+                ),
               ),
             ),
-            child: Stack(
-              children: [
-                const Center(
-                  child: Icon(Icons.notifications_outlined, size: 20),
-                ),
-                if (stats != null && stats.pendingOrders > 0)
-                  Positioned(
-                    top: 6,
-                    right: 6,
-                    child: Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFEF4444),
-                        shape: BoxShape.circle,
-                      ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _greeting(),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: KaapavTheme.grayLight.withValues(alpha: 0.92),
                     ),
                   ),
-              ],
+                  const SizedBox(height: 2),
+                  const Text(
+                    'KAAPAV Control',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      color: KaapavTheme.white,
+                      letterSpacing: -0.65,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'WhatsApp • Orders • Catalogue',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: KaapavTheme.grayLight.withValues(alpha: 0.78),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ),
-        GestureDetector(
-          onTap: () => Navigator.pushNamed(context, AppRoutes.settings),
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              gradient: KaapavTheme.goldGradient,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: KaapavTheme.gold.withValues(alpha: 0.3),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
+            GestureDetector(
+              onTap: () => Navigator.pushNamed(context, AppRoutes.orders),
+              child: Container(
+                width: 42,
+                height: 42,
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.12),
+                  ),
                 ),
-              ],
-            ),
-            child: const Center(
-              child: Text(
-                'K',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
+                child: Stack(
+                  children: [
+                    const Center(
+                      child: Icon(
+                        Icons.notifications_rounded,
+                        size: 20,
+                        color: KaapavTheme.goldLight,
+                      ),
+                    ),
+                    if (pending > 0)
+                      Positioned(
+                        top: 7,
+                        right: 7,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: KaapavTheme.rose,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
-          ),
+            GestureDetector(
+              onTap: () => Navigator.pushNamed(context, AppRoutes.settings),
+              child: Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.12),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.tune_rounded,
+                  size: 20,
+                  color: KaapavTheme.sapphire,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _HeaderMiniStat(
+                label: 'Today',
+                value: _currency(revenue),
+                color: KaapavTheme.gold,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _HeaderMiniStat(
+                label: 'Unread',
+                value: '$unread',
+                color: KaapavTheme.teal,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _HeaderMiniStat(
+                label: 'Pending',
+                value: '$pending',
+                color: KaapavTheme.rose,
+              ),
+            ),
+          ],
         ),
       ],
-    );
-  }
+    ),
+  );
+}
 
   Widget _statsGrid(DashboardStats? stats, bool isDark) {
     return GridView.count(
@@ -749,21 +815,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     );
   }
 
-  Widget _revenueStrip(DashboardStats? stats, bool isDark) {
+    Widget _revenueStrip(DashboardStats? stats, bool isDark) {
     if (stats == null) return const SizedBox.shrink();
-    return Container(
+
+    return KaapavGlassCard(
+      isDark: isDark,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            KaapavTheme.gold.withValues(alpha: 0.15),
-            KaapavTheme.gold.withValues(alpha: 0.05),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: KaapavTheme.gold.withValues(alpha: 0.2),
-        ),
+      radius: 18,
+      borderColor: KaapavTheme.gold.withValues(alpha: 0.20),
+      gradient: LinearGradient(
+        colors: [
+          KaapavTheme.gold.withValues(alpha: 0.15),
+          KaapavTheme.gold.withValues(alpha: 0.05),
+        ],
       ),
       child: Row(
         children: [
@@ -780,8 +844,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
-                color:
-                    isDark ? Colors.white70 : const Color(0xFF374151),
+                color: isDark ? Colors.white70 : const Color(0xFF374151),
               ),
             ),
           ),
@@ -876,7 +939,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     );
   }
 
-  Widget _activitySection(List<Activity> activities, bool isDark) {
+    Widget _activitySection(List<Activity> activities, bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -888,16 +951,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           onAction: () => Navigator.pushNamed(context, AppRoutes.chats),
         ),
         const SizedBox(height: 10),
-        Container(
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1F1F1F) : Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.06)
-                  : const Color(0xFFE5E7EB),
-            ),
-          ),
+        KaapavGlassCard(
+          isDark: isDark,
+          padding: EdgeInsets.zero,
+          radius: 18,
           child: ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -906,7 +963,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               height: 1,
               color: isDark
                   ? Colors.white.withValues(alpha: 0.05)
-                  : const Color(0xFFF3F4F6),
+                  : Colors.white.withValues(alpha: 0.42),
             ),
             itemBuilder: (_, i) => _ActivityTile(
               activity: activities[i],
@@ -934,83 +991,92 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     );
   }
 
-  Widget _quickActions(bool isDark) {
-    final actions = [
-      _QA(Icons.campaign_rounded, 'Broadcast', AppRoutes.broadcasts),
-      _QA(Icons.add_shopping_cart, 'New Order', AppRoutes.orders),
-      _QA(Icons.inventory_2_rounded, 'Products', AppRoutes.products),
-      _QA(Icons.bar_chart_rounded, 'Analytics', AppRoutes.analytics),
-    ];
+    Widget _quickActions(bool isDark) {
+  final actions = [
+    _QA(Icons.campaign_rounded, 'Broadcast', AppRoutes.broadcasts, KaapavTheme.rose),
+    _QA(Icons.add_shopping_cart, 'New Order', AppRoutes.orders, KaapavTheme.gold),
+    _QA(Icons.inventory_2_rounded, 'Products', AppRoutes.products, KaapavTheme.teal),
+    _QA(Icons.bar_chart_rounded, 'Analytics', AppRoutes.analytics, KaapavTheme.sapphire),
+  ];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _SectionHeader(
-          icon: Icons.flash_on_rounded,
-          title: '⚡ Quick Actions',
-          isDark: isDark,
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: actions.asMap().entries.map((e) {
-            final idx = e.key;
-            final a = e.value;
-            return Expanded(
-              child: Padding(
-                padding: EdgeInsets.only(
-                  right: idx == actions.length - 1 ? 0 : 10,
-                ),
-                child: GestureDetector(
-                  onTap: () => Navigator.pushNamed(context, a.route),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1F1F1F) : Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.06)
-                            : const Color(0xFFE5E7EB),
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _SectionHeader(
+        icon: Icons.flash_on_rounded,
+        title: '⚡ Quick Actions',
+        isDark: isDark,
+      ),
+      const SizedBox(height: 10),
+      Row(
+        children: actions.asMap().entries.map((e) {
+          final idx = e.key;
+          final a = e.value;
+
+          return Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(
+                right: idx == actions.length - 1 ? 0 : 10,
+              ),
+              child: KaapavGlassCard(
+                isDark: isDark,
+                onTap: () => Navigator.pushNamed(context, a.route),
+                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 7),
+                radius: 20,
+                accentColor: a.color,
+                borderColor: a.color.withValues(alpha: 0.18),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            a.color.withValues(alpha: 0.28),
+                            Colors.white.withValues(alpha: 0.06),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(
+                          color: a.color.withValues(alpha: 0.22),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: a.color.withValues(alpha: 0.18),
+                            blurRadius: 16,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        a.icon,
+                        color: a.color,
+                        size: 20,
                       ),
                     ),
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 38,
-                          height: 38,
-                          decoration: BoxDecoration(
-                            color:
-                                KaapavTheme.gold.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(
-                            a.icon,
-                            color: KaapavTheme.gold,
-                            size: 19,
-                          ),
-                        ),
-                        const SizedBox(height: 7),
-                        Text(
-                          a.label,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: isDark
-                                ? Colors.white60
-                                : const Color(0xFF6B7280),
-                          ),
-                        ),
-                      ],
+                    const SizedBox(height: 8),
+                    Text(
+                      a.label,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: KaapavTheme.grayLight.withValues(alpha: 0.92),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
+            ),
+          );
+        }).toList(),
+      ),
+    ],
+  );
+}
 }
 
 class _SectionHeader extends StatelessWidget {
@@ -1033,37 +1099,116 @@ class _SectionHeader extends StatelessWidget {
     return Row(
       children: [
         Container(
-          width: 28,
-          height: 28,
+          width: 32,
+          height: 32,
           decoration: BoxDecoration(
-            color: KaapavTheme.gold.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(8),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                KaapavTheme.gold.withValues(alpha: 0.22),
+                KaapavTheme.amethyst.withValues(alpha: 0.10),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: KaapavTheme.gold.withValues(alpha: 0.22),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: KaapavTheme.gold.withValues(alpha: 0.12),
+                blurRadius: 16,
+                offset: const Offset(0, 7),
+              ),
+            ],
           ),
-          child: Icon(icon, size: 16, color: KaapavTheme.gold),
+          child: Icon(icon, size: 17, color: KaapavTheme.goldLight),
         ),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: isDark ? Colors.white : const Color(0xFF1A1A1A),
+        const SizedBox(width: 9),
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 15.5,
+              fontWeight: FontWeight.w900,
+              color: KaapavTheme.white,
+              letterSpacing: -0.2,
+            ),
           ),
         ),
-        const Spacer(),
         if (action != null)
           GestureDetector(
             onTap: onAction,
-            child: Text(
-              action!,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: KaapavTheme.gold,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: KaapavTheme.gold.withValues(alpha: 0.11),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: KaapavTheme.gold.withValues(alpha: 0.20),
+                ),
+              ),
+              child: Text(
+                action!,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: KaapavTheme.goldLight,
+                ),
               ),
             ),
           ),
       ],
+    );
+  }
+}
+
+class _HeaderMiniStat extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _HeaderMiniStat({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.11),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: color.withValues(alpha: 0.20),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: color,
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(
+              color: KaapavTheme.grayLight.withValues(alpha: 0.82),
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1083,15 +1228,11 @@ class _SyncStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return KaapavGlassCard(
+      isDark: isDark,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF161616) : const Color(0xFFFFFBF2),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: KaapavTheme.gold.withValues(alpha: 0.18),
-        ),
-      ),
+      radius: 16,
+      borderColor: KaapavTheme.gold.withValues(alpha: 0.18),
       child: Row(
         children: [
           Container(
@@ -1143,17 +1284,10 @@ class _ConnectionStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return KaapavGlassCard(
+      isDark: isDark,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1A1A1A) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.06)
-              : const Color(0xFFE5E7EB),
-        ),
-      ),
+      radius: 16,
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -1249,62 +1383,53 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return KaapavGlassCard(
+      isDark: isDark,
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(13),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1F1F1F) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.06)
-                : const Color(0xFFE5E7EB),
+      padding: const EdgeInsets.all(13),
+      radius: 18,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: iconColor, size: 17),
           ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: iconColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(9),
-              ),
-              child: Icon(icon, color: iconColor, size: 17),
+          const SizedBox(height: 9),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 21,
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white : const Color(0xFF1A1A1A),
             ),
-            const SizedBox(height: 9),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              color: Color(0xFF9CA3AF),
+            ),
+          ),
+          if (subLabel != null) ...[
+            const SizedBox(height: 2),
             Text(
-              value,
+              subLabel!,
               style: TextStyle(
-                fontSize: 21,
-                fontWeight: FontWeight.w800,
-                color: isDark ? Colors.white : const Color(0xFF1A1A1A),
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: subColor ?? const Color(0xFF9CA3AF),
               ),
             ),
-            const SizedBox(height: 1),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 11,
-                color: Color(0xFF9CA3AF),
-              ),
-            ),
-            if (subLabel != null) ...[
-              const SizedBox(height: 2),
-              Text(
-                subLabel!,
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  color: subColor ?? const Color(0xFF9CA3AF),
-                ),
-              ),
-            ],
           ],
-        ),
+        ],
       ),
     );
   }
@@ -1323,63 +1448,59 @@ class _PendingTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return KaapavGlassCard(
+      isDark: isDark,
       onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1F1F1F) : Colors.white,
-          borderRadius: BorderRadius.circular(11),
-          border: Border(
-            left: BorderSide(color: item.color, width: 3),
+      margin: const EdgeInsets.only(bottom: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+      radius: 18,
+      accentColor: item.color,
+      borderColor: item.color.withValues(alpha: 0.22),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: item.color.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(
+                color: item.color.withValues(alpha: 0.24),
+              ),
+            ),
+            child: Icon(item.icon, color: item.color, size: 20),
           ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: item.color.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(9),
-              ),
-              child: Icon(item.icon, color: item.color, size: 19),
-            ),
-            const SizedBox(width: 11),
-            Expanded(
-              child: RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: '${item.count} ',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color:
-                            isDark ? Colors.white : const Color(0xFF1A1A1A),
-                      ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: RichText(
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: '${item.count} ',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      color: KaapavTheme.white,
                     ),
-                    TextSpan(
-                      text: item.text,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isDark
-                            ? Colors.white60
-                            : const Color(0xFF6B7280),
-                      ),
+                  ),
+                  TextSpan(
+                    text: item.text,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: KaapavTheme.grayLight.withValues(alpha: 0.86),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-            const Icon(
-              Icons.chevron_right,
-              color: Color(0xFF9CA3AF),
-              size: 18,
-            ),
-          ],
-        ),
+          ),
+          Icon(
+            Icons.chevron_right_rounded,
+            color: item.color.withValues(alpha: 0.92),
+            size: 22,
+          ),
+        ],
       ),
     );
   }
@@ -1513,17 +1634,10 @@ class _CashFlowStrip extends StatelessWidget {
     final total = paid + unpaid;
     final paidPct = total == 0 ? 0.0 : paid / total;
 
-    return Container(
+    return KaapavGlassCard(
+      isDark: isDark,
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1F1F1F) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.06)
-              : const Color(0xFFE5E7EB),
-        ),
-      ),
+      radius: 18,
       child: Column(
         children: [
           Row(
@@ -1579,9 +1693,8 @@ class _CashFlowStrip extends StatelessWidget {
               value: paidPct,
               minHeight: 8,
               backgroundColor:
-                  const Color(0xFFEF4444).withValues(alpha: 0.2),
-              valueColor:
-                  const AlwaysStoppedAnimation(Color(0xFF10B981)),
+                  const Color(0xFFEF4444).withValues(alpha: 0.20),
+              valueColor: const AlwaysStoppedAnimation(Color(0xFF10B981)),
             ),
           ),
           const SizedBox(height: 6),
@@ -1661,57 +1774,46 @@ class _PaymentBreakdownStrip extends StatelessWidget {
     final total = paidValue + unpaidValue;
     final paidPct = total == 0 ? 0.0 : paidValue / total;
 
-    return InkWell(
+    return KaapavGlassCard(
+      isDark: isDark,
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1F1F1F) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.06)
-                : const Color(0xFFE5E7EB),
-          ),
-        ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _MiniValueBlock(
-                    label: 'Paid',
-                    value: '${currency(paidValue)} • $paidCount',
-                    color: const Color(0xFF10B981),
-                    isDark: isDark,
-                  ),
+      padding: const EdgeInsets.all(14),
+      radius: 18,
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _MiniValueBlock(
+                  label: 'Paid',
+                  value: '${currency(paidValue)} • $paidCount',
+                  color: const Color(0xFF10B981),
+                  isDark: isDark,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _MiniValueBlock(
-                    label: 'Unpaid',
-                    value: '${currency(unpaidValue)} • $unpaidCount',
-                    color: const Color(0xFFEF4444),
-                    isDark: isDark,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: paidPct,
-                minHeight: 8,
-                backgroundColor:
-                    const Color(0xFFEF4444).withValues(alpha: 0.18),
-                valueColor:
-                    const AlwaysStoppedAnimation(Color(0xFF10B981)),
               ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _MiniValueBlock(
+                  label: 'Unpaid',
+                  value: '${currency(unpaidValue)} • $unpaidCount',
+                  color: const Color(0xFFEF4444),
+                  isDark: isDark,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: paidPct,
+              minHeight: 8,
+              backgroundColor:
+                  const Color(0xFFEF4444).withValues(alpha: 0.18),
+              valueColor: const AlwaysStoppedAnimation(Color(0xFF10B981)),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1736,73 +1838,63 @@ class _ReadyToShipPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return KaapavGlassCard(
+      isDark: isDark,
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1F1F1F) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.06)
-                : const Color(0xFFE5E7EB),
+      padding: const EdgeInsets.all(14),
+      radius: 18,
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _MiniValueBlock(
+                  label: 'Ready Orders',
+                  value: '$readyCount',
+                  color: const Color(0xFF0891B2),
+                  isDark: isDark,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _MiniValueBlock(
+                  label: 'Ready Value',
+                  value: currency(readyValue),
+                  color: KaapavTheme.gold,
+                  isDark: isDark,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _MiniValueBlock(
+                  label: 'Unshipped Paid',
+                  value: '$unshipped',
+                  color: const Color(0xFF8B5CF6),
+                  isDark: isDark,
+                ),
+              ),
+            ],
           ),
-        ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _MiniValueBlock(
-                    label: 'Ready Orders',
-                    value: '$readyCount',
-                    color: const Color(0xFF0891B2),
-                    isDark: isDark,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _MiniValueBlock(
-                    label: 'Ready Value',
-                    value: currency(readyValue),
-                    color: KaapavTheme.gold,
-                    isDark: isDark,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _MiniValueBlock(
-                    label: 'Unshipped Paid',
-                    value: '$unshipped',
-                    color: const Color(0xFF8B5CF6),
-                    isDark: isDark,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: const [
-                _StatusChip(
-                  label: '🚚 Ready for Shiprocket',
-                  color: Color(0xFF0891B2),
-                ),
-                _StatusChip(
-                  label: '📦 SR Booked',
-                  color: Color(0xFFF59E0B),
-                ),
-                _StatusChip(
-                  label: '✅ AWB Added',
-                  color: Color(0xFF10B981),
-                ),
-              ],
-            ),
-          ],
-        ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: const [
+              _StatusChip(
+                label: '🚚 Ready for Shiprocket',
+                color: Color(0xFF0891B2),
+              ),
+              _StatusChip(
+                label: '📦 SR Booked',
+                color: Color(0xFFF59E0B),
+              ),
+              _StatusChip(
+                label: '✅ AWB Added',
+                color: Color(0xFF10B981),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -1823,59 +1915,49 @@ class _SourceBreakdownPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     String countFor(String key) => '${sourceCount[key] ?? 0}';
 
-    return InkWell(
+    return KaapavGlassCard(
+      isDark: isDark,
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1F1F1F) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.06)
-                : const Color(0xFFE5E7EB),
+      padding: const EdgeInsets.all(14),
+      radius: 18,
+      child: Row(
+        children: [
+          Expanded(
+            child: _MiniValueBlock(
+              label: 'WhatsApp',
+              value: countFor('whatsapp'),
+              color: const Color(0xFF10B981),
+              isDark: isDark,
+            ),
           ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: _MiniValueBlock(
-                label: 'WhatsApp',
-                value: countFor('whatsapp'),
-                color: const Color(0xFF10B981),
-                isDark: isDark,
-              ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _MiniValueBlock(
+              label: 'Catalogue',
+              value: countFor('catalogue'),
+              color: const Color(0xFF3B82F6),
+              isDark: isDark,
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _MiniValueBlock(
-                label: 'Catalogue',
-                value: countFor('catalogue'),
-                color: const Color(0xFF3B82F6),
-                isDark: isDark,
-              ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _MiniValueBlock(
+              label: 'Website',
+              value: countFor('website'),
+              color: const Color(0xFF8B5CF6),
+              isDark: isDark,
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _MiniValueBlock(
-                label: 'Website',
-                value: countFor('website'),
-                color: const Color(0xFF8B5CF6),
-                isDark: isDark,
-              ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _MiniValueBlock(
+              label: 'Manual',
+              value: countFor('manual'),
+              color: KaapavTheme.gold,
+              isDark: isDark,
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _MiniValueBlock(
-                label: 'Manual',
-                value: countFor('manual'),
-                color: KaapavTheme.gold,
-                isDark: isDark,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1898,50 +1980,40 @@ class _InventoryAlertPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return KaapavGlassCard(
+      isDark: isDark,
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1F1F1F) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.06)
-                : const Color(0xFFE5E7EB),
+      padding: const EdgeInsets.all(14),
+      radius: 18,
+      child: Row(
+        children: [
+          Expanded(
+            child: _MiniValueBlock(
+              label: 'Low Stock',
+              value: '$lowStockCount',
+              color: const Color(0xFFF59E0B),
+              isDark: isDark,
+            ),
           ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: _MiniValueBlock(
-                label: 'Low Stock',
-                value: '$lowStockCount',
-                color: const Color(0xFFF59E0B),
-                isDark: isDark,
-              ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _MiniValueBlock(
+              label: 'Out of Stock',
+              value: '$outOfStockCount',
+              color: const Color(0xFFEF4444),
+              isDark: isDark,
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _MiniValueBlock(
-                label: 'Out of Stock',
-                value: '$outOfStockCount',
-                color: const Color(0xFFEF4444),
-                isDark: isDark,
-              ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _MiniValueBlock(
+              label: 'Products',
+              value: '$totalProducts',
+              color: KaapavTheme.gold,
+              isDark: isDark,
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _MiniValueBlock(
-                label: 'Products',
-                value: '$totalProducts',
-                color: KaapavTheme.gold,
-                isDark: isDark,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1962,17 +2034,10 @@ class _ShipmentQueuePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return KaapavGlassCard(
+      isDark: isDark,
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1F1F1F) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.06)
-              : const Color(0xFFE5E7EB),
-        ),
-      ),
+      radius: 18,
       child: Row(
         children: [
           Expanded(
@@ -2078,17 +2143,10 @@ class _MetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return KaapavGlassCard(
+      isDark: isDark,
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1F1F1F) : Colors.white,
-        borderRadius: BorderRadius.circular(11),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.06)
-              : const Color(0xFFE5E7EB),
-        ),
-      ),
+      radius: 16,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2151,17 +2209,11 @@ class _TopProducts extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final maxVal = products.first.value;
-    return Container(
+
+    return KaapavGlassCard(
+      isDark: isDark,
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1F1F1F) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.06)
-              : const Color(0xFFE5E7EB),
-        ),
-      ),
+      radius: 18,
       child: Column(
         children: products.asMap().entries.map((e) {
           final idx = e.key;
@@ -2182,8 +2234,11 @@ class _TopProducts extends StatelessWidget {
                       width: 20,
                       height: 20,
                       decoration: BoxDecoration(
-                        color: KaapavTheme.gold.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(5),
+                        color: KaapavTheme.gold.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: KaapavTheme.gold.withValues(alpha: 0.18),
+                        ),
                       ),
                       child: Center(
                         child: Text(
@@ -2228,11 +2283,10 @@ class _TopProducts extends StatelessWidget {
                     value: pct,
                     minHeight: 4,
                     backgroundColor: isDark
-                        ? Colors.white12
-                        : const Color(0xFFE5E7EB),
+                        ? Colors.white.withValues(alpha: 0.10)
+                        : Colors.white.withValues(alpha: 0.45),
                     valueColor: AlwaysStoppedAnimation(
-                      KaapavTheme.gold
-                          .withValues(alpha: 0.7 + 0.3 * pct),
+                      KaapavTheme.gold.withValues(alpha: 0.7 + 0.3 * pct),
                     ),
                   ),
                 ),
@@ -2269,16 +2323,10 @@ class _TodayOrders extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1F1F1F) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.06)
-              : const Color(0xFFE5E7EB),
-        ),
-      ),
+    return KaapavGlassCard(
+      isDark: isDark,
+      padding: EdgeInsets.zero,
+      radius: 18,
       child: Column(
         children: orders.asMap().entries.map((e) {
           final i = e.key;
@@ -2290,15 +2338,17 @@ class _TodayOrders extends StatelessWidget {
             onTap: () => onTap(order.orderId),
             child: Container(
               padding: const EdgeInsets.symmetric(
-                  horizontal: 13, vertical: 11),
+                horizontal: 13,
+                vertical: 11,
+              ),
               decoration: BoxDecoration(
                 border: isLast
                     ? null
                     : Border(
                         bottom: BorderSide(
                           color: isDark
-                              ? Colors.white.withValues(alpha: 0.05)
-                              : const Color(0xFFF3F4F6),
+                              ? Colors.white.withValues(alpha: 0.06)
+                              : Colors.white.withValues(alpha: 0.42),
                         ),
                       ),
               ),
@@ -2354,10 +2404,15 @@ class _TodayOrders extends StatelessWidget {
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.1),
+                          color: color.withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(5),
+                          border: Border.all(
+                            color: color.withValues(alpha: 0.14),
+                          ),
                         ),
                         child: Text(
                           order.paymentStatus == 'paid'
@@ -2409,6 +2464,7 @@ class _QA {
   final IconData icon;
   final String label;
   final String route;
+  final Color color;
 
-  const _QA(this.icon, this.label, this.route);
+  const _QA(this.icon, this.label, this.route, this.color);
 }

@@ -14,7 +14,7 @@ import 'services/notification_service.dart';
 import 'utils/logger.dart';
 import 'dart:convert';  // For jsonEncode
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-
+import 'config/theme.dart';
 
 // ═══════════════════════════════════════════════════════════════
 // BACKGROUND HANDLER — MUST BE TOP-LEVEL (Outside any class!)
@@ -95,14 +95,15 @@ if (!Platform.isWindows) {
   }
 
   // Set system UI overlay style
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.dark,
-      systemNavigationBarColor: Colors.white,
-      systemNavigationBarIconBrightness: Brightness.dark,
-    ),
-  );
+SystemChrome.setSystemUIOverlayStyle(
+  const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+    statusBarBrightness: Brightness.dark,
+    systemNavigationBarColor: KaapavTheme.bgDeep,
+    systemNavigationBarIconBrightness: Brightness.light,
+  ),
+);
 
   // Lock portrait orientation
   await SystemChrome.setPreferredOrientations([

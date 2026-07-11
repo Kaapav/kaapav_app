@@ -6,8 +6,8 @@ workers_dev = false
 preview_urls = false
 
 routes = [
-  { pattern = "wa.kaapav.com/*", zone_name = "kaapav.com" }
-]
+  { pattern = "wa.kaapav.com/*", zone_name = "kaapav.com" },
+ ]
 
 [vars]
 ENVIRONMENT = "production"
@@ -23,6 +23,8 @@ FACEBOOK_URL = "https://www.facebook.com/kaapavfashionjewellery/"
 INSTAGRAM_URL = "https://www.instagram.com/kaapavfashionjewellery/"
 ACCOUNT_ID = "5cb4855f980c560ebbeba5ccc3be6901"
 OWNER_PHONE = "919148330016"
+SHIPROCKET_PICKUP_LOCATION = "warehouse-1"
+VENDOR_UNSUPPORTED_PHONES = "447723442078"
 
 [[d1_databases]]
 binding = "DB"

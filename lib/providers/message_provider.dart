@@ -80,7 +80,7 @@ class MessageNotifier extends StateNotifier<MessageState> {
     );
 
     try {
-      final response = await _messageApi.getMessages(phone, limit: 50);
+      final response = await _messageApi.getMessages(phone, limit: 1000000);
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
@@ -130,7 +130,7 @@ class MessageNotifier extends StateNotifier<MessageState> {
       messageType: 'text',
       direction: 'outgoing',
       status: 'sending',
-      timestamp: DateTime.now().toIso8601String(),
+      timestamp: DateTime.now().toUtc().toIso8601String(),
     );
 
     // Optimistic add
@@ -414,21 +414,9 @@ class MessageNotifier extends StateNotifier<MessageState> {
         final newOnly = newMessages.where((m) => !currentIds.contains(m.messageId)).toList();
 
         if (newOnly.isNotEmpty) {
-  for (final msg in newOnly) {
-    addMessage(phone, msg);
-    
-    // Show notification for incoming messages
-    if (msg.direction == 'incoming') {
-      final chat = _ref.read(chatProvider).getChatByPhone(phone);
-      final name = chat?.customerName ?? phone;
-      
-      NotificationService.instance.showMessageNotification(
-        phone: phone,
-        name: name,
-        message: msg.displayText,
-      );
-    }
-  }
+for (final msg in newOnly) {
+  addMessage(phone, msg);
+}
   AppLogger.info('📨 Received ${newOnly.length} new messages');
 }
       }
