@@ -552,133 +552,270 @@ void _scrollToBottom({bool animated = true}) {
     }
   }
 
-  // -- DELETE MESSAGE (local only) --
-    void _handleDelete(Message message) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(children: [
-          Icon(Icons.delete_outline, color: KaapavTheme.error, size: 24),
+  // ── DELETE SINGLE MESSAGE ──
+Future<void> _handleDelete(Message message) async {
+  final result = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      title: const Row(
+        children: [
+          Icon(
+            Icons.delete_outline,
+            color: KaapavTheme.error,
+            size: 24,
+          ),
           SizedBox(width: 8),
           Text('Delete Message'),
-        ]),
-        content: const Text('Choose how to delete this message.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: KaapavTheme.gray)),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              ref.read(messageProvider.notifier).deleteMessage(widget.phone, message.messageId);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Row(children: [
-                    Icon(Icons.delete, color: Colors.white, size: 18),
-                    SizedBox(width: 8),
-                    Text('Deleted for you'),
-                  ]),
-                  backgroundColor: KaapavTheme.gold,
-                ),
-              );
-            },
-            child: const Text('Delete for Me', style: TextStyle(color: KaapavTheme.error)),
-          ),
-          if (message.isOutgoing && _canDeleteForEveryone(message))
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                _deleteForEveryone(message);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: KaapavTheme.error,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              child: const Text('Delete for Everyone',
-                  style: TextStyle(color: Colors.white, fontSize: 13)),
-            ),
         ],
       ),
-    );
-  }
-
-
-    Future<void> _deleteSelected() async {
-    if (_selectedIds.isEmpty) return;
-    final count = _selectedIds.length;
-    final messages = ref.read(messagesForPhoneProvider(widget.phone));
-    final selectedMsgs = messages.where((m) => _selectedIds.contains(m.messageId)).toList();
-    final hasOutgoing = selectedMsgs.any((m) => m.isOutgoing && _canDeleteForEveryone(m));
-
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(children: [
-          const Icon(Icons.delete_outline, color: KaapavTheme.error, size: 24),
-          const SizedBox(width: 8),
-          Text('Delete $count Message${count > 1 ? 's' : ''}'),
-        ]),
-        content: const Text('Choose how to delete selected messages.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: KaapavTheme.gray)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, 'me'),
-            child: const Text('Delete for Me', style: TextStyle(color: KaapavTheme.error)),
-          ),
-          if (hasOutgoing)
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, 'everyone'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: KaapavTheme.error,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              child: const Text('Delete for Everyone',
-                  style: TextStyle(color: Colors.white, fontSize: 13)),
-            ),
-        ],
+      content: const Text(
+        'Choose how to delete this message.',
       ),
-    );
-
-    if (result == null) return;
-    int deleted = 0;
-
-    if (result == 'everyone') {
-      for (final msg in selectedMsgs) {
-        if (msg.isOutgoing && _canDeleteForEveryone(msg)) {
-          await ref.read(messageProvider.notifier).deleteForEveryone(widget.phone, msg.messageId);
-        } else {
-          ref.read(messageProvider.notifier).deleteMessage(widget.phone, msg.messageId);
-        }
-        deleted++;
-      }
-    } else {
-      for (final id in _selectedIds) {
-        ref.read(messageProvider.notifier).deleteMessage(widget.phone, id);
-        deleted++;
-      }
-    }
-
-    setState(() { _isSelecting = false; _selectedIds.clear(); });
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(children: [
-            const Icon(Icons.delete, color: Colors.white, size: 18),
-            const SizedBox(width: 8),
-            Text('$deleted message(s) deleted${result == 'everyone' ? ' for everyone' : ''}'),
-          ]),
-          backgroundColor: KaapavTheme.gold,
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text(
+            'Cancel',
+            style: TextStyle(color: KaapavTheme.gray),
+          ),
         ),
-      );
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, 'me'),
+          child: const Text(
+            'Delete for Me',
+            style: TextStyle(color: KaapavTheme.error),
+          ),
+        ),
+        if (message.isOutgoing &&
+            _canDeleteForEveryone(message))
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, 'everyone'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: KaapavTheme.error,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              'Delete for Everyone',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+
+  if (result == null) return;
+
+  bool success = false;
+
+  if (result == 'everyone') {
+    success = await ref
+        .read(messageProvider.notifier)
+        .deleteForEveryone(
+          widget.phone,
+          message.messageId,
+        );
+  } else if (result == 'me') {
+    success = await ref
+        .read(messageProvider.notifier)
+        .deleteMessage(
+          widget.phone,
+          message.messageId,
+        );
+  }
+
+  if (!mounted) return;
+
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Row(
+        children: [
+          Icon(
+            success ? Icons.delete : Icons.error_outline,
+            color: Colors.white,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            success
+                ? result == 'everyone'
+                    ? 'Deleted for everyone'
+                    : 'Message deleted'
+                : 'Unable to delete message',
+          ),
+        ],
+      ),
+      backgroundColor:
+          success ? KaapavTheme.gold : KaapavTheme.error,
+    ),
+  );
+}
+
+// ── DELETE SELECTED MESSAGES ──
+Future<void> _deleteSelected() async {
+  if (_selectedIds.isEmpty) return;
+
+  final count = _selectedIds.length;
+
+  final messages = ref.read(
+    messagesForPhoneProvider(widget.phone),
+  );
+
+  final selectedMsgs = messages
+      .where(
+        (message) =>
+            _selectedIds.contains(message.messageId),
+      )
+      .toList();
+
+  if (selectedMsgs.isEmpty) {
+    if (mounted) {
+      setState(() {
+        _isSelecting = false;
+        _selectedIds.clear();
+      });
+    }
+    return;
+  }
+
+  final hasOutgoing = selectedMsgs.any(
+    (message) =>
+        message.isOutgoing &&
+        _canDeleteForEveryone(message),
+  );
+
+  final result = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      title: Row(
+        children: [
+          const Icon(
+            Icons.delete_outline,
+            color: KaapavTheme.error,
+            size: 24,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'Delete $count Message${count > 1 ? 's' : ''}',
+          ),
+        ],
+      ),
+      content: const Text(
+        'Choose how to delete selected messages.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text(
+            'Cancel',
+            style: TextStyle(color: KaapavTheme.gray),
+          ),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, 'me'),
+          child: const Text(
+            'Delete for Me',
+            style: TextStyle(color: KaapavTheme.error),
+          ),
+        ),
+        if (hasOutgoing)
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, 'everyone'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: KaapavTheme.error,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              'Delete for Everyone',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+
+  if (result == null) return;
+
+  int deleted = 0;
+
+  for (final message in selectedMsgs) {
+    bool success = false;
+
+    if (result == 'everyone' &&
+        message.isOutgoing &&
+        _canDeleteForEveryone(message)) {
+      success = await ref
+          .read(messageProvider.notifier)
+          .deleteForEveryone(
+            widget.phone,
+            message.messageId,
+          );
+    } else {
+      success = await ref
+          .read(messageProvider.notifier)
+          .deleteMessage(
+            widget.phone,
+            message.messageId,
+          );
+    }
+
+    if (success) {
+      deleted++;
     }
   }
+
+  if (!mounted) return;
+
+  setState(() {
+    _isSelecting = false;
+    _selectedIds.clear();
+  });
+
+  final allDeleted = deleted == selectedMsgs.length;
+
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Row(
+        children: [
+          Icon(
+            deleted > 0
+                ? Icons.delete
+                : Icons.error_outline,
+            color: Colors.white,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              allDeleted
+                  ? '$deleted message(s) deleted'
+                  : deleted > 0
+                      ? '$deleted of ${selectedMsgs.length} message(s) deleted'
+                      : 'Unable to delete selected messages',
+            ),
+          ),
+        ],
+      ),
+      backgroundColor:
+          deleted > 0 ? KaapavTheme.gold : KaapavTheme.error,
+    ),
+  );
+}
 
   // -- EXPORT CHAT --
   Future<void> _handleExportChat() async {

@@ -12,7 +12,7 @@ import '../services/notification_service.dart';
 import '../services/api/message_api.dart';
 import '../providers/chat_provider.dart';
 import '../utils/logger.dart';
-
+import '../services/api/api_client.dart';
 // ═══════════════════════════════════════════════════════════════
 // STATE CLASS
 // ═══════════════════════════════════════════════════════════════
@@ -509,14 +509,51 @@ for (final msg in newOnly) {
   }
 
     // ── DELETE MESSAGE (local only) ──
-  void deleteMessage(String phone, String messageId) {
-    final currentMessages = List<Message>.from(state.getMessages(phone));
-    currentMessages.removeWhere((m) => m.messageId == messageId);
-    state = state.copyWith(
-      messagesByPhone: {...state.messagesByPhone, phone: currentMessages},
+Future<bool> deleteMessage(String phone, String messageId) async {
+  try {
+    final response = await ApiClient.instance.delete(
+      '/messages/${Uri.encodeComponent(messageId)}',
     );
-    AppLogger.info('🗑️ Deleted message $messageId from $phone');
+
+    final success =
+        response.statusCode == 200 &&
+        response.data?['success'] == true;
+
+    if (!success) {
+      throw Exception(
+        response.data?['error'] ?? 'Delete failed',
+      );
+    }
+
+    // Clear cached chat response so polling cannot restore the deleted message.
+    ApiClient.instance.invalidateCache(
+      '/chats/$phone/messages',
+    );
+
+    final currentMessages =
+        List<Message>.from(state.getMessages(phone));
+
+    currentMessages.removeWhere(
+      (message) => message.messageId == messageId,
+    );
+
+    state = state.copyWith(
+      messagesByPhone: {
+        ...state.messagesByPhone,
+        phone: currentMessages,
+      },
+    );
+
+    AppLogger.success(
+      '🗑️ Permanently deleted $messageId',
+    );
+
+    return true;
+  } catch (e) {
+    AppLogger.error('❌ Delete message failed', e);
+    return false;
   }
+}
 
      // ── STARRED MESSAGES ──
   final Set<String> _starredIds = {};
