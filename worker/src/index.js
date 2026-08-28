@@ -15044,11 +15044,22 @@ if (path === '/api/catalogue/events' && method === 'POST') {
       
       const envCheck = {
         has_WA_PHONE_ID: !!env.WA_PHONE_ID,
-        WA_PHONE_ID_preview: env.WA_PHONE_ID ? `${env.WA_PHONE_ID.slice(0, 4)}...${env.WA_PHONE_ID.slice(-4)}` : 'MISSING',
+        WA_PHONE_ID_val: env.WA_PHONE_ID || 'MISSING',
         has_WA_TOKEN: !!env.WA_TOKEN,
         WA_TOKEN_length: env.WA_TOKEN ? env.WA_TOKEN.length : 0,
         WEBHOOK_VERIFY_TOKEN: env.WEBHOOK_VERIFY_TOKEN || 'MISSING'
       };
+
+      let phoneInfo = null;
+      let phoneInfoError = null;
+      try {
+        const pRes = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}?fields=display_phone_number,verified_name,code_verification_status,quality_rating,name_status`, {
+          headers: { 'Authorization': `Bearer ${env.WA_TOKEN}` }
+        });
+        phoneInfo = await pRes.json();
+      } catch (e) {
+        phoneInfoError = e.message;
+      }
 
       let metaResponse = null;
       let metaError = null;
@@ -15061,9 +15072,10 @@ if (path === '/api/catalogue/events' && method === 'POST') {
           },
           body: JSON.stringify({
             messaging_product: 'whatsapp',
+            recipient_type: 'individual',
             to: targetPhone,
             type: 'text',
-            text: { body: 'KAAPAV Autoresponder Diagnostic Test ✅' }
+            text: { preview_url: false, body: 'KAAPAV Autoresponder Diagnostic Test ✅' }
           })
         });
         metaResponse = await res.json();
@@ -15074,6 +15086,8 @@ if (path === '/api/catalogue/events' && method === 'POST') {
       return jsonResponse({
         timestamp: new Date().toISOString(),
         envCheck,
+        phoneInfo,
+        phoneInfoError,
         targetPhone,
         metaResponse,
         metaError
