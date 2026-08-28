@@ -11,6 +11,7 @@ import '../providers/chat_provider.dart';
 import '../providers/order_provider.dart';
 import '../providers/analytics_provider.dart';
 import '../providers/settings_provider.dart';
+import '../providers/sms_alert_provider.dart';
 import '../services/api/api_client.dart';
 import 'owner_inbox/owner_inbox_screen.dart';
 import 'dashboard_screen.dart';
@@ -55,6 +56,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.read(orderProvider.notifier).loadOrders();
     ref.read(analyticsProvider.notifier).loadDashboard();
     ref.read(settingsProvider.notifier).loadAll();
+    ref.read(smsAlertProvider.notifier);
     _loadOwnerInboxUnread();
 
     ref.read(chatProvider.notifier).startAutoRefresh();

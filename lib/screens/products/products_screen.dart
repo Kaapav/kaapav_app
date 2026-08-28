@@ -14,6 +14,9 @@ import '../../services/api/product_api.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/api/api_client.dart';
 
+import 'bulk_product_editor_sheet.dart';
+import 'offer_manager_sheet.dart';
+
 // ─────────────────────────────────────────────
 // CATEGORY CONFIG
 // ─────────────────────────────────────────────
@@ -149,6 +152,55 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
     );
   }
 
+void _openOfferManager(BuildContext context) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor:
+        Theme.of(context).scaffoldBackgroundColor,
+    builder: (_) => const OfferManagerSheet(),
+  );
+}
+
+Future<void> _openBulkEditor(
+  BuildContext context,
+) async {
+  if (_selectedSkus.isEmpty) {
+    setState(() => _bulkMode = true);
+
+    _showToast(
+      context,
+      'Select products first, then press Bulk Edit',
+      false,
+    );
+    return;
+  }
+
+  final updated = await showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor:
+        Theme.of(context).scaffoldBackgroundColor,
+    builder: (_) => BulkProductEditorSheet(
+      skus: _selectedSkus.toList(),
+    ),
+  );
+
+  if (updated == true && mounted) {
+    setState(() {
+      _selectedSkus.clear();
+      _bulkMode = false;
+      _selectedProduct = null;
+    });
+
+    _showToast(
+      context,
+      '✅ Bulk changes applied',
+      true,
+    );
+  }
+}
+
   @override
   Widget build(BuildContext context) {
     final state    = ref.watch(productProvider);
@@ -161,7 +213,23 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
       backgroundColor: isDark ? const Color(0xFF0A0805) : const Color(0xFFFBF8F1),
       body: Column(
         children: [
-          _TopBar(totalCount: state.products.length, isDark: isDark, onAdd: () => _openAddSheet(context)),
+          _TopBar(
+  totalCount: state.products.length,
+  isDark: isDark,
+  onAdd: () => _openAddSheet(context),
+),
+_OperationsBar(
+  isDark: isDark,
+  selectedCount: _selectedSkus.length,
+  bulkMode: _bulkMode,
+  onOffers: () => _openOfferManager(context),
+  onBulkEdit: () => _openBulkEditor(context),
+  onStartSelection: () => setState(() {
+    _bulkMode = true;
+    _selectedSkus.clear();
+  }),
+),
+
           _SearchBar(controller: _searchCtrl, isDark: isDark, onChanged: (_) => setState(() {})),
           _CategoryTabs(
             selected: _selectedCat,
@@ -862,6 +930,68 @@ class _NarrowLayout extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _OperationsBar extends StatelessWidget {
+  final bool isDark;
+  final bool bulkMode;
+  final int selectedCount;
+  final VoidCallback onOffers;
+  final VoidCallback onBulkEdit;
+  final VoidCallback onStartSelection;
+
+  const _OperationsBar({
+    required this.isDark,
+    required this.bulkMode,
+    required this.selectedCount,
+    required this.onOffers,
+    required this.onBulkEdit,
+    required this.onStartSelection,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      decoration: BoxDecoration(
+        color: isDark
+            ? const Color(0xFF120E08)
+            : Colors.white,
+        border: Border(
+          bottom: BorderSide(
+            color: isDark
+                ? const Color(0xFF251D0A)
+                : const Color(0xFFE5E7EB),
+          ),
+        ),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          OutlinedButton.icon(
+            onPressed: onOffers,
+            icon: const Icon(Icons.local_offer_rounded),
+            label: const Text('Offers'),
+          ),
+          OutlinedButton.icon(
+            onPressed: selectedCount > 0
+                ? onBulkEdit
+                : onStartSelection,
+            icon: const Icon(Icons.edit_note_rounded),
+            label: Text(
+              selectedCount > 0
+                  ? 'Bulk Edit ($selectedCount)'
+                  : bulkMode
+                      ? 'Select Products'
+                      : 'Bulk Edit',
+            ),
+          ),
+        ],
       ),
     );
   }

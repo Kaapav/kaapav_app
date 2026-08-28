@@ -572,6 +572,19 @@ class _StatusChip extends StatelessWidget {
           const Color(0xFF059669),
           Icons.done_all_rounded,
         );
+      case 'refunded':
+        return _ChipCfg(
+          const Color(0xFFD1FAE5),
+          const Color(0xFF047857),
+          Icons.currency_rupee,
+        );
+      case 'return_requested':
+      case 'returns':
+        return _ChipCfg(
+          const Color(0xFFEDE9FE),
+          const Color(0xFF7C3AED),
+          Icons.assignment_return_outlined,
+        );
       case 'cancelled':
         return _ChipCfg(
           const Color(0xFFFEE2E2),

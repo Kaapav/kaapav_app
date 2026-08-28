@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/chat.dart';
 import '../models/customer.dart';
 import '../services/api/chat_api.dart';
+import '../services/sms_alert_service.dart';
 import '../utils/logger.dart';
 import '../utils/formatters.dart';
 
@@ -193,6 +194,18 @@ class ChatNotifier extends StateNotifier<ChatState> {
           0,
           (sum, chat) => sum + chat.unreadCount,
         );
+
+        // Auto-ingest WhatsApp messages to detect OTPs, Razorpay, and Shiprocket alerts
+        for (final chat in chatsList) {
+          if (chat.lastMessage != null && chat.lastMessage!.isNotEmpty) {
+            final time = Formatters.parseDate(chat.lastTimestamp) ?? DateTime.now();
+            SmsAlertService.instance.ingestMessage(
+              sender: chat.customerName.isNotEmpty ? chat.customerName : chat.phone,
+              body: chat.lastMessage!,
+              timestamp: time,
+            );
+          }
+        }
 
         state = state.copyWith(
           chats: chatsList,

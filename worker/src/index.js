@@ -1011,22 +1011,34 @@ return [
 }
 
 function mapProductToSheetRow(product) {
+  const images = parseProductImages(product);
+
   return [
     safeText(product.sku),
     safeText(product.name),
     safeText(product.category),
     safeText(product.subcategory),
+
     safeNumber(product.price),
     safeNumber(product.compare_price),
     safeNumber(product.stock),
     safeNumber(product.reserved_stock),
+
     safeText(product.is_active),
     safeText(product.is_featured),
+
     safeText(product.image_url),
     safeText(product.website_link),
     safeText(product.material),
+    safeText(product.finish),
+
     tagsSummary(product.tags),
     safeText(product.updated_at),
+
+    safeText(images.image_1),
+    safeText(images.image_2),
+    safeText(images.image_3),
+
     '', // restock_note (manual)
   ];
 }
@@ -1227,9 +1239,118 @@ console.log(
   }
 }
 
-async function appendBusinessEnquiryToSheets(env, data) {
+const BUSINESS_ENQUIRY_HEADERS = [
+  'created_at',
+  'phone',
+  'name',
+  'enquiry_type',
+  'profession',
+  'brand_name',
+  'insta_handle',
+  'insta_url',
+  'raw_message',
+  'status',
+  'notes',
+  'collab_type',
+];
+
+async function ensureBusinessEnquiriesSheet(env) {
+  let rows;
+
   try {
-    await appendSheetRow(env, 'Business Enquiries', [
+    rows = await getSheetValues(
+      env,
+      'Business Enquiries'
+    );
+  } catch (e) {
+    const message = String(
+      e?.message || e
+    );
+
+    if (
+      !/Unable to parse range/i.test(
+        message
+      )
+    ) {
+      throw e;
+    }
+
+    await googleSheetsRequest(
+      env,
+      'POST',
+      ':batchUpdate',
+      {
+        requests: [
+          {
+            addSheet: {
+              properties: {
+                title:
+                  'Business Enquiries',
+              },
+            },
+          },
+        ],
+      }
+    );
+
+    rows = [];
+  }
+
+  if (!rows.length) {
+    await updateSheetRow(
+      env,
+      'Business Enquiries',
+      1,
+      BUSINESS_ENQUIRY_HEADERS
+    );
+
+    return [
+      BUSINESS_ENQUIRY_HEADERS,
+    ];
+  }
+
+  const header = [
+    ...(rows[0] || []),
+  ];
+
+  if (
+    safeText(
+      header[11]
+    ).trim() !== 'collab_type'
+  ) {
+    while (
+      header.length < 12
+    ) {
+      header.push('');
+    }
+
+    header[11] =
+      'collab_type';
+
+    await updateSheetRow(
+      env,
+      'Business Enquiries',
+      1,
+      header
+    );
+
+    rows[0] = header;
+  }
+
+  return rows;
+}
+
+async function appendBusinessEnquiryToSheets(
+  env,
+  data
+) {
+  try {
+    const rows =
+      await ensureBusinessEnquiriesSheet(
+        env
+      );
+
+    const row = [
       safeText(data.created_at),
       safeText(data.phone),
       safeText(data.name),
@@ -1241,9 +1362,54 @@ async function appendBusinessEnquiryToSheets(env, data) {
       safeText(data.raw_message),
       safeText(data.status),
       safeText(data.notes),
-    ]);
+      safeText(data.collab_type),
+    ];
+
+    for (
+      let i = rows.length - 1;
+      i >= 1;
+      i--
+    ) {
+      const existing =
+        rows[i] || [];
+
+      if (
+        safeText(existing[1]) ===
+          safeText(data.phone) &&
+        safeText(existing[9]) ===
+          'started'
+      ) {
+        const updatedRow = [
+          ...row,
+        ];
+
+        updatedRow[0] =
+          safeText(existing[0]) ||
+          safeText(
+            data.created_at
+          );
+
+        await updateSheetRow(
+          env,
+          'Business Enquiries',
+          i + 1,
+          updatedRow
+        );
+
+        return;
+      }
+    }
+
+    await appendSheetRow(
+      env,
+      'Business Enquiries',
+      row
+    );
   } catch (e) {
-    console.error('Business Enquiries sheet error:', e);
+    console.error(
+      'Business Enquiries sheet error:',
+      e
+    );
   }
 }
 
@@ -1436,13 +1602,13 @@ async function syncLeadToGoogleSheets(env, phone) {
 }
 
 const SHEET_MANUAL_COLUMNS = {
-  'Orders': [32, 33, 34],
+  'Orders': [34, 35, 36],
   'Shipments': [19, 20],
-  'Inventory': [18],
+  'Inventory': [19],
   'Order Events': [],
   'Sync Failures': [],
   'Leads': [31, 32],
-  'Sales': [18],
+  'Sales': [20],
   'Source Performance': [8],
   'Customers': [34, 35],
   'Cart Activity': [11, 12],
@@ -1450,15 +1616,62 @@ const SHEET_MANUAL_COLUMNS = {
 };
 
 const SHEET_HEADERS = {
-  'Orders': [
-    'customer_id','order_id','created_at','updated_at','customer_name','phone','source','category',
-    'items_summary','item_count','subtotal','shipping_cost','item_skus','item_names','total',
-    'status','payment_status','payment_id','payment_method','payment_link','payment_link_expires',
-    'shipping_name','shipping_phone','shipping_address','shipping_city','shipping_state','shipping_pincode',
-    'paid_at','cancelled_at','cancellation_reason','customer_notes','internal_notes',
-    'owner_note','follow_up_needed','verified',
-'shiprocket_order_id','shipment_id','courier','awb_number','awb_code','tracking_id','tracking_url','shipped_at','delivered_at'
-  ],
+'Orders': [
+  'customer_id',
+  'order_id',
+  'created_at',
+  'updated_at',
+  'customer_name',
+  'phone',
+  'source',
+  'category',
+
+  'items_summary',
+  'item_count',
+
+  'subtotal',
+  'discount_code',
+  'discount',
+  'shipping_cost',
+
+  'item_skus',
+  'item_names',
+  'total',
+
+  'status',
+  'payment_status',
+  'payment_id',
+  'payment_method',
+  'payment_link',
+  'payment_link_expires',
+
+  'shipping_name',
+  'shipping_phone',
+  'shipping_address',
+  'shipping_city',
+  'shipping_state',
+  'shipping_pincode',
+
+  'paid_at',
+  'cancelled_at',
+  'cancellation_reason',
+  'customer_notes',
+  'internal_notes',
+
+  'owner_note',
+  'follow_up_needed',
+  'verified',
+
+  'shiprocket_order_id',
+  'shipment_id',
+  'courier',
+  'awb_number',
+  'awb_code',
+  'tracking_id',
+  'tracking_url',
+  'shipped_at',
+  'delivered_at'
+],
 
   'Customers': [
     'customer_id','phone','name','email','city','state','pincode','source','segment','tier','labels',
@@ -1542,18 +1755,63 @@ const SHEET_HEADERS = {
     'utm_campaign'
   ],
 
-  'Sales': [
-    'order_id','customer_id','created_at','source','category','customer_name','phone','item_skus','item_names','total',
-    'payment_status','status','paid_at','shipped_at','delivered_at',
-    'item_count','items_summary','sales_stage','owner_note',
-'shiprocket_order_id','shipment_id','courier','awb_number','awb_code','tracking_id','tracking_url'
-  ],
+'Sales': [
+  'order_id',
+  'customer_id',
+  'created_at',
+  'source',
+  'category',
+  'customer_name',
+  'phone',
+  'item_skus',
+  'item_names',
 
-  'Inventory': [
-    'sku','name','category','subcategory','price','compare_price','stock','reserved_stock',
-    'status','is_featured','image_url','website_link','material','tags_summary','updated_at',
-    'image_1','image_2','image_3','restock_note'
-  ],
+  'discount_code',
+  'discount',
+  'total',
+
+  'payment_status',
+  'status',
+  'paid_at',
+  'shipped_at',
+  'delivered_at',
+  'item_count',
+  'items_summary',
+  'sales_stage',
+
+  'owner_note',
+
+  'shiprocket_order_id',
+  'shipment_id',
+  'courier',
+  'awb_number',
+  'awb_code',
+  'tracking_id',
+  'tracking_url'
+],
+
+'Inventory': [
+  'sku',
+  'name',
+  'category',
+  'subcategory',
+  'price',
+  'compare_price',
+  'stock',
+  'reserved_stock',
+  'status',
+  'is_featured',
+  'image_url',
+  'website_link',
+  'material',
+  'finish',
+  'tags_summary',
+  'updated_at',
+  'image_1',
+  'image_2',
+  'image_3',
+  'restock_note'
+],
 
   'Shipments': [
     'order_id','customer_name','phone','status','payment_status',
@@ -1634,13 +1892,17 @@ const row = [
     safeText(order.phone),
     safeText(order.source),
     safeText(category),
-    itemsSummaryFromJson(order.items),
-    safeNumber(order.item_count),
-    safeNumber(order.subtotal),
-    safeNumber(order.shipping_cost),
-    itemsSkuList(order.items),
-    itemsNameList(order.items),
-    safeNumber(order.total),
+itemsSummaryFromJson(order.items),
+safeNumber(order.item_count),
+
+safeNumber(order.subtotal),
+safeText(order.discount_code),
+safeNumber(order.discount),
+safeNumber(order.shipping_cost),
+
+itemsSkuList(order.items),
+itemsNameList(order.items),
+safeNumber(order.total),
     safeText(order.status),
     safeText(order.payment_status),
     safeText(order.payment_id),
@@ -1750,10 +2012,14 @@ const row = [
     safeText(category),
     safeText(order.customer_name),
     safeText(order.phone),
-    itemsSkuList(order.items),
-    itemsNameList(order.items),
-    safeNumber(order.total),
-    safeText(order.payment_status),
+itemsSkuList(order.items),
+itemsNameList(order.items),
+
+safeText(order.discount_code),
+safeNumber(order.discount),
+safeNumber(order.total),
+
+safeText(order.payment_status),
     safeText(order.status),
     safeText(order.paid_at),
     safeText(order.shipped_at),
@@ -2058,13 +2324,17 @@ async function backfillOrdersToGoogleSheets(env) {
       safeText(order.phone),
       safeText(order.source),
       safeText(category),
-      itemsSummaryFromJson(order.items),
-      safeNumber(order.item_count),
-      safeNumber(order.subtotal),
-      safeNumber(order.shipping_cost),
-      itemsSkuList(order.items),
-      itemsNameList(order.items),
-      safeNumber(order.total),
+itemsSummaryFromJson(order.items),
+safeNumber(order.item_count),
+
+safeNumber(order.subtotal),
+safeText(order.discount_code),
+safeNumber(order.discount),
+safeNumber(order.shipping_cost),
+
+itemsSkuList(order.items),
+itemsNameList(order.items),
+safeNumber(order.total),
       safeText(order.status),
       safeText(order.payment_status),
       safeText(order.payment_id),
@@ -2492,10 +2762,14 @@ const newRow = [
       safeText(category),
       safeText(order.customer_name),
       safeText(order.phone),
-    itemsSkuList(order.items),
-    itemsNameList(order.items),
-      safeNumber(order.total),
-      safeText(order.payment_status),
+itemsSkuList(order.items),
+itemsNameList(order.items),
+
+safeText(order.discount_code),
+safeNumber(order.discount),
+safeNumber(order.total),
+
+safeText(order.payment_status),
       safeText(order.status),
       safeText(order.paid_at),
       safeText(order.shipped_at),
@@ -3836,10 +4110,10 @@ if (inserted && sendPush && ctx && ownerPhone) {
   ));
 }
 
-// Real jugaad: when payment/order/shipping alert arrives,
-// convert the latest pending unsupported vendor WhatsApp message.
-if (inserted && ctx && ['order', 'payment', 'shipping'].includes(String(type || '').toLowerCase())) {
-  ctx.waitUntil(reconcileRecentUnsupportedForAlert(env, {
+// When payment/order/shipping/otp/system/return alert arrives,
+// convert any pending unsupported vendor WhatsApp messages.
+if (['order', 'payment', 'shipping', 'otp', 'system', 'return'].includes(String(type || '').toLowerCase())) {
+  const reconcilePromise = reconcileRecentUnsupportedForAlert(env, {
     alertKey,
     type,
     title,
@@ -3850,7 +4124,13 @@ if (inserted && ctx && ['order', 'payment', 'shipping'].includes(String(type || 
     amount,
     source,
     meta,
-  }, 240));
+  }, 360);
+
+  if (ctx && typeof ctx.waitUntil === 'function') {
+    ctx.waitUntil(reconcilePromise);
+  } else {
+    await reconcilePromise.catch(() => null);
+  }
 }
 
 return { success: true, inserted, alertKey };
@@ -3905,28 +4185,32 @@ function buildConvertedChatTextFromOwnerAlert(alert) {
       ? '📦'
       : type === 'order'
         ? '🛒'
-        : '🔔';
+        : type === 'otp'
+          ? '🔑'
+          : '🔔';
 
   const label = type === 'payment'
-    ? 'Converted Razorpay Payment Alert'
+    ? 'Razorpay Payment Update'
     : type === 'shipping'
-      ? 'Converted Shiprocket Alert'
+      ? 'Shiprocket Logistics Update'
       : type === 'order'
-        ? 'Converted Order Alert'
-        : 'Converted KAAPAV Alert';
+        ? 'Order Status Update'
+        : type === 'otp'
+          ? 'Authentication / OTP Code'
+          : 'KAAPAV System Notification';
 
   const body = alert.body || alert.title || 'Business event received';
 
   return (
     `${icon} *${label}*\n\n` +
     `${body}\n\n` +
-    `✅ Converted from unsupported WhatsApp using KAAPAV business event data.`
+    `✅ Reconciled via KAAPAV Live Business Gateway.`
   );
 }
 
-async function reconcileRecentUnsupportedForAlert(env, alert, minutes = 240) {
+async function reconcileRecentUnsupportedForAlert(env, alert, minutes = 360) {
   const type = String(alert.type || '').toLowerCase();
-  if (!['order', 'payment', 'shipping'].includes(type)) {
+  if (!['order', 'payment', 'shipping', 'otp', 'system', 'return'].includes(type)) {
     return { converted: 0, reason: 'alert type not convertible' };
   }
 
@@ -3941,10 +4225,11 @@ async function reconcileRecentUnsupportedForAlert(env, alert, minutes = 240) {
         OR media_caption LIKE '%"kaapav_converted":false%'
       )
     ORDER BY datetime(created_at) DESC, id DESC
-    LIMIT 10
-  `).bind(`-${Number(minutes || 240)} minutes`).all();
+    LIMIT 20
+  `).bind(`-${Number(minutes || 360)} minutes`).all();
 
   const rows = rowsRes.results || [];
+  let convertedCount = 0;
 
   for (const row of rows) {
     const vendorLike = await isVendorUnsupportedPhone(env, row.phone);
@@ -3990,15 +4275,13 @@ async function reconcileRecentUnsupportedForAlert(env, alert, minutes = 240) {
       row.phone
     ).run();
 
-    return {
-      converted: 1,
-      messageId: row.message_id,
-      phone: row.phone,
-      alertType: alert.type,
-    };
+    convertedCount++;
   }
 
-  return { converted: 0, reason: 'no eligible unsupported vendor message found' };
+  return {
+    converted: convertedCount,
+    alertType: alert.type,
+  };
 }
 
 async function markRecentUnsupportedVendorMessagesPending(env, minutes = 720) {
@@ -6236,18 +6519,132 @@ async function priceCatalogueItems(env, rawItems) {
 }
 
 // ═══════════════════ RAZORPAY REFUND ═══════════════════
-async function processRazorpayRefund(env, paymentId, amount, orderId) {
-  const auth = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`);
-  const res = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}/refund`, {
-    method: 'POST',
-    headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      amount: Math.round(amount * 100),
-      notes: { order_id: orderId, reason: 'Customer return/refund' },
-    }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.description || 'Razorpay refund failed');
+async function processRazorpayRefund(
+  env,
+  paymentId,
+  amount,
+  orderId,
+  options = {}
+) {
+  const amountPaise = Math.round(
+    Number(amount || 0) * 100
+  );
+
+  if (
+    !Number.isInteger(amountPaise) ||
+    amountPaise < 100
+  ) {
+    throw new Error(
+      'Refund amount must be at least ₹1'
+    );
+  }
+
+  const idempotencyKey = String(
+    options.idempotencyKey || ''
+  )
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, '_')
+    .slice(0, 100);
+
+  if (idempotencyKey.length < 10) {
+    throw new Error(
+      'Valid refund idempotency key is required'
+    );
+  }
+
+  const auth = btoa(
+    `${env.RAZORPAY_KEY_ID}:` +
+    `${env.RAZORPAY_KEY_SECRET}`
+  );
+
+  if (options.verifyPayment !== false) {
+    const paymentResponse = await fetch(
+      `https://api.razorpay.com/v1/payments/${paymentId}`,
+      {
+        headers: {
+          Authorization: `Basic ${auth}`,
+        },
+      }
+    );
+
+    const paymentData = await paymentResponse
+      .json()
+      .catch(() => ({}));
+
+    if (!paymentResponse.ok) {
+      throw new Error(
+        paymentData.error?.description ||
+        'Unable to verify Razorpay payment'
+      );
+    }
+
+    if (paymentData.status !== 'captured') {
+      throw new Error(
+        `Razorpay payment is not captured. ` +
+        `Current status: ${paymentData.status || 'unknown'}`
+      );
+    }
+
+    const remainingPaise = Math.max(
+      0,
+      Number(paymentData.amount || 0) -
+      Number(paymentData.amount_refunded || 0)
+    );
+
+    if (amountPaise > remainingPaise) {
+      throw new Error(
+        `Refund amount exceeds the remaining ` +
+        `captured amount of ₹${(
+          remainingPaise / 100
+        ).toFixed(2)}`
+      );
+    }
+  }
+
+  const response = await fetch(
+    `https://api.razorpay.com/v1/payments/${paymentId}/refund`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/json',
+        'X-Refund-Idempotency':
+          idempotencyKey,
+      },
+      body: JSON.stringify({
+        amount: amountPaise,
+        speed: 'normal',
+notes: {
+  order_id: String(orderId),
+
+  request_id: String(
+    options.requestId || ''
+  ),
+
+  refund_attempt_key:
+    idempotencyKey,
+
+  reverse_shipping_deducted:
+    options.reverseShippingDeducted === true
+      ? 'yes'
+      : 'no',
+},
+      }),
+    }
+  );
+
+  const data = await response
+    .json()
+    .catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      data.error?.description ||
+      data.error?.reason ||
+      'Razorpay refund failed'
+    );
+  }
+
   return data;
 }
 
@@ -6410,7 +6807,28 @@ if (Array.isArray(statuses) && statuses.length) {
 
 const vendorLike = await isVendorUnsupportedPhone(env, msg.from || phone);
 
-if (vendorLike) {
+// Check if there is an active recent business alert within last 60 mins to instantly convert
+const recentAlert = await env.DB.prepare(`
+  SELECT *
+  FROM owner_alerts
+  WHERE datetime(created_at) >= datetime('now', '-60 minutes')
+    AND type IN ('payment', 'shipping', 'order', 'otp', 'system', 'return')
+  ORDER BY datetime(created_at) DESC, id DESC
+  LIMIT 1
+`).first().catch(() => null);
+
+if (vendorLike && recentAlert) {
+  text = buildConvertedChatTextFromOwnerAlert(recentAlert);
+  mediaCaption = JSON.stringify({
+    ...unsupportedPayload,
+    kaapav_converted: true,
+    kaapav_pending_vendor_message: false,
+    conversion_source: 'webhook_instant_match',
+    matched_alert_key: recentAlert.alert_key || '',
+    matched_alert_type: recentAlert.type || '',
+  });
+  messageType = 'text';
+} else if (vendorLike) {
   text =
     `⏳ *Vendor/System WhatsApp Message Received*\n\n` +
     `From: ${msg.from || phone}\n` +
@@ -6610,21 +7028,79 @@ if (messageType === 'unsupported') {
   }
 }
 async function handleLogin(request, env) {
-  const body = await request.json();
-  const { method, pin, email, password } = body;
+  const body = await request
+    .json()
+    .catch(() => ({}));
 
-  if (method === 'pin' || method === 'biometric') {
-    const validPin = pin === env.APP_PIN;
-    if (!validPin) return errorResponse('Invalid PIN', 401);
-  } else if (method === 'password') {
-    if (email !== 'admin@kaapav.com') return errorResponse('Invalid credentials', 401);
-  } else {
-    return errorResponse('Invalid method', 400);
+  const method = String(
+    body.method || ''
+  ).trim().toLowerCase();
+
+  const pin = String(
+    body.pin ?? ''
+  );
+
+  if (method === 'password') {
+    return errorResponse(
+      'Password login is disabled. Use PIN or biometric login.',
+      410
+    );
   }
 
-  const payload = { userId: 'admin', email: 'admin@kaapav.com', role: 'admin', exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 };
-  const token = await generateJWT(payload, env.JWT_SECRET);
-  return jsonResponse({ success: true, token, user: { id: 'admin', email: 'admin@kaapav.com', name: 'KAAPAV Admin', role: 'admin' } });
+  if (
+    method !== 'pin' &&
+    method !== 'biometric'
+  ) {
+    return errorResponse(
+      'Invalid method',
+      400
+    );
+  }
+
+  if (!env.APP_PIN) {
+    console.error(
+      'APP_PIN_MISSING'
+    );
+
+    return errorResponse(
+      'Login configuration unavailable',
+      503
+    );
+  }
+
+  if (
+    pin !== String(env.APP_PIN)
+  ) {
+    return errorResponse(
+      'Invalid PIN',
+      401
+    );
+  }
+
+  const payload = {
+    userId: 'admin',
+    role: 'admin',
+    exp:
+      Math.floor(Date.now() / 1000) +
+      7 * 24 * 3600,
+  };
+
+  const token =
+    await generateJWT(
+      payload,
+      env.JWT_SECRET
+    );
+
+  return jsonResponse({
+    success: true,
+    token,
+    user: {
+      id: 'admin',
+      email: '',
+      name: 'KAAPAV Admin',
+      role: 'admin',
+    },
+  });
 }
 
 async function handleGetChats(request, env) {
@@ -6642,19 +7118,23 @@ async function handleGetChats(request, env) {
       COALESCE(c.last_message_type, lm.message_type) as last_message_type,
       COALESCE(c.last_timestamp, lm.timestamp, lm.created_at) as last_timestamp,
       COALESCE(c.last_direction, lm.direction) as last_direction
-    FROM chats c
-    LEFT JOIN (
-      SELECT m1.*
-      FROM messages m1
-      INNER JOIN (
-        SELECT phone, MAX(datetime(COALESCE(timestamp, created_at))) as max_time
-        FROM messages
-        GROUP BY phone
-      ) m2
-      ON m1.phone = m2.phone
-      AND datetime(COALESCE(m1.timestamp, m1.created_at)) = m2.max_time
-    ) lm ON lm.phone = c.phone
-    ORDER BY datetime(COALESCE(c.last_timestamp, lm.timestamp, lm.created_at, c.updated_at, c.created_at)) DESC
+FROM chats c
+LEFT JOIN messages lm
+  ON lm.id = (
+    SELECT m2.id
+    FROM messages m2
+    WHERE m2.phone = c.phone
+    ORDER BY
+      datetime(
+        COALESCE(
+          m2.timestamp,
+          m2.created_at
+        )
+      ) DESC,
+      m2.id DESC
+    LIMIT 1
+  )
+ORDER BY datetime(COALESCE(c.last_timestamp, lm.timestamp, lm.created_at, c.updated_at, c.created_at)) DESC
     LIMIT ? OFFSET ?
   `).bind(limit, offset).all();
 
@@ -6992,6 +7472,2441 @@ async function enrichOrderForPacking(env, order) {
   };
 }
 
+function cleanReturnText(value, maxLength = 500) {
+  return String(value ?? '')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function parseReturnEvidence(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => cleanReturnText(item, 1000))
+    .filter((item) => /^https?:\/\//i.test(item))
+    .slice(0, 10);
+}
+
+function parseReturnJsonArray(value) {
+  try {
+    const parsed =
+      typeof value === 'string'
+        ? JSON.parse(value || '[]')
+        : value;
+
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+const CUSTOMER_RETURN_WINDOW_DAYS = 7;
+
+const CUSTOMER_RETURN_WINDOW_MS =
+  CUSTOMER_RETURN_WINDOW_DAYS *
+  24 *
+  60 *
+  60 *
+  1000;
+
+const CLOSED_RETURN_REQUEST_STATUSES =
+  new Set([
+    'rejected',
+    'refunded',
+    'completed',
+    'cancelled',
+  ]);
+
+function parseD1DateMilliseconds(value) {
+  const text = cleanReturnText(
+    value,
+    100
+  );
+
+  if (!text) {
+    return Number.NaN;
+  }
+
+  const normalized =
+    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(
+      text
+    )
+      ? `${text.replace(' ', 'T')}Z`
+      : text;
+
+  return Date.parse(normalized);
+}
+
+function isOpenReturnRequestStatus(value) {
+  const status = cleanReturnText(
+    value,
+    50
+  ).toLowerCase();
+
+  return Boolean(status) &&
+    !CLOSED_RETURN_REQUEST_STATUSES.has(
+      status
+    );
+}
+
+function getPurchaseReturnEligibility(order) {
+  const status = cleanReturnText(
+    order?.status,
+    50
+  ).toLowerCase();
+
+  const paymentStatus =
+    cleanReturnText(
+      order?.payment_status,
+      50
+    ).toLowerCase();
+
+  const deliveredTime =
+    parseD1DateMilliseconds(
+      order?.delivered_at
+    );
+
+  const expiresTime =
+    Number.isFinite(deliveredTime)
+      ? deliveredTime +
+        CUSTOMER_RETURN_WINDOW_MS
+      : Number.NaN;
+
+  const expiresAt =
+    Number.isFinite(expiresTime)
+      ? new Date(
+          expiresTime
+        ).toISOString()
+      : null;
+
+  const daysRemaining =
+    Number.isFinite(expiresTime)
+      ? Math.max(
+          0,
+          Math.ceil(
+            (
+              expiresTime -
+              Date.now()
+            ) /
+            (
+              24 *
+              60 *
+              60 *
+              1000
+            )
+          )
+        )
+      : 0;
+
+  if (paymentStatus !== 'paid') {
+    return {
+      eligible: false,
+      reason:
+        'Return or exchange is available only after payment',
+      code:
+        'payment_not_completed',
+      expiresAt,
+      daysRemaining,
+    };
+  }
+
+  if (
+    status === 'cancelled' ||
+    status === 'returned' ||
+    paymentStatus === 'refunded'
+  ) {
+    return {
+      eligible: false,
+      reason:
+        'This order is already closed',
+      code:
+        'order_closed',
+      expiresAt,
+      daysRemaining,
+    };
+  }
+
+  if (status !== 'delivered') {
+    return {
+      eligible: false,
+      reason:
+        'Return or exchange is available only after delivery',
+      code:
+        'order_not_delivered',
+      expiresAt,
+      daysRemaining,
+    };
+  }
+
+  if (!Number.isFinite(deliveredTime)) {
+    return {
+      eligible: false,
+      reason:
+        'Delivery date is unavailable',
+      code:
+        'delivery_date_missing',
+      expiresAt,
+      daysRemaining,
+    };
+  }
+
+  if (Date.now() > expiresTime) {
+    return {
+      eligible: false,
+      reason:
+        'Seven-day return or exchange window from the delivery date has expired',
+      code:
+        'return_window_expired',
+      expiresAt,
+      daysRemaining: 0,
+    };
+  }
+
+  return {
+    eligible: true,
+    reason: '',
+    code: 'eligible',
+    expiresAt,
+    daysRemaining,
+  };
+}
+
+function generateReturnRequestId() {
+  const date = new Date()
+    .toISOString()
+    .slice(0, 10)
+    .replace(/-/g, '');
+
+  const random = crypto.randomUUID()
+    .replace(/-/g, '')
+    .slice(0, 8)
+    .toUpperCase();
+
+  return `KRE-${date}-${random}`;
+}
+
+function buildReturnRequestItems(order, body) {
+  const orderItems = parseOrderItemsForPacking(order.items);
+
+  if (!Array.isArray(orderItems) || orderItems.length === 0) {
+    return {
+      success: false,
+      status: 409,
+      error: 'Order does not contain returnable items',
+    };
+  }
+
+  const requestScope =
+    body.request_scope === 'full_order'
+      ? 'full_order'
+      : 'items';
+
+  const rawRequestedItems =
+    requestScope === 'full_order'
+      ? orderItems.map((item, index) => ({
+          line_index: index,
+          quantity: Number(
+            item.qty ??
+            item.quantity ??
+            1
+          ),
+        }))
+      : Array.isArray(body.items)
+          ? body.items
+          : [];
+
+  if (rawRequestedItems.length === 0) {
+    return {
+      success: false,
+      status: 400,
+      error: 'At least one return item is required',
+    };
+  }
+
+  const selectedItems = [];
+  const usedIndexes = new Set();
+
+  for (const requestedItem of rawRequestedItems) {
+    let lineIndex = Number(
+      requestedItem?.line_index
+    );
+
+    if (
+      !Number.isInteger(lineIndex) ||
+      lineIndex < 0 ||
+      lineIndex >= orderItems.length
+    ) {
+      const requestedSku = cleanReturnText(
+        requestedItem?.sku,
+        100
+      ).toUpperCase();
+
+      lineIndex = orderItems.findIndex(
+        (orderItem, index) =>
+          !usedIndexes.has(index) &&
+          cleanReturnText(
+            orderItem?.sku ??
+            orderItem?.product_sku ??
+            orderItem?.id,
+            100
+          ).toUpperCase() === requestedSku
+      );
+    }
+
+    if (
+      lineIndex < 0 ||
+      lineIndex >= orderItems.length
+    ) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Selected item does not belong to this order',
+      };
+    }
+
+    if (usedIndexes.has(lineIndex)) {
+      return {
+        success: false,
+        status: 400,
+        error: `Order line ${lineIndex} was selected more than once`,
+      };
+    }
+
+    const orderItem = orderItems[lineIndex];
+
+    const orderedQuantity = Math.max(
+      1,
+      Math.floor(
+        Number(
+          orderItem.qty ??
+          orderItem.quantity ??
+          1
+        )
+      )
+    );
+
+    const requestedQuantity = Math.floor(
+      Number(
+        requestedItem?.quantity ??
+        requestedItem?.qty ??
+        orderedQuantity
+      )
+    );
+
+    if (
+      !Number.isFinite(requestedQuantity) ||
+      requestedQuantity <= 0 ||
+      requestedQuantity > orderedQuantity
+    ) {
+      return {
+        success: false,
+        status: 400,
+        error:
+          `Invalid quantity for order line ${lineIndex}. ` +
+          `Maximum allowed: ${orderedQuantity}`,
+      };
+    }
+
+    const sku = cleanReturnText(
+      orderItem.sku ??
+      orderItem.product_sku ??
+      orderItem.id,
+      100
+    );
+
+    if (!sku) {
+      return {
+        success: false,
+        status: 409,
+        error: `SKU missing for order line ${lineIndex}`,
+      };
+    }
+
+    usedIndexes.add(lineIndex);
+
+    selectedItems.push({
+      lineIndex,
+      sku,
+      productName: cleanReturnText(
+        orderItem.name ??
+        orderItem.product_name ??
+        sku,
+        300
+      ),
+      quantity: requestedQuantity,
+      unitPrice: Math.max(
+        0,
+        Number(orderItem.price ?? 0)
+      ),
+      replacementSku: cleanReturnText(
+        requestedItem?.replacement_sku,
+        100
+      ) || null,
+      replacementName: cleanReturnText(
+        requestedItem?.replacement_name,
+        300
+      ) || null,
+      replacementUnitPrice:
+        requestedItem?.replacement_unit_price == null
+          ? null
+          : Math.max(
+              0,
+              Number(
+                requestedItem.replacement_unit_price
+              )
+            ),
+      conditionNote: cleanReturnText(
+        requestedItem?.condition_note,
+        1000
+      ),
+      evidenceUrls: parseReturnEvidence(
+        requestedItem?.evidence_urls
+      ),
+    });
+  }
+
+  return {
+    success: true,
+    requestScope,
+    items: selectedItems,
+  };
+}
+
+async function handleCreateReturnRequest(
+  orderId,
+  request,
+  env,
+  options = {}
+) {
+  const body =
+    options.body ??
+    await request
+      .json()
+      .catch(() => ({}));
+
+  const order =
+    options.order ??
+    await env.DB.prepare(`
+      SELECT *
+      FROM orders
+      WHERE order_id = ?
+      LIMIT 1
+    `)
+      .bind(orderId)
+      .first();
+
+  if (!order) {
+    return errorResponse(
+      'Order not found',
+      404
+    );
+  }
+
+  const requestType =
+    cleanReturnText(
+      body.request_type,
+      20
+    ).toLowerCase();
+
+  if (
+    requestType !== 'return' &&
+    requestType !== 'exchange'
+  ) {
+    return errorResponse(
+      'request_type must be return or exchange',
+      400
+    );
+  }
+
+  const reasonCode =
+    cleanReturnText(
+      body.reason_code || 'other',
+      50
+    ).toLowerCase();
+
+  const reasonText =
+    cleanReturnText(
+      body.reason_text,
+      1000
+    );
+
+  const customerNote =
+    cleanReturnText(
+      body.customer_note,
+      2000
+    );
+
+  if (
+    !reasonText &&
+    reasonCode === 'other'
+  ) {
+    return errorResponse(
+      'Return or exchange reason is required',
+      400
+    );
+  }
+
+  const ownerOverride =
+    options.allowOwnerOverride !== false &&
+    body.owner_override === true;
+
+  const eligibility =
+    getPurchaseReturnEligibility(
+      order
+    );
+
+  if (
+    !ownerOverride &&
+    !eligibility.eligible
+  ) {
+    return errorResponse(
+      eligibility.reason,
+      409
+    );
+  }
+
+  const existingRequest =
+    await env.DB.prepare(`
+      SELECT
+        request_id,
+        status
+      FROM return_requests
+      WHERE order_id = ?
+        AND status NOT IN (
+          'rejected',
+          'refunded',
+          'completed',
+          'cancelled'
+        )
+      ORDER BY id DESC
+      LIMIT 1
+    `)
+      .bind(orderId)
+      .first();
+
+  if (existingRequest) {
+    return errorResponse(
+      `Open request already exists: ` +
+      `${existingRequest.request_id}`,
+      409
+    );
+  }
+
+  const itemResult =
+    buildReturnRequestItems(
+      order,
+      body
+    );
+
+  if (!itemResult.success) {
+    return errorResponse(
+      itemResult.error,
+      itemResult.status
+    );
+  }
+
+  const requestId =
+    generateReturnRequestId();
+
+  const evidenceUrls =
+    parseReturnEvidence(
+      body.evidence_urls
+    );
+
+  const reverseShippingFee =
+    Math.max(
+      0,
+      Number(
+        options.fixedReverseShippingFee ??
+        body.reverse_shipping_fee ??
+        60
+      )
+    );
+
+  const statements = [
+    env.DB.prepare(`
+      INSERT INTO return_requests (
+        request_id,
+        order_id,
+        phone,
+        customer_name,
+        request_type,
+        request_scope,
+        reason_code,
+        reason_text,
+        customer_note,
+        evidence_urls_json,
+        status,
+        reverse_shipping_fee,
+        payment_id,
+        refund_status,
+        refund_gateway,
+        refund_method,
+        refund_currency,
+        requested_at,
+        created_at,
+        updated_at
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        'requested',
+        ?,
+        ?,
+        'not_started',
+        '',
+        'original_payment',
+        'INR',
+        datetime('now'),
+        datetime('now'),
+        datetime('now')
+      )
+    `).bind(
+      requestId,
+      orderId,
+      cleanReturnText(
+        order.phone,
+        30
+      ),
+      cleanReturnText(
+        order.customer_name,
+        300
+      ),
+      requestType,
+      itemResult.requestScope,
+      reasonCode,
+      reasonText,
+      customerNote,
+      JSON.stringify(
+        evidenceUrls
+      ),
+      reverseShippingFee,
+      cleanReturnText(
+        order.payment_id,
+        200
+      ) || null
+    ),
+
+    env.DB.prepare(`
+      UPDATE orders
+      SET
+        return_requested = 1,
+        return_reason = ?,
+        return_requested_at =
+          datetime('now'),
+        updated_at =
+          datetime('now')
+      WHERE order_id = ?
+    `).bind(
+      reasonText || reasonCode,
+      orderId
+    ),
+  ];
+
+  for (
+    const item of itemResult.items
+  ) {
+    statements.push(
+      env.DB.prepare(`
+        INSERT INTO return_request_items (
+          request_id,
+          order_id,
+          line_index,
+          sku,
+          product_name,
+          quantity,
+          unit_price,
+          replacement_sku,
+          replacement_name,
+          replacement_unit_price,
+          condition_note,
+          evidence_urls_json,
+          created_at,
+          updated_at
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          datetime('now'),
+          datetime('now')
+        )
+      `).bind(
+        requestId,
+        orderId,
+        item.lineIndex,
+        item.sku,
+        item.productName,
+        item.quantity,
+        item.unitPrice,
+        item.replacementSku,
+        item.replacementName,
+        item.replacementUnitPrice,
+        item.conditionNote,
+        JSON.stringify(
+          item.evidenceUrls
+        )
+      )
+    );
+  }
+
+  await env.DB.batch(
+    statements
+  );
+
+  const eventSource =
+    cleanReturnText(
+      options.eventSource ||
+      'admin',
+      50
+    ) || 'admin';
+
+  await logOrderEvent(
+    env,
+    orderId,
+    requestType === 'return'
+      ? 'return_requested'
+      : 'exchange_requested',
+    `${requestType} request ` +
+    `${requestId} created`,
+    {
+      requestId,
+      requestType,
+      requestScope:
+        itemResult.requestScope,
+      itemCount:
+        itemResult.items.length,
+      reasonCode,
+      returnExpiresAt:
+        eligibility.expiresAt,
+    },
+    eventSource
+  );
+
+  if (
+    options.notifyCustomer === true
+  ) {
+    const typeLabel =
+      requestType === 'exchange'
+        ? 'Exchange'
+        : 'Return';
+
+    const customerName =
+      cleanReturnText(
+        order.customer_name ||
+        'Customer',
+        300
+      );
+
+    try {
+      await sendWhatsAppText(
+        env,
+        order.phone,
+        `*${typeLabel} Request Received*\n\n` +
+        `Hi ${customerName},\n\n` +
+        `Order: *${orderId}*\n` +
+        `Request ID: *${requestId}*\n` +
+        `Status: Requested\n\n` +
+        `Our team will review the request before pickup, exchange, or refund action.\n` +
+        `Reverse shipping fee: ₹${reverseShippingFee}\n\n` +
+        `KAAPAV Fashion Jewellery`
+      );
+    } catch (
+      notificationError
+    ) {
+      console.error(
+        'RETURN_CUSTOMER_NOTIFICATION_FAILED',
+        requestId,
+        notificationError?.message ||
+        notificationError
+      );
+    }
+
+    try {
+      await sendWhatsAppText(
+        env,
+        env.OWNER_PHONE,
+        `*New ${typeLabel} Request*\n\n` +
+        `Order: *${orderId}*\n` +
+        `Request ID: *${requestId}*\n` +
+        `Customer: ${customerName} (${order.phone || '-'})\n` +
+        `Reason: ${reasonText || reasonCode}\n\n` +
+        `Review required in the KAAPAV order workflow.`
+      );
+    } catch (
+      notificationError
+    ) {
+      console.error(
+        'RETURN_OWNER_NOTIFICATION_FAILED',
+        requestId,
+        notificationError?.message ||
+        notificationError
+      );
+    }
+  }
+
+  const createdRequest =
+    await env.DB.prepare(`
+      SELECT *
+      FROM return_requests
+      WHERE request_id = ?
+    `)
+      .bind(requestId)
+      .first();
+
+  const {
+    results: createdItems,
+  } =
+    await env.DB.prepare(`
+      SELECT *
+      FROM return_request_items
+      WHERE request_id = ?
+      ORDER BY line_index ASC
+    `)
+      .bind(requestId)
+      .all();
+
+  return jsonResponse(
+    {
+      success: true,
+      request: {
+        ...createdRequest,
+
+        evidence_urls:
+          parseReturnJsonArray(
+            createdRequest
+              ?.evidence_urls_json
+          ),
+
+        items:
+          createdItems || [],
+      },
+
+      returnWindow: {
+        days:
+          CUSTOMER_RETURN_WINDOW_DAYS,
+
+        expiresAt:
+          eligibility.expiresAt,
+      },
+    },
+    201
+  );
+}
+
+async function executeReturnRefundCore(
+  env,
+  orderId,
+  requestId,
+  options = {}
+) {
+  const deductFee = options.deductFee === true;
+  const previewOnly = options.previewOnly === true;
+  const ownerNote = cleanReturnText(options.ownerNote, 2000);
+  const triggerSource = options.triggerSource || 'admin';
+
+  const row = await env.DB.prepare(`
+    SELECT
+      rr.*,
+      o.total AS order_total,
+      o.subtotal AS order_subtotal,
+      o.discount AS order_discount,
+      o.payment_status AS order_payment_status,
+      o.payment_id AS order_payment_id,
+      o.customer_name AS order_customer_name,
+      o.phone AS order_phone
+    FROM return_requests rr
+    JOIN orders o
+      ON o.order_id = rr.order_id
+    WHERE rr.order_id = ?
+      AND rr.request_id = ?
+    LIMIT 1
+  `)
+    .bind(orderId, requestId)
+    .first();
+
+  if (!row) {
+    return { success: false, status: 404, error: 'Return request not found' };
+  }
+
+  if (String(row.request_type || '').toLowerCase() !== 'return') {
+    return {
+      success: false,
+      status: 409,
+      error: 'Only return requests can be refunded. Use the exchange workflow for exchanges.',
+    };
+  }
+
+  const savedRefundStatus = String(row.refund_status || 'not_started').toLowerCase();
+
+  if (savedRefundStatus === 'processed' && row.refund_id) {
+    return {
+      success: true,
+      alreadyProcessed: true,
+      status: row.status,
+      refundStatus: savedRefundStatus,
+      refundId: row.refund_id,
+      amount: Number(row.refund_amount || 0),
+    };
+  }
+
+  const currentStatus = String(row.status || '').toLowerCase();
+  if (currentStatus !== 'qc_passed' && currentStatus !== 'refund_pending') {
+    return {
+      success: false,
+      status: 409,
+      error: `Only QC-passed returns can be refunded. Current status: ${currentStatus || 'unknown'}`,
+    };
+  }
+
+  if (String(row.order_payment_status || '').toLowerCase() !== 'paid') {
+    return {
+      success: false,
+      status: 409,
+      error: 'Order payment is not eligible for refund',
+    };
+  }
+
+  const paymentId = cleanReturnText(
+    row.payment_id || row.order_payment_id,
+    200
+  );
+
+  if (!paymentId.startsWith('pay_')) {
+    return {
+      success: false,
+      status: 409,
+      error: 'A Razorpay payment ID is required. COD or offline refunds must be handled manually.',
+    };
+  }
+
+  const totals = await env.DB.prepare(`
+    SELECT
+      COALESCE(SUM(quantity * unit_price), 0) AS selected_gross
+    FROM return_request_items
+    WHERE order_id = ?
+      AND request_id = ?
+  `)
+    .bind(orderId, requestId)
+    .first();
+
+  const selectedGross = Math.round(Number(totals?.selected_gross || 0) * 100) / 100;
+
+  if (!Number.isFinite(selectedGross) || selectedGross <= 0) {
+    return {
+      success: false,
+      status: 409,
+      error: 'Return item value is unavailable',
+    };
+  }
+
+  const orderSubtotal = Math.max(
+    selectedGross,
+    Number(row.order_subtotal || 0)
+  );
+
+  const orderDiscount = Math.max(0, Number(row.order_discount || 0));
+
+  const allocatedDiscount =
+    orderSubtotal > 0
+      ? Math.round(
+          Math.min(
+            orderDiscount,
+            orderDiscount * (selectedGross / orderSubtotal)
+          ) * 100
+        ) / 100
+      : 0;
+
+  const refundableItemValue = Math.max(
+    0,
+    Math.round((selectedGross - allocatedDiscount) * 100) / 100
+  );
+
+  const reverseFee = Math.max(
+    0,
+    Number(row.reverse_shipping_fee ?? 60)
+  );
+
+  const deductionAmount = deductFee ? Math.round(reverseFee * 100) / 100 : 0;
+  const refundAmount = Math.round((refundableItemValue - deductionAmount) * 100) / 100;
+
+  if (refundAmount < 1) {
+    return {
+      success: false,
+      status: 409,
+      error: 'Final Razorpay refund must be at least ₹1 after deduction',
+    };
+  }
+
+  const orderTotal = Math.max(0, Number(row.order_total || 0));
+
+  if (orderTotal > 0 && refundAmount > orderTotal) {
+    return {
+      success: false,
+      status: 409,
+      error: 'Calculated refund exceeds the paid total',
+    };
+  }
+
+  if (previewOnly) {
+    return {
+      success: true,
+      preview: true,
+      requestId,
+      selectedGross,
+      allocatedDiscount,
+      refundableItemValue,
+      reverseShippingFee: reverseFee,
+      reverseShippingDeducted: deductFee,
+      deductionAmount,
+      amount: refundAmount,
+      currency: 'INR',
+    };
+  }
+
+  const amountPaise = Math.round(refundAmount * 100);
+  const savedKey = cleanReturnText(row.refund_idempotency_key, 100);
+
+  if (
+    savedKey &&
+    Math.abs(Number(row.refund_amount || 0) - refundAmount) > 0.001
+  ) {
+    return {
+      success: false,
+      status: 409,
+      error: 'Refund amount cannot change while the existing Razorpay request is being retried',
+    };
+  }
+
+  const generatedKey = (
+    `KRF_${requestId}_${Date.now()}_${crypto.randomUUID()}`
+  )
+    .replace(/[^A-Za-z0-9_-]/g, '_')
+    .slice(0, 100);
+
+  const idempotencyKey = savedKey || generatedKey;
+  const retryingSameRefund = savedKey.length > 0;
+
+  const note = ownerNote
+    ? `Refund initiated: ${ownerNote}`
+    : 'Refund initiated';
+
+  const claim = await env.DB.prepare(`
+    UPDATE return_requests
+    SET
+      refund_amount = ?,
+      refund_idempotency_key = ?,
+      refund_status = 'processing',
+      refund_gateway = 'razorpay',
+      refund_method = 'original_payment',
+      refund_currency = 'INR',
+      refund_speed_requested = 'normal',
+      refund_failure_reason = '',
+      refund_failed_at = NULL,
+      refund_initiated_at = COALESCE(refund_initiated_at, datetime('now')),
+      approved_by = CASE
+        WHEN COALESCE(approved_by, '') = ''
+        THEN 'owner'
+        ELSE approved_by
+      END,
+      owner_note = CASE
+        WHEN ? = '' THEN owner_note
+        WHEN COALESCE(owner_note, '') = '' THEN ?
+        ELSE owner_note || char(10) || ?
+      END,
+      updated_at = datetime('now')
+    WHERE order_id = ?
+      AND request_id = ?
+      AND status IN ('qc_passed', 'refund_pending')
+      AND refund_id IS NULL
+      AND refund_status IN ('not_started', 'failed', 'processing')
+      AND (
+        refund_idempotency_key IS NULL OR
+        refund_idempotency_key = ?
+      )
+  `)
+    .bind(
+      refundAmount,
+      idempotencyKey,
+      note,
+      note,
+      note,
+      orderId,
+      requestId,
+      idempotencyKey
+    )
+    .run();
+
+  if (Number(claim?.meta?.changes || 0) !== 1) {
+    return {
+      success: false,
+      status: 409,
+      error: 'Return refund state changed. Refresh and retry.',
+    };
+  }
+
+  try {
+    const refund = await processRazorpayRefund(
+      env,
+      paymentId,
+      refundAmount,
+      orderId,
+      {
+        requestId,
+        idempotencyKey,
+        reverseShippingDeducted: deductFee,
+        verifyPayment: !retryingSameRefund,
+      }
+    );
+
+    const refundStatus = String(refund.status || 'pending').toLowerCase();
+
+    if (refundStatus === 'failed') {
+      throw new Error('Razorpay returned a failed refund status');
+    }
+
+    const processed = refundStatus === 'processed';
+    const requestStatus = processed ? 'refunded' : 'refund_pending';
+
+    const acquirer = refund.acquirer_data || {};
+    const referenceType = acquirer.arn
+      ? 'arn'
+      : acquirer.rrn
+      ? 'rrn'
+      : acquirer.utr
+      ? 'utr'
+      : null;
+    const reference = acquirer.arn || acquirer.rrn || acquirer.utr || null;
+
+    await env.DB.prepare(`
+      UPDATE return_requests
+      SET
+        status = ?,
+        refund_id = ?,
+        refund_status = ?,
+        refund_speed_requested = ?,
+        refund_speed_processed = ?,
+        refund_acquirer_reference = ?,
+        refund_acquirer_reference_type = ?,
+        refund_processed_at = CASE
+          WHEN ? = 'processed' THEN datetime('now')
+          ELSE refund_processed_at
+        END,
+        completed_at = CASE
+          WHEN ? = 'processed' THEN datetime('now')
+          ELSE completed_at
+        END,
+        updated_at = datetime('now')
+      WHERE order_id = ?
+        AND request_id = ?
+        AND refund_idempotency_key = ?
+    `)
+      .bind(
+        requestStatus,
+        cleanReturnText(refund.id, 200) || null,
+        refundStatus,
+        cleanReturnText(refund.speed_requested || 'normal', 50),
+        cleanReturnText(refund.speed_processed, 50) || null,
+        reference,
+        referenceType,
+        refundStatus,
+        refundStatus,
+        orderId,
+        requestId,
+        idempotencyKey
+      )
+      .run();
+
+    await env.DB.prepare(`
+      INSERT OR IGNORE INTO return_refund_events (
+        event_id,
+        request_id,
+        order_id,
+        payment_id,
+        refund_id,
+        event_type,
+        refund_status,
+        amount,
+        currency,
+        acquirer_reference,
+        acquirer_reference_type,
+        payload_json,
+        processing_status,
+        error_message,
+        received_at,
+        processed_at
+      ) VALUES (
+        ?, ?, ?, ?, ?,
+        'refund.api_response',
+        ?, ?, 'INR',
+        ?, ?, ?,
+        'processed',
+        '',
+        datetime('now'),
+        datetime('now')
+      )
+    `)
+      .bind(
+        `refund_api_${refund.id || idempotencyKey}`,
+        requestId,
+        orderId,
+        paymentId,
+        cleanReturnText(refund.id, 200) || null,
+        refundStatus,
+        refundAmount,
+        reference,
+        referenceType,
+        JSON.stringify(refund)
+      )
+      .run();
+
+    if (processed) {
+      const refundTotals = await env.DB.prepare(`
+        SELECT COALESCE(SUM(refund_amount), 0) AS refunded_total
+        FROM return_requests
+        WHERE order_id = ? AND refund_status = 'processed'
+      `)
+        .bind(orderId)
+        .first();
+
+      const fullyRefunded =
+        orderTotal > 0 &&
+        Number(refundTotals?.refunded_total || 0) + 0.001 >= orderTotal;
+
+      if (fullyRefunded) {
+        await env.DB.prepare(`
+          UPDATE orders
+          SET payment_status = 'refunded', updated_at = datetime('now')
+          WHERE order_id = ?
+        `)
+          .bind(orderId)
+          .run();
+      }
+    }
+
+    await logOrderEvent(
+      env,
+      orderId,
+      processed ? 'return_refund_processed' : 'return_refund_pending',
+      `Return request ${requestId} refund ${refundStatus}: ₹${refundAmount.toFixed(2)}`,
+      {
+        requestId,
+        refundId: refund.id || '',
+        selectedGross,
+        allocatedDiscount,
+        refundableItemValue,
+        reverseShippingDeducted: deductFee,
+        deductionAmount,
+        refundAmount,
+        triggerSource,
+      },
+      'admin'
+    );
+
+    const customerPhone = cleanReturnText(row.order_phone || row.phone, 30);
+    if (customerPhone) {
+      const customerName = cleanReturnText(
+        row.order_customer_name || row.customer_name || 'Customer',
+        300
+      );
+
+      const refundNotice = deductFee
+        ? `Item value: ₹${selectedGross.toFixed(2)}\nReverse shipping fee: -₹${deductionAmount.toFixed(2)}\nTotal refund: *₹${refundAmount.toFixed(2)}*\n`
+        : `Refund amount: *₹${refundAmount.toFixed(2)}*\n`;
+
+      try {
+        await sendWhatsAppText(
+          env,
+          customerPhone,
+          `*Return Refund ${processed ? 'Processed' : 'Initiated'}*\n\n` +
+          `Hi ${customerName},\n\n` +
+          `Order: *${orderId}*\n` +
+          `Request ID: *${requestId}*\n` +
+          refundNotice +
+          `Razorpay Refund ID: *${refund.id || 'Pending'}*\n\n` +
+          `The refund has been sent to your original payment method and will reflect in your account in 5-7 business days.\n\n` +
+          `KAAPAV Fashion Jewellery`
+        );
+      } catch (notificationError) {
+        console.error(
+          'RETURN_REFUND_NOTIFICATION_FAILED',
+          requestId,
+          notificationError?.message || notificationError
+        );
+      }
+    }
+
+    return {
+      success: true,
+      status: requestStatus,
+      refundStatus,
+      refundId: refund.id || null,
+      selectedGross,
+      allocatedDiscount,
+      refundableItemValue,
+      reverseShippingDeducted: deductFee,
+      deductionAmount,
+      amount: refundAmount,
+    };
+  } catch (error) {
+    const reason = cleanReturnText(error?.message || error, 2000);
+
+    await env.DB.prepare(`
+      UPDATE return_requests
+      SET
+        refund_status = 'failed',
+        refund_failure_reason = ?,
+        refund_failed_at = datetime('now'),
+        updated_at = datetime('now')
+      WHERE order_id = ?
+        AND request_id = ?
+        AND refund_idempotency_key = ?
+        AND refund_id IS NULL
+    `)
+      .bind(reason, orderId, requestId, idempotencyKey)
+      .run();
+
+    await logOrderEvent(
+      env,
+      orderId,
+      'return_refund_failed',
+      `Return request ${requestId} refund failed: ${reason}`,
+      {
+        requestId,
+        refundAmount,
+        reverseShippingDeducted: deductFee,
+        deductionAmount,
+        error: reason,
+        triggerSource,
+      },
+      'admin'
+    );
+
+    return {
+      success: false,
+      status: 502,
+      error: `Refund failed: ${reason}`,
+    };
+  }
+}
+
+async function handleProcessReturnRefund(
+  orderId,
+  requestId,
+  request,
+  env
+) {
+  const body = await request.json().catch(() => ({}));
+
+  const result = await executeReturnRefundCore(env, orderId, requestId, {
+    deductFee: body.deduct_reverse_shipping_fee === true,
+    previewOnly: body.preview_only === true,
+    ownerNote: body.owner_note || '',
+    triggerSource: 'admin_manual',
+  });
+
+  if (!result.success) {
+    return errorResponse(result.error, result.status || 500);
+  }
+
+  return jsonResponse(result);
+}
+
+async function handleReviewReturnQc(
+  orderId,
+  requestId,
+  request,
+  env
+) {
+  const body = await request.json().catch(() => ({}));
+
+  const decision = cleanReturnText(body.decision, 20).toLowerCase();
+
+  if (decision !== 'passed' && decision !== 'failed') {
+    return errorResponse('decision must be passed or failed', 400);
+  }
+
+  const ownerNote = cleanReturnText(body.owner_note, 2000);
+
+  if (decision === 'failed' && !ownerNote) {
+    return errorResponse('QC failure reason is required', 400);
+  }
+
+  const returnRequest = await env.DB.prepare(`
+    SELECT
+      rr.*,
+      o.customer_name AS order_customer_name,
+      o.phone AS order_phone,
+      o.payment_status AS order_payment_status,
+      o.payment_id AS order_payment_id
+    FROM return_requests rr
+    INNER JOIN orders o
+      ON o.order_id = rr.order_id
+    WHERE rr.order_id = ?
+      AND rr.request_id = ?
+    LIMIT 1
+  `)
+    .bind(orderId, requestId)
+    .first();
+
+  if (!returnRequest) {
+    return errorResponse('Return request not found', 404);
+  }
+
+  const currentStatus = String(returnRequest.status || '').toLowerCase();
+
+  if (currentStatus !== 'received') {
+    return errorResponse(
+      `Only received requests can complete quality inspection. Current status: ${currentStatus || 'unknown'}`,
+      409
+    );
+  }
+
+  const nextStatus = decision === 'passed' ? 'qc_passed' : 'qc_failed';
+  const qcNote = ownerNote ? `QC ${decision}: ${ownerNote}` : `QC ${decision}`;
+
+  const updateResult = await env.DB.prepare(`
+    UPDATE return_requests
+    SET
+      status = ?,
+      qc_completed_at = datetime('now'),
+      owner_note = CASE
+        WHEN ? != ''
+        THEN CASE
+          WHEN COALESCE(owner_note, '') = '' THEN ?
+          ELSE owner_note || char(10) || ?
+        END
+        ELSE owner_note
+      END,
+      updated_at = datetime('now')
+    WHERE order_id = ?
+      AND request_id = ?
+      AND status = 'received'
+  `)
+    .bind(nextStatus, qcNote, qcNote, qcNote, orderId, requestId)
+    .run();
+
+  if (Number(updateResult?.meta?.changes || 0) !== 1) {
+    return errorResponse(
+      'Return request changed before quality inspection completed. Refresh and retry.',
+      409
+    );
+  }
+
+  const requestType = String(returnRequest.request_type || 'return').toLowerCase();
+  const typeLabel = requestType === 'exchange' ? 'Exchange' : 'Return';
+
+  await logOrderEvent(
+    env,
+    orderId,
+    `${requestType}_${nextStatus}`,
+    `${typeLabel} request ${requestId} quality inspection ${decision}`,
+    {
+      requestId,
+      previousStatus: currentStatus,
+      status: nextStatus,
+      decision,
+      ownerNote,
+    },
+    'admin'
+  );
+
+  const customerPhone = cleanReturnText(
+    returnRequest.order_phone || returnRequest.phone,
+    30
+  );
+  const customerName = cleanReturnText(
+    returnRequest.order_customer_name || returnRequest.customer_name || 'Customer',
+    300
+  );
+
+  let refundResult = null;
+  let autoRefundAttempted = false;
+
+  if (decision === 'passed') {
+    const autoRefund = body.auto_refund !== false;
+    const deductFee = body.deduct_reverse_shipping_fee === true;
+    const paymentId = cleanReturnText(
+      returnRequest.payment_id || returnRequest.order_payment_id,
+      200
+    );
+    const isOnlinePaid =
+      String(returnRequest.order_payment_status || '').toLowerCase() === 'paid' &&
+      paymentId.startsWith('pay_');
+
+    if (requestType === 'return' && autoRefund) {
+      autoRefundAttempted = true;
+      if (isOnlinePaid) {
+        refundResult = await executeReturnRefundCore(env, orderId, requestId, {
+          deductFee,
+          ownerNote: ownerNote ? `Auto-refund on QC pass: ${ownerNote}` : 'Auto-refund on QC pass',
+          triggerSource: 'qc_auto_approval',
+        });
+      } else {
+        // COD or offline order
+        await env.DB.prepare(`
+          UPDATE return_requests
+          SET refund_status = 'manual_pending', updated_at = datetime('now')
+          WHERE order_id = ? AND request_id = ?
+        `)
+          .bind(orderId, requestId)
+          .run();
+
+        if (customerPhone) {
+          try {
+            await sendWhatsAppText(
+              env,
+              customerPhone,
+              `*${typeLabel} Quality Check Passed*\n\n` +
+              `Hi ${customerName},\n\n` +
+              `Order: *${orderId}*\n` +
+              `Request ID: *${requestId}*\n` +
+              `Status: QC Passed — Refund Pending\n\n` +
+              `Your returned package has passed quality inspection.\n` +
+              `Since your order was Cash on Delivery, our team will contact you shortly to collect your UPI / bank account details for the refund transfer.\n\n` +
+              `KAAPAV Fashion Jewellery`
+            );
+          } catch (notificationError) {
+            console.error('RETURN_QC_COD_NOTIFICATION_FAILED', requestId, notificationError?.message || notificationError);
+          }
+        }
+      }
+    } else {
+      // Exchange or non-auto-refund workflow
+      if (customerPhone) {
+        try {
+          await sendWhatsAppText(
+            env,
+            customerPhone,
+            `*${typeLabel} Quality Check Passed*\n\n` +
+            `Hi ${customerName},\n\n` +
+            `Order: *${orderId}*\n` +
+            `Request ID: *${requestId}*\n` +
+            `Status: QC Passed\n\n` +
+            `Your returned package has passed inspection.\n\n` +
+            `KAAPAV Fashion Jewellery`
+          );
+        } catch (notificationError) {
+          console.error('RETURN_QC_NOTIFICATION_FAILED', requestId, notificationError?.message || notificationError);
+        }
+      }
+    }
+  } else {
+    // QC Failed
+    if (customerPhone) {
+      try {
+        await sendWhatsAppText(
+          env,
+          customerPhone,
+          `*${typeLabel} Quality Check Update*\n\n` +
+          `Hi ${customerName},\n\n` +
+          `Order: *${orderId}*\n` +
+          `Request ID: *${requestId}*\n` +
+          `Status: QC Not Approved\n\n` +
+          `Reason: ${ownerNote}\n\n` +
+          `Our team will reach out to you if any further details are required.\n\n` +
+          `KAAPAV Fashion Jewellery`
+        );
+      } catch (notificationError) {
+        console.error('RETURN_QC_FAIL_NOTIFICATION_FAILED', requestId, notificationError?.message || notificationError);
+      }
+    }
+  }
+
+  const updatedRequest = await env.DB.prepare(`
+    SELECT *
+    FROM return_requests
+    WHERE order_id = ?
+      AND request_id = ?
+    LIMIT 1
+  `)
+    .bind(orderId, requestId)
+    .first();
+
+  return jsonResponse({
+    success: true,
+    decision,
+    status: updatedRequest?.status || nextStatus,
+    autoRefundAttempted,
+    refundResult,
+    request: updatedRequest,
+  });
+}
+
+
+async function handleMarkReturnReceived(
+  orderId,
+  requestId,
+  request,
+  env
+) {
+  const body = await request
+    .json()
+    .catch(() => ({}));
+
+  const ownerNote = cleanReturnText(
+    body.owner_note,
+    2000
+  );
+
+  const returnRequest =
+    await env.DB.prepare(`
+      SELECT
+        rr.*,
+        o.customer_name AS order_customer_name,
+        o.phone AS order_phone
+      FROM return_requests rr
+      INNER JOIN orders o
+        ON o.order_id = rr.order_id
+      WHERE rr.order_id = ?
+        AND rr.request_id = ?
+      LIMIT 1
+    `)
+      .bind(
+        orderId,
+        requestId
+      )
+      .first();
+
+  if (!returnRequest) {
+    return errorResponse(
+      'Return request not found',
+      404
+    );
+  }
+
+  const currentStatus = String(
+    returnRequest.status || ''
+  ).toLowerCase();
+
+  if (currentStatus !== 'picked_up') {
+    return errorResponse(
+      `Only picked-up requests can be marked received. ` +
+      `Current status: ${currentStatus || 'unknown'}`,
+      409
+    );
+  }
+
+  const updateResult =
+    await env.DB.prepare(`
+      UPDATE return_requests
+      SET
+        status = 'received',
+        received_at = datetime('now'),
+
+        owner_note = CASE
+          WHEN ? != ''
+          THEN ?
+          ELSE owner_note
+        END,
+
+        updated_at = datetime('now')
+      WHERE order_id = ?
+        AND request_id = ?
+        AND status = 'picked_up'
+    `)
+      .bind(
+        ownerNote,
+        ownerNote,
+        orderId,
+        requestId
+      )
+      .run();
+
+  if (
+    Number(
+      updateResult?.meta?.changes || 0
+    ) !== 1
+  ) {
+    return errorResponse(
+      'Return request changed before receipt confirmation completed. Refresh and retry.',
+      409
+    );
+  }
+
+  const requestType = String(
+    returnRequest.request_type ||
+    'return'
+  ).toLowerCase();
+
+  const typeLabel =
+    requestType === 'exchange'
+      ? 'Exchange'
+      : 'Return';
+
+  await logOrderEvent(
+    env,
+    orderId,
+    `${requestType}_received`,
+    `${typeLabel} request ${requestId} received at return facility`,
+    {
+      requestId,
+      previousStatus: currentStatus,
+      status: 'received',
+      ownerNote,
+    },
+    'admin'
+  );
+
+  const customerPhone =
+    cleanReturnText(
+      returnRequest.order_phone ||
+      returnRequest.phone,
+      30
+    );
+
+  if (customerPhone) {
+    const customerName =
+      cleanReturnText(
+        returnRequest.order_customer_name ||
+        returnRequest.customer_name ||
+        'Customer',
+        300
+      );
+
+    const message =
+      `*${typeLabel} Package Received*\n\n` +
+      `Hi ${customerName},\n\n` +
+      `Order: *${orderId}*\n` +
+      `Request ID: *${requestId}*\n` +
+      `Status: Received\n\n` +
+      `Your package has reached our return facility. ` +
+      `It will now be inspected before the next action.\n\n` +
+      `No refund or exchange shipment has been started yet.\n\n` +
+      `KAAPAV Fashion Jewellery`;
+
+    try {
+      await sendWhatsAppText(
+        env,
+        customerPhone,
+        message
+      );
+    } catch (notificationError) {
+      console.error(
+        'RETURN_RECEIVED_NOTIFICATION_FAILED',
+        requestId,
+        notificationError?.message ||
+        notificationError
+      );
+    }
+  }
+
+  const updatedRequest =
+    await env.DB.prepare(`
+      SELECT *
+      FROM return_requests
+      WHERE order_id = ?
+        AND request_id = ?
+      LIMIT 1
+    `)
+      .bind(
+        orderId,
+        requestId
+      )
+      .first();
+
+  return jsonResponse({
+    success: true,
+    status: 'received',
+    request: updatedRequest,
+  });
+}
+
+async function handleMarkReturnPickedUp(
+  orderId,
+  requestId,
+  request,
+  env
+) {
+  const body = await request
+    .json()
+    .catch(() => ({}));
+
+  const ownerNote = cleanReturnText(
+    body.owner_note,
+    2000
+  );
+
+  const returnRequest =
+    await env.DB.prepare(`
+      SELECT
+        rr.*,
+        o.customer_name AS order_customer_name,
+        o.phone AS order_phone
+      FROM return_requests rr
+      INNER JOIN orders o
+        ON o.order_id = rr.order_id
+      WHERE rr.order_id = ?
+        AND rr.request_id = ?
+      LIMIT 1
+    `)
+      .bind(
+        orderId,
+        requestId
+      )
+      .first();
+
+  if (!returnRequest) {
+    return errorResponse(
+      'Return request not found',
+      404
+    );
+  }
+
+  const currentStatus = String(
+    returnRequest.status || ''
+  ).toLowerCase();
+
+  if (currentStatus !== 'pickup_scheduled') {
+    return errorResponse(
+      `Only pickup-scheduled requests can be marked picked up. ` +
+      `Current status: ${currentStatus || 'unknown'}`,
+      409
+    );
+  }
+
+  const updateResult =
+    await env.DB.prepare(`
+      UPDATE return_requests
+      SET
+        status = 'picked_up',
+        picked_up_at = datetime('now'),
+
+        owner_note = CASE
+          WHEN ? != ''
+          THEN ?
+          ELSE owner_note
+        END,
+
+        updated_at = datetime('now')
+      WHERE order_id = ?
+        AND request_id = ?
+        AND status = 'pickup_scheduled'
+    `)
+      .bind(
+        ownerNote,
+        ownerNote,
+        orderId,
+        requestId
+      )
+      .run();
+
+  if (
+    Number(
+      updateResult?.meta?.changes || 0
+    ) !== 1
+  ) {
+    return errorResponse(
+      'Return request changed before pickup confirmation completed. Refresh and retry.',
+      409
+    );
+  }
+
+  const requestType = String(
+    returnRequest.request_type ||
+    'return'
+  ).toLowerCase();
+
+  const typeLabel =
+    requestType === 'exchange'
+      ? 'Exchange'
+      : 'Return';
+
+  await logOrderEvent(
+    env,
+    orderId,
+    `${requestType}_picked_up`,
+    `${typeLabel} request ${requestId} marked picked up`,
+    {
+      requestId,
+      previousStatus: currentStatus,
+      status: 'picked_up',
+      ownerNote,
+    },
+    'admin'
+  );
+
+  const customerPhone =
+    cleanReturnText(
+      returnRequest.order_phone ||
+      returnRequest.phone,
+      30
+    );
+
+  if (customerPhone) {
+    const customerName =
+      cleanReturnText(
+        returnRequest.order_customer_name ||
+        returnRequest.customer_name ||
+        'Customer',
+        300
+      );
+
+    const message =
+      `*${typeLabel} Package Picked Up*\n\n` +
+      `Hi ${customerName},\n\n` +
+      `Order: *${orderId}*\n` +
+      `Request ID: *${requestId}*\n` +
+      `Status: Picked Up\n\n` +
+      `The package is now in transit to our return facility. ` +
+      `We will update you after it is received and inspected.\n\n` +
+      `No refund or exchange shipment has been started yet.\n\n` +
+      `KAAPAV Fashion Jewellery`;
+
+    try {
+      await sendWhatsAppText(
+        env,
+        customerPhone,
+        message
+      );
+    } catch (notificationError) {
+      console.error(
+        'RETURN_PICKED_UP_NOTIFICATION_FAILED',
+        requestId,
+        notificationError?.message ||
+        notificationError
+      );
+    }
+  }
+
+  const updatedRequest =
+    await env.DB.prepare(`
+      SELECT *
+      FROM return_requests
+      WHERE order_id = ?
+        AND request_id = ?
+      LIMIT 1
+    `)
+      .bind(
+        orderId,
+        requestId
+      )
+      .first();
+
+  return jsonResponse({
+    success: true,
+    status: 'picked_up',
+    request: updatedRequest,
+  });
+}
+
+async function handleScheduleReturnPickup(
+  orderId,
+  requestId,
+  request,
+  env
+) {
+  const body = await request
+    .json()
+    .catch(() => ({}));
+
+  const courier = cleanReturnText(body.courier || body.return_courier, 100);
+  const awbNumber = cleanReturnText(body.awb_number || body.return_awb_number, 100);
+  let trackingUrl = cleanReturnText(body.tracking_url || body.return_tracking_url, 500);
+  const pickupScheduledDate = cleanReturnText(body.pickup_scheduled_date || body.pickup_date, 50);
+  const ownerNote = cleanReturnText(
+    body.owner_note,
+    2000
+  );
+
+  if (!trackingUrl && awbNumber) {
+    const lowerCourier = courier.toLowerCase();
+    if (lowerCourier.includes('delhivery')) {
+      trackingUrl = `https://www.delhivery.com/track/package/${awbNumber}`;
+    } else if (lowerCourier.includes('bluedart') || lowerCourier.includes('blue dart')) {
+      trackingUrl = `https://www.bluedart.com/tracking?trackNumber=${awbNumber}`;
+    } else if (lowerCourier.includes('dtdc')) {
+      trackingUrl = `https://www.dtdc.in/tracking/tracking_results.asp?Ttype=awb_no&strAvbNo=${awbNumber}`;
+    } else {
+      trackingUrl = `https://www.shiprocket.in/shipment-tracking/?id=${awbNumber}`;
+    }
+  }
+
+  const returnRequest =
+    await env.DB.prepare(`
+      SELECT
+        rr.*,
+        o.customer_name AS order_customer_name,
+        o.phone AS order_phone
+      FROM return_requests rr
+      INNER JOIN orders o
+        ON o.order_id = rr.order_id
+      WHERE rr.order_id = ?
+        AND rr.request_id = ?
+      LIMIT 1
+    `)
+      .bind(
+        orderId,
+        requestId
+      )
+      .first();
+
+  if (!returnRequest) {
+    return errorResponse(
+      'Return request not found',
+      404
+    );
+  }
+
+  const currentStatus = String(
+    returnRequest.status || ''
+  ).toLowerCase();
+
+  if (currentStatus !== 'approved' && currentStatus !== 'pickup_scheduled') {
+    return errorResponse(
+      `Only approved requests can move to pickup scheduled. Current status: ${currentStatus || 'unknown'}`,
+      409
+    );
+  }
+
+  const updateResult =
+    await env.DB.prepare(`
+      UPDATE return_requests
+      SET
+        status = 'pickup_scheduled',
+        pickup_scheduled_at = COALESCE(pickup_scheduled_at, datetime('now')),
+        return_courier = ?,
+        return_awb_number = ?,
+        return_tracking_url = ?,
+        pickup_scheduled_date = ?,
+
+        owner_note = CASE
+          WHEN ? != ''
+          THEN CASE
+            WHEN COALESCE(owner_note, '') = '' THEN ?
+            ELSE owner_note || char(10) || ?
+          END
+          ELSE owner_note
+        END,
+
+        updated_at = datetime('now')
+      WHERE order_id = ?
+        AND request_id = ?
+        AND status IN ('approved', 'pickup_scheduled')
+    `)
+      .bind(
+        courier,
+        awbNumber,
+        trackingUrl,
+        pickupScheduledDate || null,
+        ownerNote,
+        ownerNote,
+        ownerNote,
+        orderId,
+        requestId
+      )
+      .run();
+
+  if (
+    Number(
+      updateResult?.meta?.changes || 0
+    ) !== 1
+  ) {
+    return errorResponse(
+      'Return request changed before pickup scheduling completed. Refresh and retry.',
+      409
+    );
+  }
+
+  const requestType = String(
+    returnRequest.request_type ||
+    'return'
+  ).toLowerCase();
+
+  const typeLabel =
+    requestType === 'exchange'
+      ? 'Exchange'
+      : 'Return';
+
+  await logOrderEvent(
+    env,
+    orderId,
+    `${requestType}_pickup_scheduled`,
+    `${typeLabel} request ${requestId} marked pickup scheduled`,
+    {
+      requestId,
+      previousStatus: currentStatus,
+      status: 'pickup_scheduled',
+      courier,
+      awbNumber,
+      trackingUrl,
+      pickupScheduledDate,
+      ownerNote,
+    },
+    'admin'
+  );
+
+  const customerPhone =
+    cleanReturnText(
+      returnRequest.order_phone ||
+      returnRequest.phone,
+      30
+    );
+
+  if (customerPhone) {
+    const customerName =
+      cleanReturnText(
+        returnRequest
+              .order_customer_name ||
+        returnRequest.customer_name ||
+        'Customer',
+        300
+      );
+
+    let pickupDetails = '';
+    if (courier) pickupDetails += `Courier: *${courier}*\n`;
+    if (awbNumber) pickupDetails += `AWB / Tracking: *${awbNumber}*\n`;
+    if (pickupScheduledDate) pickupDetails += `Pickup Date: *${pickupScheduledDate}*\n`;
+    if (trackingUrl) pickupDetails += `Track Return: ${trackingUrl}\n`;
+
+    const message =
+      `*${typeLabel} Pickup Scheduled*\n\n` +
+      `Hi ${customerName},\n\n` +
+      `Order: *${orderId}*\n` +
+      `Request ID: *${requestId}*\n` +
+      `Status: Pickup Scheduled\n\n` +
+      (pickupDetails ? pickupDetails + '\n' : '') +
+      `Please keep the items securely packed with the original tags and pouch for pickup.\n\n` +
+      `KAAPAV Fashion Jewellery`;
+
+    try {
+      await sendWhatsAppText(
+        env,
+        customerPhone,
+        message
+      );
+    } catch (notificationError) {
+      console.error(
+        'RETURN_PICKUP_NOTIFICATION_FAILED',
+        requestId,
+        notificationError?.message ||
+        notificationError
+      );
+    }
+  }
+
+  const updatedRequest =
+    await env.DB.prepare(`
+      SELECT *
+      FROM return_requests
+      WHERE order_id = ?
+        AND request_id = ?
+      LIMIT 1
+    `)
+      .bind(
+        orderId,
+        requestId
+      )
+      .first();
+
+  return jsonResponse({
+    success: true,
+    status: 'pickup_scheduled',
+    request: updatedRequest,
+  });
+}
+
+async function handleReviewReturnRequest(
+  orderId,
+  requestId,
+  request,
+  env
+) {
+  const body = await request
+    .json()
+    .catch(() => ({}));
+
+  const decision = cleanReturnText(
+    body.decision,
+    20
+  ).toLowerCase();
+
+  const ownerNote = cleanReturnText(
+    body.owner_note,
+    2000
+  );
+
+  if (
+    decision !== 'approved' &&
+    decision !== 'rejected'
+  ) {
+    return errorResponse(
+      'decision must be approved or rejected',
+      400
+    );
+  }
+
+  if (
+    decision === 'rejected' &&
+    !ownerNote
+  ) {
+    return errorResponse(
+      'owner_note is required when rejecting a request',
+      400
+    );
+  }
+
+  const returnRequest =
+    await env.DB.prepare(`
+      SELECT
+        rr.*,
+        o.customer_name AS order_customer_name,
+        o.phone AS order_phone
+      FROM return_requests rr
+      INNER JOIN orders o
+        ON o.order_id = rr.order_id
+      WHERE rr.order_id = ?
+        AND rr.request_id = ?
+      LIMIT 1
+    `)
+      .bind(
+        orderId,
+        requestId
+      )
+      .first();
+
+  if (!returnRequest) {
+    return errorResponse(
+      'Return request not found',
+      404
+    );
+  }
+
+  if (
+    String(
+      returnRequest.status || ''
+    ).toLowerCase() !== 'requested'
+  ) {
+    return errorResponse(
+      `Only requested returns can be reviewed. ` +
+      `Current status: ${returnRequest.status || 'unknown'}`,
+      409
+    );
+  }
+
+  const updateResult =
+    await env.DB.prepare(`
+      UPDATE return_requests
+      SET
+        status = ?,
+        owner_note = ?,
+
+        approved_by = CASE
+          WHEN ? = 'approved'
+          THEN 'owner'
+          ELSE ''
+        END,
+
+        approved_at = CASE
+          WHEN ? = 'approved'
+          THEN datetime('now')
+          ELSE NULL
+        END,
+
+        rejected_at = CASE
+          WHEN ? = 'rejected'
+          THEN datetime('now')
+          ELSE NULL
+        END,
+
+        updated_at = datetime('now')
+      WHERE order_id = ?
+        AND request_id = ?
+        AND status = 'requested'
+    `)
+      .bind(
+        decision,
+        ownerNote,
+        decision,
+        decision,
+        decision,
+        orderId,
+        requestId
+      )
+      .run();
+
+  if (
+    Number(
+      updateResult?.meta?.changes || 0
+    ) !== 1
+  ) {
+    return errorResponse(
+      'Return request changed before this review completed. Refresh and retry.',
+      409
+    );
+  }
+
+  const requestType =
+    String(
+      returnRequest.request_type ||
+      'return'
+    ).toLowerCase();
+
+  const typeLabel =
+    requestType === 'exchange'
+      ? 'Exchange'
+      : 'Return';
+
+  await logOrderEvent(
+    env,
+    orderId,
+    `${requestType}_${decision}`,
+    `${typeLabel} request ${requestId} ${decision}`,
+    {
+      requestId,
+      decision,
+      ownerNote,
+    },
+    'admin'
+  );
+
+  const customerPhone = cleanReturnText(
+    returnRequest.order_phone ||
+    returnRequest.phone,
+    30
+  );
+
+  if (customerPhone) {
+    const customerName = cleanReturnText(
+      returnRequest.order_customer_name ||
+      returnRequest.customer_name ||
+      'Customer',
+      300
+    );
+
+    const message =
+      decision === 'approved'
+        ? `*${typeLabel} Request Approved*\n\n` +
+          `Hi ${customerName},\n\n` +
+          `Order: *${orderId}*\n` +
+          `Request ID: *${requestId}*\n` +
+          `Status: Approved\n\n` +
+          `No pickup, exchange shipment, or refund has been started yet. ` +
+          `Our team will contact you with the next step.\n\n` +
+          `KAAPAV Fashion Jewellery`
+        : `*${typeLabel} Request Not Approved*\n\n` +
+          `Hi ${customerName},\n\n` +
+          `Order: *${orderId}*\n` +
+          `Request ID: *${requestId}*\n` +
+          `Reason: ${ownerNote}\n\n` +
+          `Contact us on WhatsApp if you need clarification.\n\n` +
+          `KAAPAV Fashion Jewellery`;
+
+    try {
+      await sendWhatsAppText(
+        env,
+        customerPhone,
+        message
+      );
+    } catch (notificationError) {
+      console.error(
+        'RETURN_DECISION_CUSTOMER_NOTIFICATION_FAILED',
+        requestId,
+        notificationError?.message ||
+        notificationError
+      );
+    }
+  }
+
+  const updatedRequest =
+    await env.DB.prepare(`
+      SELECT *
+      FROM return_requests
+      WHERE order_id = ?
+        AND request_id = ?
+      LIMIT 1
+    `)
+      .bind(
+        orderId,
+        requestId
+      )
+      .first();
+
+  return jsonResponse({
+    success: true,
+    decision,
+    request: updatedRequest,
+  });
+}
+
+async function handleGetOrderReturnRequests(
+  orderId,
+  env
+) {
+  const order = await env.DB.prepare(`
+    SELECT order_id
+    FROM orders
+    WHERE order_id = ?
+    LIMIT 1
+  `).bind(orderId).first();
+
+  if (!order) {
+    return errorResponse(
+      'Order not found',
+      404
+    );
+  }
+
+  const { results: requests } =
+    await env.DB.prepare(`
+      SELECT *
+      FROM return_requests
+      WHERE order_id = ?
+      ORDER BY id DESC
+    `).bind(orderId).all();
+
+  const { results: items } =
+    await env.DB.prepare(`
+      SELECT *
+      FROM return_request_items
+      WHERE order_id = ?
+      ORDER BY request_id, line_index
+    `).bind(orderId).all();
+
+  const itemsByRequest = new Map();
+
+  for (const item of items || []) {
+    const current =
+      itemsByRequest.get(
+        item.request_id
+      ) || [];
+
+    current.push({
+      ...item,
+      evidence_urls:
+        parseReturnJsonArray(
+          item.evidence_urls_json
+        ),
+    });
+
+    itemsByRequest.set(
+      item.request_id,
+      current
+    );
+  }
+
+  const packedRequests =
+    (requests || []).map(
+      (returnRequest) => ({
+        ...returnRequest,
+        evidence_urls:
+          parseReturnJsonArray(
+            returnRequest
+              .evidence_urls_json
+          ),
+        items:
+          itemsByRequest.get(
+            returnRequest.request_id
+          ) || [],
+      })
+    );
+
+  return jsonResponse({
+    success: true,
+    requests: packedRequests,
+    total: packedRequests.length,
+  });
+}
+
 async function handleGetOrders(request, env) {
   const url = new URL(request.url);
   const limit = parseInt(url.searchParams.get('limit') || '1000000');
@@ -7054,32 +9969,611 @@ async function handleSendProduct(request, env) {
   return jsonResponse({ success: true });
 }
 
+function normalizeCouponDate(value) {
+  const text = safeText(value).trim();
+
+  if (!text) return null;
+
+  const parsed = new Date(text);
+
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error('Invalid offer date');
+  }
+
+  return parsed.toISOString();
+}
+
+function buildCouponRecord(body, existing = {}) {
+  const has = (key) =>
+    Object.prototype.hasOwnProperty.call(body, key);
+
+  const code = safeText(
+    has('code') ? body.code : existing.code
+  )
+    .trim()
+    .toUpperCase();
+
+  const type = safeText(
+    has('type') ? body.type : existing.type
+  ).trim();
+
+  const value = Number(
+    has('value') ? body.value : existing.value
+  );
+
+  const minOrder = Math.max(
+    0,
+    Number(
+      has('min_order')
+        ? body.min_order
+        : existing.min_order || 0
+    )
+  );
+
+  const maxDiscount = Math.max(
+    0,
+    Number(
+      has('max_discount')
+        ? body.max_discount
+        : existing.max_discount || 0
+    )
+  );
+
+  const usageLimit = Math.max(
+    0,
+    Math.trunc(
+      Number(
+        has('usage_limit')
+          ? body.usage_limit
+          : existing.usage_limit || 0
+      )
+    )
+  );
+
+  const startsAt = has('starts_at')
+    ? normalizeCouponDate(body.starts_at)
+    : existing.starts_at || null;
+
+  const expiresAt = has('expires_at')
+    ? normalizeCouponDate(body.expires_at)
+    : existing.expires_at || null;
+
+  const isActive = has('is_active')
+    ? Number(body.is_active) === 1 ||
+      body.is_active === true
+      ? 1
+      : 0
+    : Number(existing.is_active ?? 1);
+
+  if (!/^[A-Z0-9_-]{3,30}$/.test(code)) {
+    throw new Error(
+      'Offer code must be 3-30 letters, numbers, - or _'
+    );
+  }
+
+  if (!['percent', 'fixed'].includes(type)) {
+    throw new Error('Invalid discount type');
+  }
+
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error('Discount value must be above 0');
+  }
+
+  if (type === 'percent' && value > 100) {
+    throw new Error('Percentage cannot exceed 100');
+  }
+
+  if (
+    startsAt &&
+    expiresAt &&
+    new Date(expiresAt) < new Date(startsAt)
+  ) {
+    throw new Error(
+      'Offer end date cannot be before start date'
+    );
+  }
+
+  return {
+    code,
+    type,
+    value,
+    minOrder,
+    maxDiscount,
+    usageLimit,
+    startsAt,
+    expiresAt,
+    isActive,
+  };
+}
+
+async function handleGetCoupons(env) {
+  const { results } = await env.DB.prepare(`
+    SELECT *
+    FROM coupons
+    ORDER BY
+      is_active DESC,
+      datetime(COALESCE(starts_at, created_at)) DESC,
+      id DESC
+  `).all();
+
+  return jsonResponse({
+    success: true,
+    coupons: results || [],
+  });
+}
+
+async function handleCreateCoupon(request, env) {
+  const body = await request.json().catch(() => ({}));
+
+  let record;
+
+  try {
+    record = buildCouponRecord(body);
+  } catch (error) {
+    return errorResponse(error.message, 400);
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT id
+    FROM coupons
+    WHERE UPPER(code) = ?
+    LIMIT 1
+  `).bind(record.code).first();
+
+  if (existing) {
+    return errorResponse(
+      'Offer code already exists',
+      409
+    );
+  }
+
+  const result = await env.DB.prepare(`
+    INSERT INTO coupons (
+      code,
+      type,
+      value,
+      min_order,
+      max_discount,
+      usage_limit,
+      used_count,
+      starts_at,
+      expires_at,
+      is_active,
+      created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, datetime('now'))
+  `).bind(
+    record.code,
+    record.type,
+    record.value,
+    record.minOrder,
+    record.maxDiscount,
+    record.usageLimit,
+    record.startsAt,
+    record.expiresAt,
+    record.isActive
+  ).run();
+
+  const coupon = await env.DB.prepare(`
+    SELECT *
+    FROM coupons
+    WHERE id = ?
+  `).bind(result.meta.last_row_id).first();
+
+  return jsonResponse({
+    success: true,
+    coupon,
+  });
+}
+
+async function handleUpdateCoupon(
+  id,
+  request,
+  env
+) {
+  const existing = await env.DB.prepare(`
+    SELECT *
+    FROM coupons
+    WHERE id = ?
+  `).bind(id).first();
+
+  if (!existing) {
+    return errorResponse('Offer not found', 404);
+  }
+
+  const body = await request.json().catch(() => ({}));
+
+  let record;
+
+  try {
+    record = buildCouponRecord(body, existing);
+  } catch (error) {
+    return errorResponse(error.message, 400);
+  }
+
+  const duplicate = await env.DB.prepare(`
+    SELECT id
+    FROM coupons
+    WHERE UPPER(code) = ?
+      AND id != ?
+    LIMIT 1
+  `).bind(record.code, id).first();
+
+  if (duplicate) {
+    return errorResponse(
+      'Offer code already exists',
+      409
+    );
+  }
+
+  await env.DB.prepare(`
+    UPDATE coupons
+    SET
+      code = ?,
+      type = ?,
+      value = ?,
+      min_order = ?,
+      max_discount = ?,
+      usage_limit = ?,
+      starts_at = ?,
+      expires_at = ?,
+      is_active = ?
+    WHERE id = ?
+  `).bind(
+    record.code,
+    record.type,
+    record.value,
+    record.minOrder,
+    record.maxDiscount,
+    record.usageLimit,
+    record.startsAt,
+    record.expiresAt,
+    record.isActive,
+    id
+  ).run();
+
+  const coupon = await env.DB.prepare(`
+    SELECT *
+    FROM coupons
+    WHERE id = ?
+  `).bind(id).first();
+
+  return jsonResponse({
+    success: true,
+    coupon,
+  });
+}
+
+async function handleRemoveCoupon(id, env) {
+  const existing = await env.DB.prepare(`
+    SELECT id
+    FROM coupons
+    WHERE id = ?
+  `).bind(id).first();
+
+  if (!existing) {
+    return errorResponse('Offer not found', 404);
+  }
+
+  await env.DB.prepare(`
+    UPDATE coupons
+    SET is_active = 0
+    WHERE id = ?
+  `).bind(id).run();
+
+  return jsonResponse({
+    success: true,
+    removed: true,
+  });
+}
+
+function appendBulkNumericUpdate(
+  sets,
+  values,
+  column,
+  spec,
+  options = {}
+) {
+  if (!spec || typeof spec !== 'object') return;
+
+  const mode = safeText(spec.mode || 'set').trim();
+  const allowClear = options.allowClear === true;
+  const integer = options.integer === true;
+
+  if (mode === 'clear') {
+    if (!allowClear) {
+      throw new Error(`${column} cannot be cleared`);
+    }
+
+    sets.push(`${column} = NULL`);
+    return;
+  }
+
+  const value = Number(spec.value);
+
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(
+      `${column} requires a non-negative value`
+    );
+  }
+
+  const castStart = integer ? 'CAST(' : '';
+  const castEnd = integer ? ' AS INTEGER)' : '';
+
+  switch (mode) {
+    case 'set':
+      sets.push(
+        `${column} = ${castStart}MAX(0, ?)${castEnd}`
+      );
+      values.push(value);
+      break;
+
+    case 'add':
+    case 'increase_amount':
+      sets.push(
+        `${column} = ${castStart}MAX(0, COALESCE(${column}, 0) + ?)${castEnd}`
+      );
+      values.push(value);
+      break;
+
+    case 'subtract':
+    case 'decrease_amount':
+      sets.push(
+        `${column} = ${castStart}MAX(0, COALESCE(${column}, 0) - ?)${castEnd}`
+      );
+      values.push(value);
+      break;
+
+    case 'increase_percent':
+      sets.push(
+        `${column} = ROUND(MAX(0, COALESCE(${column}, 0) * (1 + ? / 100.0)), 2)`
+      );
+      values.push(value);
+      break;
+
+    case 'decrease_percent':
+      if (value > 100) {
+        throw new Error(
+          `${column} percentage cannot exceed 100`
+        );
+      }
+
+      sets.push(
+        `${column} = ROUND(MAX(0, COALESCE(${column}, 0) * (1 - ? / 100.0)), 2)`
+      );
+      values.push(value);
+      break;
+
+    default:
+      throw new Error(
+        `Unsupported ${column} operation`
+      );
+  }
+}
+
+async function handleBulkUpdateProducts(
+  request,
+  env
+) {
+  const body = await request.json().catch(() => ({}));
+
+  const skus = Array.from(
+    new Set(
+      Array.isArray(body.skus)
+        ? body.skus
+            .map((sku) => safeText(sku).trim())
+            .filter(Boolean)
+        : []
+    )
+  );
+
+  const changes =
+    body.changes &&
+    typeof body.changes === 'object'
+      ? body.changes
+      : {};
+
+  if (skus.length === 0) {
+    return errorResponse('Select at least one product');
+  }
+
+  if (skus.length > 500) {
+    return errorResponse(
+      'Maximum 500 products per bulk update'
+    );
+  }
+
+  const sets = [];
+  const values = [];
+
+  try {
+    appendBulkNumericUpdate(
+      sets,
+      values,
+      'price',
+      changes.price
+    );
+
+    appendBulkNumericUpdate(
+      sets,
+      values,
+      'compare_price',
+      changes.compare_price,
+      { allowClear: true }
+    );
+
+    appendBulkNumericUpdate(
+      sets,
+      values,
+      'stock',
+      changes.stock,
+      { integer: true }
+    );
+
+const textFields = [
+  'category',
+  'subcategory',
+  'material',
+  'finish',
+];
+
+    for (const field of textFields) {
+      if (
+        Object.prototype.hasOwnProperty.call(
+          changes,
+          field
+        )
+      ) {
+        sets.push(`${field} = ?`);
+        values.push(safeText(changes[field]).trim());
+      }
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        changes,
+        'tags'
+      )
+    ) {
+      const tags = Array.isArray(changes.tags)
+        ? changes.tags
+            .map((tag) => safeText(tag).trim())
+            .filter(Boolean)
+        : [];
+
+      sets.push('tags = ?');
+      values.push(JSON.stringify(tags));
+    }
+
+    for (const field of [
+      'is_active',
+      'is_featured',
+    ]) {
+      if (
+        Object.prototype.hasOwnProperty.call(
+          changes,
+          field
+        )
+      ) {
+        sets.push(`${field} = ?`);
+        values.push(
+          Number(changes[field]) === 1 ||
+          changes[field] === true
+            ? 1
+            : 0
+        );
+      }
+    }
+  } catch (error) {
+    return errorResponse(error.message, 400);
+  }
+
+  if (sets.length === 0) {
+    return errorResponse('No valid bulk changes supplied');
+  }
+
+  sets.push(`updated_at = datetime('now')`);
+
+  const placeholders = skus.map(() => '?').join(',');
+
+  const updateStatement = env.DB.prepare(`
+    UPDATE products
+    SET ${sets.join(', ')}
+    WHERE sku IN (${placeholders})
+  `).bind(...values, ...skus);
+
+  const normalizeMrpStatement = env.DB.prepare(`
+    UPDATE products
+    SET
+      compare_price = price,
+      updated_at = datetime('now')
+    WHERE sku IN (${placeholders})
+      AND compare_price IS NOT NULL
+      AND compare_price > 0
+      AND compare_price < price
+  `).bind(...skus);
+
+  const batchResults = await env.DB.batch([
+    updateStatement,
+    normalizeMrpStatement,
+  ]);
+
+  const updated = Number(
+    batchResults?.[0]?.meta?.changes || 0
+  );
+
+  try {
+    await backfillProductsToGoogleSheets(env);
+  } catch (error) {
+    console.error(
+      'Google Sheets bulk product sync error:',
+      error
+    );
+
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'product',
+      entity_id: `bulk:${skus.length}`,
+      action: 'bulk_product_update',
+      error_message: error.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
+
+  const { results } = await env.DB.prepare(`
+    SELECT *
+    FROM products
+    WHERE sku IN (${placeholders})
+    ORDER BY name ASC
+  `).bind(...skus).all();
+
+  return jsonResponse({
+    success: true,
+    requested: skus.length,
+    updated,
+    products: results || [],
+  });
+}
+
 async function handleUpdateProduct(sku, request, env) {
   const body = await request.json();
   const fields = [];
   const values = [];
 
-  const allowed = [
-    'name',
-    'category',
-    'price',
-    'compare_price',
-    'description',
-    'stock',
-    'image_url',
-    'images',
-    'is_active',
-    'is_featured',
-    'tags',
-    'website_link',
-    'material'
-  ];
+const allowed = [
+  'name',
+  'description',
+  'price',
+  'compare_price',
+  'cost_price',
+  'category',
+  'subcategory',
+  'stock',
+  'track_inventory',
+  'image_url',
+  'images',
+  'video_url',
+  'has_variants',
+  'variants',
+  'wa_product_id',
+  'is_active',
+  'is_featured',
+  'tags',
+  'website_link',
+  'material',
+  'finish'
+];
 
   for (const key of allowed) {
     if (body[key] !== undefined) {
       fields.push(`${key} = ?`);
 
-      if (key === 'tags' || key === 'images') {
+      if (
+  key === 'tags' ||
+  key === 'images' ||
+  key === 'variants'
+) {
         values.push(JSON.stringify(body[key] || []));
       } else {
         values.push(body[key]);
@@ -7151,20 +10645,21 @@ async function handleCreateProduct(request, env) {
     body.is_featured === undefined ? 0 : safeNumber(body.is_featured),
   ).run();
 
-  // Optional extended columns if present in DB
-  try {
-    await env.DB.prepare(`
-      UPDATE products SET
-        website_link = ?,
-        material = ?,
-        updated_at = datetime('now')
-      WHERE sku = ?
-    `).bind(
-      safeText(body.website_link),
-      safeText(body.material),
-      sku
-    ).run();
-  } catch (_) {}
+// Extended product columns verified in remote D1.
+await env.DB.prepare(`
+  UPDATE products
+  SET
+    website_link = ?,
+    material = ?,
+    finish = ?,
+    updated_at = datetime('now')
+  WHERE sku = ?
+`).bind(
+  safeText(body.website_link),
+  safeText(body.material),
+  safeText(body.finish),
+  sku
+).run();
 
   try {
     await syncProductToGoogleSheetsSafe(env, sku);
@@ -7677,7 +11172,7 @@ class AutoResponder {
       durability: [
         { shortcut: 'faq_last',        title: 'How long will it last?',      message: '⏳ *Durability*\n\nWith proper care, KAAPAV jewellery lasts *years* based on wear & tear!\n\n✅ Anti-tarnish coating on every piece\n✅ Keep away from water, sweat, perfume\n✅ Store in the pouch provided\n\n💎 Thousands of happy customers wear it daily!' },
         { shortcut: 'faq_antitarnish', title: 'Is it anti-tarnish?',         message: '✨ *Anti-Tarnish Jewellery*\n\nYes! 100% anti-tarnish coated! 💛\n\n✅ Every KAAPAV piece has a special anti-tarnish protective layer\n✅ Will NOT turn black or green with basic care\n✅ Stays shiny & beautiful for years\n\n💡 *Simple care rules:*\n• Remove before shower/swim\n• Apply perfume BEFORE wearing\n• Wipe dry with soft cloth after use\n• Store in pouch when not wearing\n\n💎 Proper care = long lasting beauty!' },
-        { shortcut: 'faq_realgold',    title: 'Is it real gold?',            message: '💛 *About Our Jewellery*\n\nKAAPAV sells *premium artificial fashion jewellery* — not real gold.\n\n✅ High-quality brass/copper alloy base\n✅ Gold-plated with anti-tarnish coating\n✅ Looks exactly like real gold jewellery\n✅ Fraction of the price — starting ₹249/-\n\n💎 *Why choose KAAPAV?*\n• Same look as real gold\n• Safe to wear daily\n• No worry of theft or loss\n• Always on-trend designs\n\n👑 Simple Luxury — Crafted for You!' },
+        { shortcut: 'faq_realgold',    title: 'Is it real gold?',            message: '💛 *About Our Jewellery*\n\nKAAPAV sells *premium artificial fashion jewellery* — not real gold.\n\n✅ High-quality brass/copper alloy base\n✅ Gold-plated with anti-tarnish coating\n✅ Looks exactly like real gold jewellery\n✅ Fraction of the price — starting ₹299/-\n\n💎 *Why choose KAAPAV?*\n• Same look as real gold\n• Safe to wear daily\n• No worry of theft or loss\n• Always on-trend designs\n\n👑 Simple Luxury — Crafted for You!' },
         { shortcut: 'faq_tarnish',     title: 'Will it turn black/green?',   message: '🟢 *Tarnishing*\n\nWith basic care — *no, it will NOT tarnish*!\n\n✅ 100% anti-tarnish coating applied\n✅ Avoid water, sweat, perfume directly on jewellery\n✅ Wipe dry after wear\n\n💡 If any tarnish occurs → gently wipe with dry soft cloth.\n\n💎 With proper care your jewellery stays shiny for years!' },
         { shortcut: 'faq_daily',       title: 'Can I wear it daily?',        message: '✨ *Daily Wear*\n\nYes! Designed for everyday wear.\n\n✅ Remove before shower/swim\n✅ Apply perfume BEFORE wearing\n✅ Wipe dry after sweating\n\n💎 Proper care = long lasting beauty!' },
         { shortcut: 'faq_plating',     title: 'How long does plating last?', message: '💛 *Plating Durability*\n\n6 months to 2+ years depending on care.\n\n⚡ Avoid chemicals, water, sweat\n⚡ Store in pouch when not wearing\n⚡ Don\'t rub against hard surfaces\n\n✅ Our plating is thick & premium quality.' },
@@ -7691,8 +11186,8 @@ class AutoResponder {
         { shortcut: 'faq_piercing',        title: 'Do I need pierced ears?',  message: '👂 *Pierced Ears*\n\nAll earrings require *pierced ears*.\n\nWe offer:\n✅ Push-back studs\n' },
       ],
       pricing: [
-        { shortcut: 'faq_price',         title: 'What are the prices?',    message: '💰 *Our Prices*\n\n💍 *Earrings & Rings* — ₹249/-\n📿 *Necklace & Bracelet* — ₹499/-\n✨ *Pendant Sets* — ₹699/-\n\n🔥 Already *50% OFF* — MRP crossed out!\n🚚 FREE shipping above ₹498/-\n\n👉 Website — browse & checkout:\n' + this.env.WEBSITE_URL + '\n\n👉 Catalogue — browse & checkout:\n' + this.env.CATALOG_URL},
-        { shortcut: 'faq_discount',      title: 'Any discount available?', message: '🎉 *Offers*\n\n✅ Already *50% OFF* on all products!\n✅ No extra coupon needed\n\n🚚 FREE delivery on orders above ₹498/-\n\n⚡ Prices are *fixed* — already lowest possible.\nWe don\'t negotiate as every piece is handcrafted.\n\n👉 Website — browse & checkout:\n' + this.env.WEBSITE_URL + '\n\n👉 Catalogue — browse & checkout:\n' + this.env.CATALOG_URL},
+        { shortcut: 'faq_price',         title: 'What are the prices?',    message: '💰 *Our Prices*\n\n💍 *Earrings & Rings* — ₹299/-\n📿 *Necklace & Bracelet* — ₹549/-\n✨ *Pendant Sets* — ₹799/-\n\n🔥 Already Upto *50% OFF* — MRP crossed out!\n🚚 FREE shipping above ₹498/-\n\n👉 Website — browse & checkout:\n' + this.env.WEBSITE_URL + '\n\n👉 Catalogue — browse & checkout:\n' + this.env.CATALOG_URL},
+        { shortcut: 'faq_discount',      title: 'Any discount available?', message: '🎉 *Offers*\n\n✅ Already Upto *50% OFF* on all products!\n✅ No extra coupon needed\n\n🚚 FREE delivery on orders above ₹498/-\n\n⚡ Prices are *fixed* — already lowest possible.\nWe don\'t negotiate as every piece is handcrafted.\n\n👉 Website — browse & checkout:\n' + this.env.WEBSITE_URL + '\n\n👉 Catalogue — browse & checkout:\n' + this.env.CATALOG_URL},
         { shortcut: 'faq_shipping_cost', title: 'Is delivery free?',        message: '🚚 *Shipping Cost*\n\n✅ *FREE* on orders above ₹498/-\n💸 ₹60/- shipping on orders below ₹498/-\n\n💡 Pro tip: Order 2 items to get free shipping!\n\nDelivery in *2–5 working days* via Shiprocket.' },
         { shortcut: 'faq_combo',         title: 'Any combo deals?',         message: '🎁 *Combo Deals*\n\nYes! Check our website for current combo sets:\n\n✨ Pendant & Earring sets\n✨ Necklace & Earring sets\n\n👉 Website — browse & checkout:\n' + this.env.WEBSITE_URL + '\n\n👉 Catalogue — browse & checkout:\n' + this.env.CATALOG_URL},
         { shortcut: 'faq_minimum',       title: 'Any minimum order?',       message: '🛒 *Minimum Order*\n\nNo minimum order! Order even *1 piece*.\n\n✅ Single pieces available\n✅ Sets available\n✅ Multiple pieces — no limit!\n\n💡 Order 2+ items → FREE shipping automatically!' },
@@ -7733,7 +11228,7 @@ class AutoResponder {
     '✨ Contemporary everyday designs\n' +
     '💛 Premium artificial jewellery\n' +
     '🛡️ Anti-tarnish coated pieces\n' +
-    '💰 Starting from ₹249/- only\n' +
+    '💰 Starting from ₹299/- only\n' +
     '🚚 Free shipping above ₹498/-\n' +
     '📦 Fast 2–4 day delivery\n\n' +
     'Luxury should feel beautiful, easy and wearable — every single day. 🤍'
@@ -7811,7 +11306,19 @@ async getCategoryUrl(phone, category) {
 }
 
   // ── ENTRY POINT ────────────────────────────────────────────────
-  async process({ phone, name, text, messageType, buttonId, messageId }) {
+async process({ phone, name, text, messageType, buttonId, messageId }) {
+
+    if (
+      String(text || '').includes(
+        'Vendor/System WhatsApp Message Received'
+      )
+    ) {
+      return {
+        outcome: 'skipped',
+        reason: 'vendor_system_message',
+      };
+    }
+
     // Global dedup — never process same message twice
     const dedupeKey = `dedup:${messageId}`;
     const already = await this.env.KV.get(dedupeKey);
@@ -8197,9 +11704,9 @@ What would you like to explore? 👇`,
 
 👑 Most loved by KAAPAV customers
 
-💍 Earrings & Rings → ₹249/-
-📿 Necklace & Bracelet → ₹499/-
-✨ Sets → ₹699/-
+💍 Earrings & Rings → ₹299/-
+📿 Necklace & Bracelet → ₹549/-
+✨ Sets → ₹799/-
 🚚 FREE shipping above ₹498/-
 
 Explore our favourites 👇`,
@@ -8339,7 +11846,7 @@ case 'CAT_BRACELET': {
 💎 Our Bracelet Collection
 
 ✨ Anti-tarnish artificial gold
-💰 Starting ₹499/- only
+💰 Starting ₹549/- only
 🚚 Free shipping above ₹498/-
 
 💬 Message us to order!`,
@@ -8365,7 +11872,7 @@ case 'CAT_NECKLACE': {
 💎 Our Necklace Collection
 
 ✨ Elegant & timeless designs
-💰 Starting ₹499/- only
+💰 Starting ₹549/- only
 🚚 Free shipping above ₹498/-
 
 💬 Message us to order!`,
@@ -8391,7 +11898,7 @@ case 'CAT_EARRINGS': {
 💎 Our Earring Collection
 
 ✨ Lightweight & comfortable
-💰 Starting ₹249/- only
+💰 Starting ₹299/- only
 🚚 Free shipping above ₹498/-
 
 💬 Message us to order!`,
@@ -8417,7 +11924,7 @@ case 'CAT_RINGS': {
 💎 Our Ring Collection
 
 ✨ Free size & adjustable
-💰 Starting ₹249/- only
+💰 Starting ₹299/- only
 🚚 Free shipping above ₹498/-
 
 💬 Message us to order!`,
@@ -8443,7 +11950,7 @@ case 'CAT_PENDANT': {
 💎 Our Pendant Collection
 
 ✨ Stunning designs
-💰 Starting ₹499/- only
+💰 Starting ₹549/- only
 🚚 Free shipping above ₹498/-
 
 💬 Message us to order!`,
@@ -8469,7 +11976,7 @@ case 'CAT_PENDANT_SETS': {
 💎 Our Jewellery Sets
 
 ✨ Matching pendant + earring sets
-💰 Starting ₹699/- only
+💰 Starting ₹799/- only
 🚚 Free shipping above ₹498/-
 
 💬 Message us to order!`,
@@ -8488,7 +11995,43 @@ case 'BIZ_ENQUIRY': {
   const customerRow = await env.DB.prepare(
     `SELECT name FROM customers WHERE phone = ? LIMIT 1`
   ).bind(phone).first();
-  await clearConvState(phone, env);
+
+  await clearConvState(
+    phone,
+    env
+  );
+
+  const startedAt =
+    new Date()
+      .toLocaleString(
+        'sv-SE',
+        {
+          timeZone:
+            'Asia/Kolkata',
+        }
+      )
+      .replace(',', '');
+
+  await appendBusinessEnquiryToSheets(
+    env,
+    {
+      created_at: startedAt,
+      phone,
+      name:
+        customerRow?.name ||
+        '',
+      enquiry_type: '',
+      profession: '',
+      brand_name: '',
+      insta_handle: '',
+      insta_url: '',
+      raw_message:
+        input || '',
+      status: 'started',
+      notes: '',
+      collab_type: '',
+    }
+  );
 
 await setConvState(
   phone,
@@ -8507,7 +12050,7 @@ await setConvState(
 
 Welcome! Let's get your details.
 
-*Step 1 of 5*
+*Step 1 of 6*
 What best describes you? 👇`,
     '📋 Select Your Role',
     [{
@@ -8972,11 +12515,11 @@ if (faq?.shortcut === 'faq_price') {
   const priceMessage =
 `💰 *Our Prices*
 
-💍 *Earrings & Rings* — ₹249/-
-📿 *Necklace & Bracelet* — ₹499/-
-✨ *Pendant Sets* — ₹699/-
+💍 *Earrings & Rings* — ₹299/-
+📿 *Necklace & Bracelet* — ₹549/-
+✨ *Pendant Sets* — ₹799/-
 
-🔥 Already *50% OFF* — MRP crossed out!
+🔥 Already Upto *50% OFF* — MRP crossed out!
 🚚 FREE shipping above ₹498/-
 
 🌐 *Website*
@@ -9083,7 +12626,7 @@ if (faq?.shortcut === 'faq_discount') {
   const discountMessage =
 `🎉 *Offers*
 
-✅ Already *50% OFF* on all products!
+✅ Already Upto *50% OFF* on all products!
 ✅ No extra coupon needed
 
 🚚 FREE delivery on orders above ₹498/-
@@ -9269,7 +12812,7 @@ Tap below to browse on Catalogue 👇`;
     'bracelet|bangle|kada|wrist|வளையல்|గాజులు|ಬಳೆ|വള': 'faq_bracelet_size',
     'necklace|length|chain|haar|மாலை|నెక్లెస్|ಹಾರ|മാല': 'faq_necklace_length',
     'earring|heavy|weight|ear|jhumka|bali|காதணி|చెవిపోగు|ಕಿವಿಯೋಲೆ|കമ്മൽ': 'faq_earring_weight',
-    'price|cost|rate|pp|price?|kitna|how much|kitne ka|paisa|amount|sasta|mehnga|affordable|₹|rupee|விலை|ధర|ಬೆಲೆ|വില|दाम|कीमत': 'faq_price',
+    'price|cost|rate|pp|Pp|PP|price?|kitna|how much|kitne ka|paisa|amount|sasta|mehnga|affordable|₹|rupee|விலை|ధర|ಬೆಲೆ|വില|दाम|कीमत': 'faq_price',
     'discount|discounts|offer|offers|sale|off|coupon|promo|chut|छूट|தள்ளுபடி|డిస్కౌంట్|ರಿಯಾಯಿತಿ|കിഴിവ്': 'faq_discount',
     'shipping|delivery charge|free ship|free delivery|डिलीवरी चार्ज|ஷிப்பிங்|డెలివరీ చార్జ్|ಡೆಲಿವರಿ ಶುಲ್ಕ|ഡെലിവറി ചാർജ്': 'faq_shipping_cost',
     'cod|cash on delivery|cash|pay on delivery|कैश ऑन|கேஷ் ஆன்|క్యాష్ ఆన్|ಕ್ಯಾಶ್ ಆನ್|ക്യാഷ് ഓൺ': 'faq_cod',
@@ -9375,21 +12918,130 @@ What best describes you? 👇`,
   return;
 }
 
-      data.enquiry_type = selected.type;
-      data.profession   = selected.profession;
+      data.enquiry_type =
+        selected.type;
 
-      await setConvState(phone, 'biz_profession', data, env);
-      await sendWhatsAppText(env, phone,
+      data.profession =
+        selected.profession;
 
-        `✅ Got it!\n\n` +
-        `*Step 2 of 5*\n\n` +
-        `What is your exact profession or job title?\n\n` +
-        `_Examples: Fashion Influencer, Digital Marketer, Freelance Web Developer, Bulk Reseller..._`
+      await setConvState(
+        phone,
+        'biz_collab_type',
+        data,
+        env
       );
+
+      await sendWhatsAppButtons(
+        env,
+        phone,
+        `✅ Got it!\n\n` +
+        `*Step 2 of 6*\n\n` +
+        `What type of collaboration are you interested in?`,
+        [
+          {
+            id:
+              'biz_collab_barter',
+            title:
+              'Barter',
+          },
+          {
+            id:
+              'biz_collab_paid',
+            title:
+              'Paid',
+          },
+          {
+            id:
+              'biz_collab_trial',
+            title:
+              'Free Trial',
+          },
+        ]
+      );
+
       break;
     }
 
-    // ── STEP 2: Profession (free text) ──
+    // ── STEP 2: Collaboration type ──
+    case 'biz_collab_type': {
+      const collabTypeMap = {
+        'biz_collab_barter':
+          'barter',
+
+        'barter':
+          'barter',
+
+        'biz_collab_paid':
+          'paid',
+
+        'paid':
+          'paid',
+
+        'biz_collab_trial':
+          'free_trial',
+
+        'free trial':
+          'free_trial',
+
+        'free_trial':
+          'free_trial',
+      };
+
+      const collabType =
+        collabTypeMap[lower];
+
+      if (!collabType) {
+        await sendWhatsAppButtons(
+          env,
+          phone,
+          'Please select one collaboration type:',
+          [
+            {
+              id:
+                'biz_collab_barter',
+              title:
+                'Barter',
+            },
+            {
+              id:
+                'biz_collab_paid',
+              title:
+                'Paid',
+            },
+            {
+              id:
+                'biz_collab_trial',
+              title:
+                'Free Trial',
+            },
+          ]
+        );
+
+        return;
+      }
+
+      data.collab_type =
+        collabType;
+
+      await setConvState(
+        phone,
+        'biz_profession',
+        data,
+        env
+      );
+
+      await sendWhatsAppText(
+        env,
+        phone,
+        `*Step 3 of 6*\n\n` +
+        `What is your exact profession or job title?\n\n` +
+        `_Examples: Fashion Influencer, Digital Marketer, Freelance Web Developer, Bulk Reseller..._`
+      );
+
+      break;
+    }
+
+    // ── STEP 3: Profession (free text) ──
     case 'biz_profession': {
       if (input.length < 3) {
         await sendWhatsAppText(env, phone, '😊 Please describe your profession briefly:');
@@ -9400,20 +13052,20 @@ What best describes you? 👇`,
 
       await setConvState(phone, 'biz_brand', data, env);
       await sendWhatsAppText(env, phone,
-        `*Step 3 of 5*\n\n` +
+        `*Step 4 of 6*\n\n` +
         `What is your *Brand / Company / Channel name*?\n\n` +
         `_Type "skip" if you don't have one_`
       );
       break;
     }
 
-    // ── STEP 3: Brand name ──
+    // ── STEP 4: Brand name ──
     case 'biz_brand': {
       data.brand_name = /^skip$/i.test(input.trim()) ? '' : input.trim().slice(0, 60);
 
       await setConvState(phone, 'biz_insta', data, env);
       await sendWhatsAppText(env, phone,
-        `*Step 4 of 5*\n\n` +
+        `*Step 5 of 6*\n\n` +
         `Share your *Instagram / YouTube / Website link or handle*:\n\n` +
         `_Examples:_\n` +
         `• @myhandle\n` +
@@ -9425,7 +13077,7 @@ What best describes you? 👇`,
       break;
     }
 
-    // ── STEP 4: Social / Website link ──
+    // ── STEP 5: Social / Website link ──
     case 'biz_insta': {
       let instaHandle = '';
       let instaUrl    = '';
@@ -9460,14 +13112,14 @@ What best describes you? 👇`,
 
       await setConvState(phone, 'biz_message', data, env);
       await sendWhatsAppText(env, phone,
-        `*Step 5 of 5*\n\n` +
+        `*Step 6 of 6*\n\n` +
         `Briefly describe *what you're looking for* or *how you'd like to collaborate* with KAAPAV:\n\n` +
         `_Keep it short — 1 to 3 sentences is perfect_ 😊`
       );
       break;
     }
 
-    // ── STEP 5: Message / Proposal ──
+    // ── STEP 6: Message / Proposal ──
     case 'biz_message': {
       if (input.length < 10) {
         await sendWhatsAppText(env, phone,
@@ -9486,6 +13138,7 @@ What best describes you? 👇`,
 ═══════════════════════════
 
 *Type:* ${data.enquiry_type}
+*Collaboration:* ${data.collab_type || '-'}
 *Profession:* ${data.profession || '-'}
 *Brand / Channel:* ${data.brand_name || '-'}
 *Social / Website:* ${data.insta_handle || '-'}
@@ -9516,18 +13169,37 @@ Confirm & submit? 👇`,
         try {
           await env.DB.prepare(`
             INSERT INTO business_enquiries
-              (phone, name, enquiry_type, profession, brand_name,
-               insta_handle, insta_url, raw_message, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', datetime('now'), datetime('now'))
+              (
+                phone,
+                name,
+                enquiry_type,
+                profession,
+                brand_name,
+                insta_handle,
+                insta_url,
+                raw_message,
+                status,
+                created_at,
+                updated_at,
+                collab_type
+              )
+            VALUES (
+              ?, ?, ?, ?, ?, ?, ?, ?,
+              'new',
+              datetime('now'),
+              datetime('now'),
+              ?
+            )
           `).bind(
             phone,
             data.name || '',
             data.enquiry_type || 'other',
-            data.profession   || '',
-            data.brand_name   || '',
+            data.profession || '',
+            data.brand_name || '',
             data.insta_handle || '',
-            data.insta_url    || '',
-            data.raw_message  || ''
+            data.insta_url || '',
+            data.raw_message || '',
+            data.collab_type || ''
           ).run();
         } catch (e) {
           console.error('BIZ D1 save error:', e);
@@ -9546,12 +13218,16 @@ Confirm & submit? 👇`,
           raw_message:  data.raw_message  || '',
           status:       'new',
           notes:        '',
+          collab_type:
+            data.collab_type ||
+            '',
         });
 
         // Owner WA
         await sendWhatsAppText(env, env.OWNER_PHONE,
           `📋 *New Business Enquiry*\n\n` +
           `Type: *${data.enquiry_type}*\n` +
+          `Collaboration: *${data.collab_type || '-'}*\n` +
           `Profession: ${data.profession || '-'}\n` +
           `From: ${data.name || 'Unknown'} (${phone})\n` +
           `Brand: ${data.brand_name || '-'}\n` +
@@ -9857,6 +13533,25 @@ async function handleCustomerSendOtp(request, env) {
 
   await sendCustomerOtpEmail(env, email, otp);
 
+  try {
+    await saveOwnerInboxAlert(env, null, {
+      type: 'otp',
+      priority: 'normal',
+      title: '🔑 Customer Login OTP Generated',
+      body: `Email: ${email}\nOTP Code: ${otp}\nValid for: 10 minutes\nTime: ${formatISTDateTime()}`,
+      phone: '',
+      customerName: email,
+      source: 'customer_portal_auth',
+      actionType: 'none',
+      actionLabel: '',
+      meta: { email, otp, expiresAt },
+      dedupeKey: `otp_sent:${email}:${Date.now()}`,
+      sendPush: false,
+    });
+  } catch (e) {
+    console.error('OTP_OWNER_ALERT_ERROR', e);
+  }
+
   return jsonResponse({
     success: true,
     message: 'OTP sent',
@@ -9998,60 +13693,841 @@ async function handleCustomerMe(request, env) {
   });
 }
 
-async function handleCustomerOrders(request, env) {
-  const auth = await getCustomerAuth(request, env);
-  if (!auth) return errorResponse('Unauthorized', 401);
+async function getCustomerOrderContext(
+  request,
+  env,
+  orderId
+) {
+  const auth =
+    await getCustomerAuth(
+      request,
+      env
+    );
 
-  const account = await env.DB.prepare(`
-    SELECT email, phone, customer_id
-    FROM customer_accounts
-    WHERE email = ?
-    LIMIT 1
-  `).bind(auth.email).first();
+  if (!auth) {
+    return {
+      authenticated: false,
+      order: null,
+      account: null,
+    };
+  }
 
-  const email = normalizeCustomerEmail(account?.email || auth.email);
-  const phone91 = normalizePhone91(account?.phone);
-  const phone10 = phone91 ? phone91.slice(-10) : '';
+  const account =
+    await env.DB.prepare(`
+      SELECT
+        email,
+        phone,
+        customer_id
+      FROM customer_accounts
+      WHERE email = ?
+      LIMIT 1
+    `)
+      .bind(auth.email)
+      .first();
 
-  const result = await env.DB.prepare(`
-    SELECT
-      order_id,
-      email,
-      phone,
-      customer_name,
-      items,
-      item_count,
-      subtotal,
-      discount,
-      discount_code,
-      shipping_cost,
-      total,
-      status,
-      payment_status,
-      payment_method,
-      payment_id,
-      payment_link,
-      tracking_id,
-      tracking_url,
-      courier,
-      awb_number,
-      created_at,
-      updated_at
-    FROM orders
-    WHERE lower(COALESCE(email, '')) = ?
-       OR REPLACE(COALESCE(phone, ''), '+', '') = ?
-       OR REPLACE(COALESCE(phone, ''), '+', '') = ?
-    ORDER BY datetime(created_at) DESC
-    LIMIT 100
-  `).bind(email, phone91, phone10).all();
+  const email =
+    normalizeCustomerEmail(
+      account?.email ||
+      auth.email
+    );
+
+  const phone91 =
+    normalizePhone91(
+      account?.phone
+    );
+
+const phone10 =
+  phone91
+    ? phone91.slice(-10)
+    : '';
+
+const phone91Lookup =
+  phone91 || null;
+
+const phone10Lookup =
+  phone10 || null;
+
+const cleanOrderId =
+    cleanReturnText(
+      orderId,
+      100
+    );
+
+  const order =
+    await env.DB.prepare(`
+      SELECT *
+      FROM orders
+      WHERE order_id = ?
+        AND (
+          lower(
+            COALESCE(email, '')
+          ) = ?
+
+          OR REPLACE(
+            REPLACE(
+              REPLACE(
+                COALESCE(phone, ''),
+                '+',
+                ''
+              ),
+              ' ',
+              ''
+            ),
+            '-',
+            ''
+          ) = ?
+
+          OR REPLACE(
+            REPLACE(
+              REPLACE(
+                COALESCE(phone, ''),
+                '+',
+                ''
+              ),
+              ' ',
+              ''
+            ),
+            '-',
+            ''
+          ) = ?
+        )
+      LIMIT 1
+    `)
+.bind(
+  cleanOrderId,
+  email,
+  phone91Lookup,
+  phone10Lookup
+)
+      .first();
+
+  return {
+    authenticated: true,
+    auth,
+    account,
+    email,
+    phone91,
+    phone10,
+    order: order || null,
+  };
+}
+
+function packCustomerReturnRequest(
+  returnRequest,
+  items = []
+) {
+  if (!returnRequest) {
+    return null;
+  }
+
+  return {
+    request_id:
+      returnRequest.request_id,
+
+    order_id:
+      returnRequest.order_id,
+
+    request_type:
+      returnRequest.request_type,
+
+    request_scope:
+      returnRequest.request_scope,
+
+    reason_code:
+      returnRequest.reason_code,
+
+    reason_text:
+      returnRequest.reason_text,
+
+    customer_note:
+      returnRequest.customer_note,
+
+    status:
+      returnRequest.status,
+
+    reverse_shipping_fee:
+      Number(
+        returnRequest
+          .reverse_shipping_fee ||
+        0
+      ),
+
+    refund_amount:
+      Number(
+        returnRequest
+          .refund_amount ||
+        0
+      ),
+
+    price_difference:
+      Number(
+        returnRequest
+          .price_difference ||
+        0
+      ),
+
+    refund_status:
+      returnRequest.refund_status ||
+      '',
+
+    requested_at:
+      returnRequest.requested_at,
+
+    approved_at:
+      returnRequest.approved_at,
+
+    rejected_at:
+      returnRequest.rejected_at,
+
+    pickup_scheduled_at:
+      returnRequest
+        .pickup_scheduled_at,
+
+    picked_up_at:
+      returnRequest.picked_up_at,
+
+    received_at:
+      returnRequest.received_at,
+
+    qc_completed_at:
+      returnRequest.qc_completed_at,
+
+    refund_processed_at:
+      returnRequest
+        .refund_processed_at,
+
+    refund_failed_at:
+      returnRequest.refund_failed_at,
+
+    completed_at:
+      returnRequest.completed_at,
+
+    return_courier:
+      returnRequest.return_courier || '',
+
+    return_awb_number:
+      returnRequest.return_awb_number || '',
+
+    return_shipment_id:
+      returnRequest.return_shipment_id || '',
+
+    return_tracking_url:
+      returnRequest.return_tracking_url || '',
+
+    pickup_scheduled_date:
+      returnRequest.pickup_scheduled_date || null,
+
+    refund_id:
+      returnRequest.refund_id || '',
+
+    refund_acquirer_reference:
+      returnRequest.refund_acquirer_reference || '',
+
+    refund_speed_processed:
+      returnRequest.refund_speed_processed || '',
+
+    created_at:
+      returnRequest.created_at,
+
+    updated_at:
+      returnRequest.updated_at,
+
+    items,
+  };
+}
+
+async function handleCustomerOrderReturnRequests(
+  request,
+  env,
+  orderId
+) {
+  const context =
+    await getCustomerOrderContext(
+      request,
+      env,
+      orderId
+    );
+
+  if (!context.authenticated) {
+    return errorResponse(
+      'Unauthorized',
+      401
+    );
+  }
+
+  if (!context.order) {
+    return errorResponse(
+      'Order not found',
+      404
+    );
+  }
+
+  if (
+    request.method === 'POST'
+  ) {
+    const body =
+      await request
+        .json()
+        .catch(() => ({}));
+
+    const safeItems =
+      Array.isArray(body.items)
+        ? body.items
+            .slice(0, 50)
+            .map(
+              (item) => ({
+                line_index:
+                  item?.line_index,
+
+                sku:
+                  item?.sku,
+
+                quantity:
+                  item?.quantity ??
+                  item?.qty,
+
+                replacement_sku:
+                  item
+                    ?.replacement_sku,
+
+                replacement_name:
+                  item
+                    ?.replacement_name,
+
+                condition_note:
+                  item
+                    ?.condition_note,
+
+                evidence_urls:
+                  item
+                    ?.evidence_urls,
+              })
+            )
+        : [];
+
+    const safeBody = {
+      request_type:
+        body.request_type,
+
+      request_scope:
+        body.request_scope,
+
+      reason_code:
+        body.reason_code,
+
+      reason_text:
+        body.reason_text,
+
+      customer_note:
+        body.customer_note,
+
+      evidence_urls:
+        body.evidence_urls,
+
+      items:
+        safeItems,
+
+      reverse_shipping_fee:
+        60,
+
+      owner_override:
+        false,
+    };
+
+    return handleCreateReturnRequest(
+      context.order.order_id,
+      request,
+      env,
+      {
+        body:
+          safeBody,
+
+        order:
+          context.order,
+
+        eventSource:
+          'customer',
+
+        allowOwnerOverride:
+          false,
+
+        fixedReverseShippingFee:
+          60,
+
+        notifyCustomer:
+          true,
+      }
+    );
+  }
+
+  const {
+    results: requests,
+  } =
+    await env.DB.prepare(`
+      SELECT
+        request_id,
+        order_id,
+        request_type,
+        request_scope,
+        reason_code,
+        reason_text,
+        customer_note,
+        status,
+        reverse_shipping_fee,
+        refund_amount,
+        price_difference,
+        refund_status,
+        return_courier,
+        return_awb_number,
+        return_shipment_id,
+        return_tracking_url,
+        pickup_scheduled_date,
+        refund_id,
+        refund_acquirer_reference,
+        refund_speed_processed,
+        requested_at,
+        approved_at,
+        rejected_at,
+        pickup_scheduled_at,
+        picked_up_at,
+        received_at,
+        qc_completed_at,
+        refund_processed_at,
+        refund_failed_at,
+        completed_at,
+        created_at,
+        updated_at
+      FROM return_requests
+      WHERE order_id = ?
+      ORDER BY id DESC
+    `)
+      .bind(
+        context.order.order_id
+      )
+      .all();
+
+  const {
+    results: itemRows,
+  } =
+    await env.DB.prepare(`
+      SELECT
+        request_id,
+        line_index,
+        sku,
+        product_name,
+        quantity,
+        unit_price,
+        replacement_sku,
+        replacement_name,
+        condition_note,
+        created_at,
+        updated_at
+      FROM return_request_items
+      WHERE order_id = ?
+      ORDER BY
+        request_id,
+        line_index
+    `)
+      .bind(
+        context.order.order_id
+      )
+      .all();
+
+  const itemsByRequest =
+    new Map();
+
+  for (
+    const item of itemRows || []
+  ) {
+    const current =
+      itemsByRequest.get(
+        item.request_id
+      ) || [];
+
+    current.push(item);
+
+    itemsByRequest.set(
+      item.request_id,
+      current
+    );
+  }
+
+  const packedRequests =
+    (requests || []).map(
+      (returnRequest) =>
+        packCustomerReturnRequest(
+          returnRequest,
+          itemsByRequest.get(
+            returnRequest.request_id
+          ) || []
+        )
+    );
+
+  const latestRequest =
+    packedRequests[0] || null;
+
+  const eligibility =
+    getPurchaseReturnEligibility(
+      context.order
+    );
+
+  const hasOpenRequest =
+    isOpenReturnRequestStatus(
+      latestRequest?.status
+    );
 
   return jsonResponse({
     success: true,
-    orders: result.results || [],
+
+    orderId:
+      context.order.order_id,
+
+    requests:
+      packedRequests,
+
+    total:
+      packedRequests.length,
+
+    latestRequest,
+
+    returnEligibility: {
+      eligible:
+        eligibility.eligible &&
+        !hasOpenRequest,
+
+      windowDays:
+        CUSTOMER_RETURN_WINDOW_DAYS,
+
+      expiresAt:
+        eligibility.expiresAt,
+
+      daysRemaining:
+        eligibility.daysRemaining,
+
+      reason:
+        hasOpenRequest
+          ? 'An active return or exchange request already exists'
+          : eligibility.reason,
+
+      code:
+        hasOpenRequest
+          ? 'active_request_exists'
+          : eligibility.code,
+    },
+  });
+}
+
+async function handleCustomerOrders(
+  request,
+  env
+) {
+  const auth =
+    await getCustomerAuth(
+      request,
+      env
+    );
+
+  if (!auth) {
+    return errorResponse(
+      'Unauthorized',
+      401
+    );
+  }
+
+  const account =
+    await env.DB.prepare(`
+      SELECT
+        email,
+        phone,
+        customer_id
+      FROM customer_accounts
+      WHERE email = ?
+      LIMIT 1
+    `)
+      .bind(auth.email)
+      .first();
+
+  const email =
+    normalizeCustomerEmail(
+      account?.email ||
+      auth.email
+    );
+
+  const phone91 =
+    normalizePhone91(
+      account?.phone
+    );
+
+const phone10 =
+  phone91
+    ? phone91.slice(-10)
+    : '';
+
+const phone91Lookup =
+  phone91 || null;
+
+const phone10Lookup =
+  phone10 || null;
+
+const result =
+    await env.DB.prepare(`
+      SELECT
+        order_id,
+        email,
+        phone,
+        customer_name,
+        items,
+        item_count,
+        subtotal,
+        discount,
+        discount_code,
+        shipping_cost,
+        total,
+        status,
+        payment_status,
+        payment_method,
+        payment_id,
+        payment_link,
+        shipping_name,
+        shipping_phone,
+        shipping_address,
+        shipping_city,
+        shipping_state,
+        shipping_pincode,
+        tracking_id,
+        tracking_url,
+        courier,
+        awb_number,
+        paid_at,
+        shipped_at,
+        delivered_at,
+        cancelled_at,
+        created_at,
+        updated_at
+      FROM orders
+      WHERE
+        lower(
+          COALESCE(email, '')
+        ) = ?
+
+        OR REPLACE(
+          REPLACE(
+            REPLACE(
+              COALESCE(phone, ''),
+              '+',
+              ''
+            ),
+            ' ',
+            ''
+          ),
+          '-',
+          ''
+        ) = ?
+
+        OR REPLACE(
+          REPLACE(
+            REPLACE(
+              COALESCE(phone, ''),
+              '+',
+              ''
+            ),
+            ' ',
+            ''
+          ),
+          '-',
+          ''
+        ) = ?
+
+      ORDER BY
+        datetime(created_at) DESC
+
+      LIMIT 100
+    `)
+.bind(
+  email,
+  phone91Lookup,
+  phone10Lookup
+)
+      .all();
+
+  const returnResult =
+    await env.DB.prepare(`
+      SELECT
+        rr.request_id,
+        rr.order_id,
+        rr.request_type,
+        rr.request_scope,
+        rr.reason_code,
+        rr.reason_text,
+        rr.customer_note,
+        rr.status,
+        rr.reverse_shipping_fee,
+        rr.refund_amount,
+        rr.price_difference,
+        rr.refund_status,
+        rr.return_courier,
+        rr.return_awb_number,
+        rr.return_shipment_id,
+        rr.return_tracking_url,
+        rr.pickup_scheduled_date,
+        rr.refund_id,
+        rr.refund_acquirer_reference,
+        rr.refund_speed_processed,
+        rr.requested_at,
+        rr.approved_at,
+        rr.rejected_at,
+        rr.pickup_scheduled_at,
+        rr.picked_up_at,
+        rr.received_at,
+        rr.qc_completed_at,
+        rr.refund_processed_at,
+        rr.refund_failed_at,
+        rr.completed_at,
+        rr.created_at,
+        rr.updated_at
+      FROM return_requests rr
+
+      INNER JOIN orders o
+        ON o.order_id =
+           rr.order_id
+
+      WHERE
+        lower(
+          COALESCE(o.email, '')
+        ) = ?
+
+        OR REPLACE(
+          REPLACE(
+            REPLACE(
+              COALESCE(o.phone, ''),
+              '+',
+              ''
+            ),
+            ' ',
+            ''
+          ),
+          '-',
+          ''
+        ) = ?
+
+        OR REPLACE(
+          REPLACE(
+            REPLACE(
+              COALESCE(o.phone, ''),
+              '+',
+              ''
+            ),
+            ' ',
+            ''
+          ),
+          '-',
+          ''
+        ) = ?
+
+      ORDER BY rr.id DESC
+    `)
+.bind(
+  email,
+  phone91Lookup,
+  phone10Lookup
+)
+      .all();
+
+  const latestReturnByOrder =
+    new Map();
+
+  for (
+    const returnRequest of
+    returnResult.results || []
+  ) {
+    if (
+      !latestReturnByOrder.has(
+        returnRequest.order_id
+      )
+    ) {
+      latestReturnByOrder.set(
+        returnRequest.order_id,
+        packCustomerReturnRequest(
+          returnRequest
+        )
+      );
+    }
+  }
+
+  const orders =
+    (result.results || []).map(
+      (order) => {
+        const latestReturn =
+          latestReturnByOrder.get(
+            order.order_id
+          ) || null;
+
+        const eligibility =
+          getPurchaseReturnEligibility(
+            order
+          );
+
+        const hasOpenRequest =
+          isOpenReturnRequestStatus(
+            latestReturn?.status
+          );
+
+        return {
+          ...order,
+
+          return_eligible:
+            eligibility.eligible &&
+            !hasOpenRequest,
+
+          return_window_days:
+            CUSTOMER_RETURN_WINDOW_DAYS,
+
+          return_expires_at:
+            eligibility.expiresAt,
+
+          return_days_remaining:
+            eligibility.daysRemaining,
+
+          return_ineligible_reason:
+            hasOpenRequest
+              ? 'An active return or exchange request already exists'
+              : eligibility.reason,
+
+          return_ineligible_code:
+            hasOpenRequest
+              ? 'active_request_exists'
+              : eligibility.code,
+
+          return_request:
+            latestReturn,
+        };
+      }
+    );
+
+  return jsonResponse({
+    success: true,
+
+    orders,
+
     identity: {
       email,
-      phone: phone91,
-      customerId: account?.customer_id || '',
+
+      phone:
+        phone91,
+
+      customerId:
+        account?.customer_id || '',
+    },
+
+    returnPolicy: {
+      windowDays:
+        CUSTOMER_RETURN_WINDOW_DAYS,
+
+      startsFrom:
+        'purchase_date',
+
+      reverseShippingFee:
+        60,
     },
   });
 }
@@ -10070,6 +14546,127 @@ async function handleCustomerLogout(request, env) {
   });
 }
 
+// ═══════════════════ AD ENGINE CROSS-ACCOUNT READ BRIDGE ═══════════════════
+
+function adEngineSyncDate(value, fallback) {
+  const text = String(value || '').trim();
+
+  return /^\d{4}-\d{2}-\d{2}$/.test(text)
+    ? text
+    : fallback;
+}
+
+function adEngineSyncLimit(value) {
+  const parsed = Math.trunc(Number(value || 3000));
+
+  if (!Number.isFinite(parsed)) {
+    return 3000;
+  }
+
+  return Math.min(10000, Math.max(50, parsed));
+}
+
+async function handleAdEngineLearningExport(request, env) {
+  const expectedSecret = String(
+    env.KAAPAV_EVENT_SECRET || ''
+  ).trim();
+
+  const suppliedSecret = String(
+    request.headers.get('X-Kaapav-Event-Secret') || ''
+  ).trim();
+
+  if (!expectedSecret || suppliedSecret !== expectedSecret) {
+    return errorResponse('Unauthorized', 401);
+  }
+
+  const url = new URL(request.url);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const since = adEngineSyncDate(
+    url.searchParams.get('since'),
+    '2026-06-12'
+  );
+
+  const until = adEngineSyncDate(
+    url.searchParams.get('until'),
+    today
+  );
+
+  const limit = adEngineSyncLimit(
+    url.searchParams.get('limit')
+  );
+
+  const catalogueRows = await env.DB.prepare(`
+    SELECT
+      ce.*,
+      c.customer_id,
+      COALESCE(c.name, '') AS customer_name
+    FROM catalogue_events ce
+    LEFT JOIN customers c ON (
+      c.phone = ce.phone
+      OR c.phone = CASE
+        WHEN ce.phone LIKE '91%' THEN substr(ce.phone, 3)
+        ELSE '91' || ce.phone
+      END
+    )
+    WHERE substr(ce.created_at, 1, 10) >= ?
+      AND substr(ce.created_at, 1, 10) <= ?
+    ORDER BY ce.created_at ASC
+    LIMIT ?
+  `)
+    .bind(since, until, limit)
+    .all();
+
+  const orderRows = await env.DB.prepare(`
+    SELECT
+      o.*,
+      c.customer_id
+    FROM orders o
+    LEFT JOIN customers c ON (
+      c.phone = o.phone
+      OR c.phone = CASE
+        WHEN o.phone LIKE '91%' THEN substr(o.phone, 3)
+        ELSE '91' || o.phone
+      END
+    )
+    WHERE substr(
+      COALESCE(o.paid_at, o.updated_at, o.created_at),
+      1,
+      10
+    ) >= ?
+      AND substr(
+        COALESCE(o.paid_at, o.updated_at, o.created_at),
+        1,
+        10
+      ) <= ?
+      AND lower(COALESCE(o.payment_status, '')) = 'paid'
+      AND lower(COALESCE(o.status, ''))
+        NOT IN ('cancelled', 'canceled')
+    ORDER BY COALESCE(
+      o.paid_at,
+      o.updated_at,
+      o.created_at
+    ) ASC
+    LIMIT ?
+  `)
+    .bind(since, until, limit)
+    .all();
+
+  return jsonResponse({
+    success: true,
+    data: {
+      since,
+      until,
+      limit,
+      catalogue_rows: catalogueRows.results || [],
+      order_rows: orderRows.results || [],
+      catalogue_count: catalogueRows.results?.length || 0,
+      paid_order_count: orderRows.results?.length || 0,
+      source: 'kaapav_app_d1_read_bridge',
+      generated_at: new Date().toISOString(),
+    },
+  });
+}
 
 // ═══════════════════ ROUTER ═══════════════════
 export default {
@@ -10078,6 +14675,12 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
+    if (
+  path === '/internal/ad-engine/learning-export' &&
+  method === 'GET'
+) {
+  return handleAdEngineLearningExport(request, env);
+}
 
 // ═══ TRACKING ROUTES — kaapav.com/CID and catalogue.kaapav.com/CID ═══
 
@@ -10268,7 +14871,7 @@ if (categoryMatch) {
 
     const ogDesc = isCatalogueHost
       ? 'Browse 250+ designs. Wishlist, cart & order directly.'
-      : 'Shop 250+ handcrafted designs. Starting ₹249/-. Free shipping above ₹498/-.';
+      : 'Shop 250+ handcrafted designs. Starting ₹299/-. Free shipping above ₹498/-.';
 
 
     return new Response(
@@ -11455,22 +16058,662 @@ await saveOwnerInboxAlert(env, ctx, {
   const rawBody = await request.text();
   const sig = request.headers.get('x-razorpay-signature');
 
-  // Verify HMAC signature
-  try {
-    const key = await crypto.subtle.importKey(
-      'raw', new TextEncoder().encode(env.RAZORPAY_KEY_SECRET),
-      { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+// Verify HMAC signature
+try {
+  const webhookSecret =
+    env.RAZORPAY_WEBHOOK_SECRET;
+    
+
+  if (!webhookSecret) {
+    return new Response(
+      'Webhook secret missing',
+      {
+        status: 500,
+      }
     );
+  }
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(
+      webhookSecret
+    ),
+    {
+      name: 'HMAC',
+      hash: 'SHA-256',
+    },
+    false,
+    ['sign']
+  );
     const expectedSig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody));
     const expectedHex = Array.from(new Uint8Array(expectedSig))
       .map(b => b.toString(16).padStart(2, '0')).join('');
     if (sig !== expectedHex) return new Response('Invalid signature', { status: 400 });
   } catch(e) { return new Response('Sig error', { status: 400 }); }
 
-  const event = JSON.parse(rawBody);
-  const eventType = event.event;
+const event = JSON.parse(rawBody);
+const eventType = event.event;
 
-  // ── payment_link.paid ─────────────────────────────────────────
+// ── return refund reconciliation ──────────────────────────────
+if ([
+  'refund.created',
+  'refund.processed',
+  'refund.failed',
+  'refund.speed_changed',
+].includes(eventType)) {
+  const refund =
+    event.payload?.refund?.entity || {};
+
+  const payment =
+    event.payload?.payment?.entity || {};
+
+  const refundId = cleanReturnText(
+    refund.id,
+    200
+  );
+
+  const paymentId = cleanReturnText(
+    refund.payment_id || payment.id,
+    200
+  );
+
+  const requestIdFromNotes =
+    cleanReturnText(
+      refund.notes?.request_id,
+      200
+    );
+
+  const orderIdFromNotes =
+    cleanReturnText(
+      refund.notes?.order_id,
+      200
+    );
+
+  const eventAttemptKey =
+    cleanReturnText(
+      refund.notes?.refund_attempt_key,
+      100
+    );
+
+  if (!refundId || !paymentId) {
+    console.error(
+      'RAZORPAY_REFUND_WEBHOOK_MISSING_IDS',
+      eventType,
+      refundId,
+      paymentId
+    );
+
+    return jsonResponse({
+      status: 'ok',
+      ignored: true,
+    });
+  }
+
+  const webhookEventId =
+    cleanReturnText(
+      request.headers.get(
+        'x-razorpay-event-id'
+      ),
+      200
+    ) ||
+    (
+      `rzp_${eventType}_${refundId}_` +
+      `${event.created_at || refund.created_at || 0}`
+    )
+      .replace(
+        /[^A-Za-z0-9_-]/g,
+        '_'
+      )
+      .slice(0, 200);
+
+  const previousEvent =
+    await env.DB.prepare(`
+      SELECT processing_status
+      FROM return_refund_events
+      WHERE event_id = ?
+      LIMIT 1
+    `)
+      .bind(webhookEventId)
+      .first();
+
+  if (
+    String(
+      previousEvent?.processing_status || ''
+    ).toLowerCase() === 'processed'
+  ) {
+    return jsonResponse({
+      status: 'ok',
+      duplicate: true,
+    });
+  }
+
+  const returnRequest =
+    await env.DB.prepare(`
+      SELECT
+        rr.*,
+        o.total AS order_total,
+        o.phone AS order_phone
+
+      FROM return_requests rr
+
+      JOIN orders o
+        ON o.order_id = rr.order_id
+
+      WHERE
+        (
+          ? != '' AND
+          rr.refund_id = ?
+        )
+        OR
+        (
+          ? != '' AND
+          rr.request_id = ?
+        )
+        OR
+        (
+          ? != '' AND
+          ? != '' AND
+          rr.order_id = ? AND
+          rr.payment_id = ? AND
+          rr.refund_status IN (
+            'processing',
+            'pending',
+            'created'
+          )
+        )
+
+      ORDER BY
+        CASE
+          WHEN rr.refund_id = ?
+          THEN 0
+
+          WHEN rr.request_id = ?
+          THEN 1
+
+          ELSE 2
+        END,
+        rr.updated_at DESC
+
+      LIMIT 1
+    `)
+      .bind(
+        refundId,
+        refundId,
+
+        requestIdFromNotes,
+        requestIdFromNotes,
+
+        orderIdFromNotes,
+        paymentId,
+        orderIdFromNotes,
+        paymentId,
+
+        refundId,
+        requestIdFromNotes
+      )
+      .first();
+
+  if (!returnRequest) {
+    console.error(
+      'RAZORPAY_REFUND_WEBHOOK_UNMATCHED',
+      webhookEventId,
+      refundId,
+      paymentId,
+      requestIdFromNotes,
+      orderIdFromNotes
+    );
+
+    return jsonResponse({
+      status: 'ok',
+      unmatched: true,
+    });
+  }
+
+  const requestId = String(
+    returnRequest.request_id
+  );
+
+  const orderId = String(
+    returnRequest.order_id
+  );
+
+  const rawRefundStatus = String(
+    refund.status || ''
+  ).toLowerCase();
+
+  const isFailed =
+    eventType === 'refund.failed' ||
+    rawRefundStatus === 'failed';
+
+  const isProcessed =
+    !isFailed &&
+    (
+      eventType === 'refund.processed' ||
+      rawRefundStatus === 'processed'
+    );
+
+  const currentRefundStatus = String(
+    returnRequest.refund_status || ''
+  ).toLowerCase();
+
+  const currentRefundId =
+    cleanReturnText(
+      returnRequest.refund_id,
+      200
+    );
+
+  const currentAttemptKey =
+    cleanReturnText(
+      returnRequest.refund_idempotency_key,
+      100
+    );
+
+  let staleReason = '';
+
+  if (
+    eventAttemptKey &&
+    currentAttemptKey &&
+    eventAttemptKey !== currentAttemptKey
+  ) {
+    staleReason =
+      'Ignored webhook from an older refund attempt';
+  } else if (
+    currentRefundId &&
+    currentRefundId !== refundId
+  ) {
+    staleReason =
+      'Ignored webhook for a different refund ID';
+  } else if (
+    currentRefundStatus === 'processed' &&
+    !isProcessed
+  ) {
+    staleReason =
+      'Ignored non-processed event after refund completion';
+  } else if (
+    currentRefundStatus === 'failed' &&
+    !isFailed &&
+    !isProcessed
+  ) {
+    staleReason =
+      'Ignored non-terminal event after refund failure';
+  }
+
+  const nextRefundStatus =
+    isFailed
+      ? 'failed'
+      : isProcessed
+        ? 'processed'
+        : rawRefundStatus || 'pending';
+
+  const nextRequestStatus =
+    isFailed
+      ? 'qc_passed'
+      : isProcessed
+        ? 'refunded'
+        : 'refund_pending';
+
+  const refundAmount = Math.max(
+    0,
+    Number(
+      refund.amount || 0
+    ) / 100
+  );
+
+  const acquirer =
+    refund.acquirer_data || {};
+
+  const acquirerReference =
+    cleanReturnText(
+      acquirer.arn ||
+      acquirer.rrn ||
+      acquirer.utr ||
+      acquirer.bank_transaction_id,
+      200
+    ) || null;
+
+  const acquirerReferenceType =
+    acquirer.arn
+      ? 'arn'
+      : acquirer.rrn
+        ? 'rrn'
+        : acquirer.utr
+          ? 'utr'
+          : acquirer.bank_transaction_id
+            ? 'bank_transaction_id'
+            : null;
+
+  const failureReason =
+    isFailed
+      ? cleanReturnText(
+          refund.error_description ||
+          refund.error_reason ||
+          refund.error_code ||
+          'Razorpay could not process the refund',
+          2000
+        )
+      : '';
+
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO return_refund_events (
+      event_id,
+      request_id,
+      order_id,
+      payment_id,
+      refund_id,
+      event_type,
+      refund_status,
+      amount,
+      currency,
+      acquirer_reference,
+      acquirer_reference_type,
+      payload_json,
+      processing_status,
+      error_message,
+      received_at,
+      processed_at
+    ) VALUES (
+      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, datetime('now'), ?
+    )
+  `)
+    .bind(
+      webhookEventId,
+      requestId,
+      orderId,
+      paymentId,
+      refundId,
+      eventType,
+      nextRefundStatus,
+      refundAmount,
+
+      cleanReturnText(
+        refund.currency || 'INR',
+        20
+      ),
+
+      acquirerReference,
+      acquirerReferenceType,
+      rawBody,
+
+      staleReason
+        ? 'processed'
+        : 'received',
+
+      staleReason ||
+      failureReason,
+
+      staleReason
+        ? new Date().toISOString()
+        : null
+    )
+    .run();
+
+  if (staleReason) {
+    console.warn(
+      'RAZORPAY_REFUND_WEBHOOK_STALE',
+      webhookEventId,
+      requestId,
+      refundId,
+      staleReason
+    );
+
+    return jsonResponse({
+      status: 'ok',
+      ignored: true,
+      reason: staleReason,
+    });
+  }
+
+  await env.DB.prepare(`
+    UPDATE return_requests
+    SET
+      status = ?,
+
+      refund_id = CASE
+        WHEN ? = 1
+        THEN NULL
+        ELSE ?
+      END,
+
+      refund_idempotency_key = CASE
+        WHEN ? = 1
+        THEN NULL
+        ELSE refund_idempotency_key
+      END,
+
+      refund_status = ?,
+
+      refund_amount = CASE
+        WHEN ? > 0
+        THEN ?
+        ELSE refund_amount
+      END,
+
+      refund_currency = ?,
+
+      refund_speed_requested = ?,
+
+      refund_speed_processed = ?,
+
+      refund_acquirer_reference = ?,
+
+      refund_acquirer_reference_type = ?,
+
+      refund_failure_reason = ?,
+
+      refund_failed_at = CASE
+        WHEN ? = 1
+        THEN datetime('now')
+        ELSE NULL
+      END,
+
+      refund_processed_at = CASE
+        WHEN ? = 1
+        THEN COALESCE(
+          refund_processed_at,
+          datetime('now')
+        )
+        ELSE refund_processed_at
+      END,
+
+      completed_at = CASE
+        WHEN ? = 1
+        THEN COALESCE(
+          completed_at,
+          datetime('now')
+        )
+        ELSE completed_at
+      END,
+
+      updated_at = datetime('now')
+
+    WHERE order_id = ?
+      AND request_id = ?
+  `)
+    .bind(
+      nextRequestStatus,
+
+      isFailed ? 1 : 0,
+      refundId,
+
+      isFailed ? 1 : 0,
+
+      nextRefundStatus,
+
+      refundAmount,
+      refundAmount,
+
+      cleanReturnText(
+        refund.currency || 'INR',
+        20
+      ),
+
+      cleanReturnText(
+        refund.speed_requested,
+        50
+      ) || null,
+
+      cleanReturnText(
+        refund.speed_processed,
+        50
+      ) || null,
+
+      acquirerReference,
+      acquirerReferenceType,
+      failureReason,
+
+      isFailed ? 1 : 0,
+      isProcessed ? 1 : 0,
+      isProcessed ? 1 : 0,
+
+      orderId,
+      requestId
+    )
+    .run();
+
+  if (isProcessed) {
+    const refundTotals =
+      await env.DB.prepare(`
+        SELECT
+          COALESCE(
+            SUM(refund_amount),
+            0
+          ) AS refunded_total
+
+        FROM return_requests
+
+        WHERE order_id = ?
+          AND refund_status = 'processed'
+      `)
+        .bind(orderId)
+        .first();
+
+    const orderTotal = Math.max(
+      0,
+      Number(
+        returnRequest.order_total || 0
+      )
+    );
+
+    const fullyRefunded =
+      orderTotal > 0 &&
+      Number(
+        refundTotals?.refunded_total || 0
+      ) + 0.001 >= orderTotal;
+
+    if (fullyRefunded) {
+      await env.DB.prepare(`
+        UPDATE orders
+        SET
+          payment_status = 'refunded',
+          updated_at = datetime('now')
+        WHERE order_id = ?
+      `)
+        .bind(orderId)
+        .run();
+    }
+  }
+
+  await env.DB.prepare(`
+    UPDATE return_refund_events
+    SET
+      processing_status = 'processed',
+      error_message = ?,
+      processed_at = datetime('now')
+
+    WHERE event_id = ?
+  `)
+    .bind(
+      failureReason,
+      webhookEventId
+    )
+    .run();
+
+  await logOrderEvent(
+    env,
+    orderId,
+
+    isFailed
+      ? 'return_refund_failed'
+      : isProcessed
+        ? 'return_refund_processed'
+        : 'return_refund_updated',
+
+    `Return request ${requestId} ` +
+    `refund ${nextRefundStatus}: ` +
+    `₹${refundAmount.toFixed(2)}`,
+
+    {
+      requestId,
+      refundId,
+      paymentId,
+      webhookEventId,
+      refundStatus:
+        nextRefundStatus,
+      amount:
+        refundAmount,
+      acquirerReference,
+      acquirerReferenceType,
+    },
+
+    'razorpay_webhook'
+  );
+
+  try {
+    if (isProcessed) {
+      await sendWhatsAppText(
+        env,
+
+        returnRequest.order_phone ||
+        returnRequest.phone,
+
+        `*Refund Processed*\n\n` +
+        `Order: *${orderId}*\n` +
+        `Refund amount: *₹${refundAmount.toFixed(2)}*\n` +
+        `Refund ID: *${refundId}*\n` +
+        (
+          acquirerReference
+            ? `${String(
+                acquirerReferenceType || ''
+              ).toUpperCase()}: ` +
+              `*${acquirerReference}*\n`
+            : ''
+        ) +
+        `\nThe refund was sent to your original payment method.\n\n` +
+        `KAAPAV Fashion Jewellery`
+      );
+    } else if (isFailed) {
+      await sendWhatsAppText(
+        env,
+
+        returnRequest.order_phone ||
+        returnRequest.phone,
+
+        `*Refund Update*\n\n` +
+        `Order: *${orderId}*\n` +
+        `We could not complete the refund yet. ` +
+        `Our team will review and retry it.\n\n` +
+        `KAAPAV Fashion Jewellery`
+      );
+    }
+  } catch (notificationError) {
+    console.error(
+      'RETURN_REFUND_WEBHOOK_NOTIFICATION_FAILED',
+      requestId,
+      notificationError?.message ||
+      notificationError
+    );
+  }
+
+  return jsonResponse({
+    status: 'ok',
+    reconciled: true,
+    refundStatus:
+      nextRefundStatus,
+  });
+}
+
+// ── payment_link.paid ─────────────────────────────────────────
   // Fires when customer pays via WhatsApp bot or Catalogue payment link
   if (eventType === 'payment_link.paid') {
     const pl = event.payload.payment_link.entity;
@@ -11877,7 +17120,10 @@ await saveOwnerInboxAlert(env, ctx, {
 
      }
 
-  return jsonResponse({ status: 'ok' });
+  // Catch-all: return 200 for ANY unhandled Razorpay event
+  // (payment.authorized, payment.failed, order.paid, etc.)
+  // Without this, unhandled events fall through → 404 → Razorpay disables the webhook
+  return jsonResponse({ status: 'ok', ignored: true, event: eventType });
 }
 
  
@@ -12320,11 +17566,6 @@ if (path === '/api/catalogue/coupons/validate' && method === 'POST') {
 
   if (!normalizedCode) return errorResponse('code required', 400);
 
-  // For now catalogue public coupon is only MANCHUR
-  if (normalizedCode !== 'MANCHUR') {
-    return errorResponse('Invalid coupon code', 404);
-  }
-
   const coupon = await env.DB.prepare(
     `SELECT * FROM coupons WHERE UPPER(code) = ? AND is_active = 1`
   ).bind(normalizedCode).first();
@@ -12384,11 +17625,48 @@ if (path === '/api/customer/link-identity' && method === 'POST') {
       if (!user) return errorResponse('Unauthorized', 401);
       return jsonResponse({ success: true, user: { id: 'admin', email: 'admin@kaapav.com', name: 'KAAPAV Admin', role: 'admin' } });
     }
-    if (path === '/api/auth/refresh' && method === 'POST') {
-      const payload = { userId: 'admin', email: 'admin@kaapav.com', role: 'admin', exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 };
-      const token = await generateJWT(payload, env.JWT_SECRET);
-      return jsonResponse({ success: true, token });
-    }
+if (
+  path === '/api/auth/refresh' &&
+  method === 'POST'
+) {
+  const currentUser =
+    await authMiddleware(
+      request,
+      env
+    );
+
+  if (
+    !currentUser ||
+    currentUser.role !== 'admin'
+  ) {
+    return errorResponse(
+      'Unauthorized',
+      401
+    );
+  }
+
+  const payload = {
+    userId:
+      currentUser.userId ||
+      currentUser.id ||
+      'admin',
+    role: 'admin',
+    exp:
+      Math.floor(Date.now() / 1000) +
+      7 * 24 * 3600,
+  };
+
+  const token =
+    await generateJWT(
+      payload,
+      env.JWT_SECRET
+    );
+
+  return jsonResponse({
+    success: true,
+    token,
+  });
+}
 
      // ═══ CUSTOMER PROFILE AUTH — PUBLIC / TOKEN-BASED ═══
 if (path === '/api/customer/auth/send-otp' && method === 'POST') {
@@ -12403,11 +17681,41 @@ if (path === '/api/customer/me' && method === 'GET') {
   return handleCustomerMe(request, env);
 }
 
-if (path === '/api/customer/orders' && method === 'GET') {
-  return handleCustomerOrders(request, env);
+if (
+  path === '/api/customer/orders' &&
+  method === 'GET'
+) {
+  return handleCustomerOrders(
+    request,
+    env
+  );
 }
 
-if (path === '/api/customer/logout' && method === 'POST') {
+if (
+  path.match(
+    /^\/api\/customer\/orders\/[^/]+\/return-requests$/
+  ) &&
+  (
+    method === 'GET' ||
+    method === 'POST'
+  )
+) {
+  const orderId =
+    decodeURIComponent(
+      path.split('/')[4]
+    );
+
+  return handleCustomerOrderReturnRequests(
+    request,
+    env,
+    orderId
+  );
+}
+
+if (
+  path === '/api/customer/logout' &&
+  method === 'POST'
+) {
   return handleCustomerLogout(request, env);
 }
 
@@ -12638,23 +17946,36 @@ const coupon = await env.DB.prepare(
       return jsonResponse({ success: true, coupon: { code: coupon.code, type: coupon.type, value: coupon.value, discount, maxDiscount: coupon.max_discount } });
     }
 
-    // ═══ COUPON CRUD ═══
-    if (path === '/api/coupons' && method === 'GET') {
-      const { results } = await env.DB.prepare(`SELECT * FROM coupons ORDER BY created_at DESC`).all();
-      return jsonResponse({ success: true, coupons: results });
-    }
-    if (path === '/api/coupons' && method === 'POST') {
-      const b = await request.json();
-      await env.DB.prepare(`
-        INSERT INTO coupons (code, type, value, min_order, max_discount, usage_limit, starts_at, expires_at, is_active, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
-      `).bind(
-        String(b.code || '').trim().toUpperCase(), b.type || 'percent', b.value || 0,
-        b.min_order || 0, b.max_discount || 0, b.usage_limit || 0,
-        b.starts_at || null, b.expires_at || null
-      ).run();
-      return jsonResponse({ success: true });
-    }
+// ═══ COUPON ADMIN CRUD ═══
+if (path === '/api/coupons' && method === 'GET') {
+  return handleGetCoupons(env);
+}
+
+if (path === '/api/coupons' && method === 'POST') {
+  return handleCreateCoupon(request, env);
+}
+
+if (
+  /^\/api\/coupons\/\d+$/.test(path) &&
+  method === 'PUT'
+) {
+  const id = Number(path.split('/')[3]);
+
+  return handleUpdateCoupon(
+    id,
+    request,
+    env
+  );
+}
+
+if (
+  /^\/api\/coupons\/\d+$/.test(path) &&
+  method === 'DELETE'
+) {
+  const id = Number(path.split('/')[3]);
+
+  return handleRemoveCoupon(id, env);
+}
 
     // ═══ BROADCAST CRUD + SEND ═══
     if (path === '/api/broadcasts' && method === 'GET') {
@@ -12710,52 +18031,199 @@ const { results } = await env.DB.prepare(
       return jsonResponse({ success: true, sent, failed, total: recipients.length });
     }
 
-    // ═══ REFUND ═══
-    if (path.match(/^\/api\/orders\/[^/]+\/refund$/) && method === 'POST') {
-      const orderId = path.split('/')[3];
-      const body = await request.json();
-      const order = await env.DB.prepare(`SELECT * FROM orders WHERE order_id = ?`).bind(orderId).first();
-      if (!order) return errorResponse('Order not found', 404);
-      if (order.payment_status !== 'paid' || !order.payment_id) return errorResponse('Order not paid or no payment ID');
 
-      const refundAmount = body.amount || order.total;
+// ═══ RETURN-LINKED REFUND ═══
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/return-requests\/[^/]+\/refund$/
+  ) &&
+  method === 'POST'
+) {
+  const parts = path.split('/');
 
-      try {
-        const refundData = await processRazorpayRefund(env, order.payment_id, refundAmount, orderId);
+  const orderId = decodeURIComponent(
+    parts[3]
+  );
 
-        await env.DB.prepare(`
-          UPDATE orders SET payment_status = 'refunded', status = 'cancelled', updated_at = datetime('now') WHERE order_id = ?
-        `).bind(orderId).run();
+  const requestId = decodeURIComponent(
+    parts[5]
+  );
 
-        await env.DB.prepare(`
-          INSERT INTO payments (payment_id, order_id, phone, gateway, gateway_payment_id, amount, status, refund_amount, refund_id, refunded_at, created_at)
-          VALUES (?, ?, ?, 'razorpay', ?, ?, 'refunded', ?, ?, datetime('now'), datetime('now'))
-        `).bind(`ref_${Date.now()}`, orderId, order.phone, order.payment_id, order.total, refundAmount, refundData.id).run();
+  return handleProcessReturnRefund(
+    orderId,
+    requestId,
+    request,
+    env
+  );
+}
 
-        await logOrderEvent(env, orderId, 'refund_processed', `Refund of Rs.${refundAmount} processed`, { refundId: refundData.id, amount: refundAmount }, 'admin');
+// Direct order refund endpoint disabled.
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/refund$/
+  ) &&
+  method === 'POST'
+) {
+  return errorResponse(
+    'Direct order refund endpoint disabled. Use the QC-approved return-request refund workflow.',
+    410
+  );
+}
 
-        await sendWhatsAppText(env, order.phone,
-          `💰 *Refund Processed!*\n\nHi ${order.customer_name || 'Customer'}!\n\nOrder: *${orderId}*\nRefund Amount: ₹${refundAmount}\n\n✅ Refund will reflect in 5-7 working days.\n\n💎 KAAPAV Fashion Jewellery`
-        );
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/return-requests\/[^/]+\/qc$/
+  ) &&
+  method === 'PATCH'
+) {
+  const parts = path.split('/');
 
-        await sendWhatsAppText(env, env.OWNER_PHONE,
-          `💰 *Refund Processed*\n\nOrder: *${orderId}*\nCustomer: ${order.customer_name} (${order.phone})\nAmount: ₹${refundAmount}\nRefund ID: ${refundData.id}`
-        );
+  const orderId = decodeURIComponent(
+    parts[3]
+  );
 
-        try {
-          await syncOrderToGoogleSheetsSafe(env, orderId);
-          await syncCustomerToGoogleSheetsSafe(env, order.phone);
-          await syncSalesToGoogleSheetsSafe(env, orderId);
-        } catch (e) { console.error('Refund sync error:', e); }
+  const requestId = decodeURIComponent(
+    parts[5]
+  );
 
-        return jsonResponse({ success: true, refundId: refundData.id, amount: refundAmount });
-      } catch (e) {
-        console.error('Refund error:', e);
-        return errorResponse('Refund failed: ' + e.message, 500);
-      }
-    }
+  return handleReviewReturnQc(
+    orderId,
+    requestId,
+    request,
+    env
+  );
+}
 
-    if (path === '/api/orders' && method === 'GET') return handleGetOrders(request, env);
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/return-requests\/[^/]+\/received$/
+  ) &&
+  method === 'PATCH'
+) {
+  const parts = path.split('/');
+
+  const orderId = decodeURIComponent(
+    parts[3]
+  );
+
+  const requestId = decodeURIComponent(
+    parts[5]
+  );
+
+  return handleMarkReturnReceived(
+    orderId,
+    requestId,
+    request,
+    env
+  );
+}
+
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/return-requests\/[^/]+\/picked-up$/
+  ) &&
+  method === 'PATCH'
+) {
+  const parts = path.split('/');
+
+  const orderId = decodeURIComponent(
+    parts[3]
+  );
+
+  const requestId = decodeURIComponent(
+    parts[5]
+  );
+
+  return handleMarkReturnPickedUp(
+    orderId,
+    requestId,
+    request,
+    env
+  );
+}
+
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/return-requests\/[^/]+\/pickup-scheduled$/
+  ) &&
+  method === 'PATCH'
+) {
+  const parts = path.split('/');
+
+  const orderId = decodeURIComponent(
+    parts[3]
+  );
+
+  const requestId = decodeURIComponent(
+    parts[5]
+  );
+
+  return handleScheduleReturnPickup(
+    orderId,
+    requestId,
+    request,
+    env
+  );
+}
+
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/return-requests\/[^/]+\/decision$/
+  ) &&
+  method === 'PATCH'
+) {
+  const parts = path.split('/');
+
+  const orderId = decodeURIComponent(
+    parts[3]
+  );
+
+  const requestId = decodeURIComponent(
+    parts[5]
+  );
+
+  return handleReviewReturnRequest(
+    orderId,
+    requestId,
+    request,
+    env
+  );
+}
+
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/return-requests$/
+  )
+) {
+  const orderId = decodeURIComponent(
+    path.split('/')[3]
+  );
+
+  if (method === 'POST') {
+    return handleCreateReturnRequest(
+      orderId,
+      request,
+      env
+    );
+  }
+
+  if (method === 'GET') {
+    return handleGetOrderReturnRequests(
+      orderId,
+      env
+    );
+  }
+}
+
+if (
+  path === '/api/orders' &&
+  method === 'GET'
+) {
+  return handleGetOrders(
+    request,
+    env
+  );
+}
      
 // GET single order
 if (path.match(/^\/api\/orders\/[^/]+$/) && method === 'GET') {
@@ -13015,9 +18483,23 @@ if (path.match(/^\/api\/orders\/[^/]+\/status$/) && method === 'PUT') {
   const { status } = bodyData;
   const allowed = ['pending','confirmed','processing','shipped','delivered','cancelled'];
   if (!allowed.includes(status)) return errorResponse('Invalid status', 400);
-  await env.DB.prepare(
-    `UPDATE orders SET status = ?, updated_at = datetime('now') WHERE order_id = ?`
-  ).bind(status, orderId).run();
+await env.DB.prepare(`
+  UPDATE orders
+  SET
+    status = ?,
+    delivered_at = CASE
+      WHEN ? = 'delivered'
+        AND delivered_at IS NULL
+      THEN datetime('now')
+      ELSE delivered_at
+    END,
+    updated_at = datetime('now')
+  WHERE order_id = ?
+`).bind(
+  status,
+  status,
+  orderId
+).run();
 
   try {
     await syncOrderToGoogleSheetsSafe(env, orderId);
@@ -13527,109 +19009,35 @@ if (path.match(/^\/api\/orders\/[^/]+\/payment-link$/) && method === 'POST') {
   }
 }
 
-// ── POST /api/orders/:id/return — mark return requested ──
-if (path.match(/^\/api\/orders\/[^/]+\/return$/) && method === 'POST') {
-  const orderId = path.split('/')[3];
-  const { reason } = await request.json();
-  const order = await env.DB.prepare(
-    `SELECT * FROM orders WHERE order_id = ?`
-  ).bind(orderId).first();
-  if (!order) return errorResponse('Order not found', 404);
+// Legacy destructive return endpoints
+// are disabled.
+//
+// Production flow uses
+// /return-requests and never cancels
+// an order when a request is created.
 
-  await env.DB.prepare(`
-    UPDATE orders SET
-      return_requested = 1,
-      return_reason = ?,
-      return_requested_at = datetime('now'),
-      status = 'cancelled',
-      updated_at = datetime('now')
-    WHERE order_id = ?
-  `).bind(reason || 'Return requested', orderId).run();
-
-  await logOrderEvent(env, orderId, 'return_requested', 'Order-level return requested', {
-  reason: reason || 'Return requested',
-}, 'customer');
-
-  const name = order.customer_name || 'Customer';
-
-  // Customer WA
-  await sendWhatsAppText(env, order.phone,
-    `🔄 *Return Request Received*\n\n` +
-    `Hi ${name}!\n\n` +
-    `Order ID: *${orderId}*\n` +
-    `Reason: ${reason || 'Return requested'}\n\n` +
-    `📋 *Next steps:*\n` +
-    `1. Record unboxing video (mandatory)\n` +
-    `2. Keep item unused & in original packaging\n` +
-    `3. We'll arrange reverse pickup within 24 hrs\n\n` +
-    `⚠️ ₹60/- reverse shipping will be deducted\n` +
-    `💰 Refund in 5–7 working days after QC\n\n` +
-    `Questions? Just message us here 😊\n` +
-    `💎 KAAPAV Fashion Jewellery`
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/return$/
+  ) &&
+  method === 'POST'
+) {
+  return errorResponse(
+    'Legacy return endpoint disabled. Use the return-request workflow.',
+    410
   );
-
-  // Owner WA
-  await sendWhatsAppText(env, env.OWNER_PHONE,
-    `🔄 *Return Requested!*\n\n` +
-    `Order: *${orderId}*\n` +
-    `Customer: ${name} (${order.phone})\n` +
-    `Amount: ₹${order.total}\n` +
-    `Reason: ${reason || 'Not specified'}\n\n` +
-    `⚠️ Action needed: Arrange reverse pickup.`
-  );
-
-  return jsonResponse({ success: true });
 }
 
-
-if (path.match(/^\/api\/orders\/[^/]+\/item-return$/) && method === 'POST') {
-  const orderId = path.split('/')[3];
-  const { sku, reason } = await request.json();
-
-  if (!sku) return errorResponse('sku required');
-
-  const order = await env.DB.prepare(
-    `SELECT * FROM orders WHERE order_id = ?`
-  ).bind(orderId).first();
-
-  if (!order) return errorResponse('Order not found', 404);
-
-  let items = [];
-  try { items = JSON.parse(order.items || '[]'); } catch(e) {}
-
-  const item = items.find(i => i.sku === sku);
-  if (!item) return errorResponse('Item not found in order', 404);
-
-  await env.DB.prepare(`
-    INSERT INTO return_requests (
-      order_id, phone, sku, item_name, reason, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, 'requested', datetime('now'), datetime('now'))
-  `).bind(
-    orderId,
-    order.phone,
-    sku,
-    item.name || '',
-    reason || 'Item return requested'
-  ).run();
-
-  await sendWhatsAppText(env, order.phone,
-    `🔄 *Item Return Request Received*\n\n` +
-    `Order ID: *${orderId}*\n` +
-    `Item: *${item.name || sku}*\n` +
-    `Reason: ${reason || 'Not specified'}\n\n` +
-    `Our team will review and contact you shortly.\n\n` +
-    `💎 KAAPAV Fashion Jewellery`
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/item-return$/
+  ) &&
+  method === 'POST'
+) {
+  return errorResponse(
+    'Legacy item-return endpoint disabled. Use the return-request workflow.',
+    410
   );
-
-  await sendWhatsAppText(env, env.OWNER_PHONE,
-    `🔄 *Item Return Requested*\n\n` +
-    `Order: *${orderId}*\n` +
-    `Customer: ${order.customer_name || 'Customer'} (${order.phone})\n` +
-    `Item: *${item.name || sku}*\n` +
-    `Reason: ${reason || 'Not specified'}`
-  );
-
-  return jsonResponse({ success: true });
 }
 
 // ── GET /api/customers/:phone/orders — customer order history ──
@@ -13644,13 +19052,59 @@ if (path.match(/^\/api\/customers\/[^/]+\/orders$/) && method === 'GET') {
   return jsonResponse({ success: true, orders: results });
 }
 
-    if (path === '/api/products' && method === 'GET') return handleGetProducts(request, env);
-    if (path === '/api/products/send' && method === 'POST') return handleSendProduct(request, env);
-    if (path === '/api/products' && method === 'POST') return handleCreateProduct(request, env);
-    if (path.match(/^\/api\/products\/(.+)\/stock$/) && (method === 'PATCH' || method === 'POST')) {
-      const sku = path.match(/^\/api\/products\/(.+)\/stock$/)[1];
-      return handleUpdateStock(sku, request, env);
-    }
+if (path === '/api/coupons' && method === 'GET') {
+  return handleGetCoupons(env);
+}
+
+if (path === '/api/coupons' && method === 'POST') {
+  return handleCreateCoupon(request, env);
+}
+
+if (
+  path.match(/^\/api\/coupons\/\d+$/) &&
+  method === 'PUT'
+) {
+  const id = Number(path.split('/')[3]);
+  return handleUpdateCoupon(id, request, env);
+}
+
+if (
+  path.match(/^\/api\/coupons\/\d+$/) &&
+  method === 'DELETE'
+) {
+  const id = Number(path.split('/')[3]);
+  return handleRemoveCoupon(id, env);
+}
+
+if (path === '/api/products' && method === 'GET') {
+  return handleGetProducts(request, env);
+}
+
+if (path === '/api/products' && method === 'POST') {
+  return handleCreateProduct(request, env);
+}
+
+if (
+  path === '/api/products/bulk' &&
+  method === 'PATCH'
+) {
+  return handleBulkUpdateProducts(request, env);
+}
+
+if (
+  path.match(/^\/api\/products\/(.+)\/stock$/) &&
+  (method === 'PATCH' || method === 'POST')
+) {
+  const sku = path.match(
+    /^\/api\/products\/(.+)\/stock$/
+  )[1];
+
+  return handleUpdateStock(
+    sku,
+    request,
+    env
+  );
+}
     if (path.match(/^\/api\/products\/(.+)$/) && method === 'PUT') {
       const sku = path.match(/^\/api\/products\/(.+)$/)[1];
       return handleUpdateProduct(sku, request, env);

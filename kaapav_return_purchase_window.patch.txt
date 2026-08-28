@@ -1,0 +1,1379 @@
+diff --git a/worker/catalogue/index.html b/worker/catalogue/index.html
+index f160e52..88f836d 100644
+--- a/worker/catalogue/index.html
++++ b/worker/catalogue/index.html
+@@ -3001,6 +3001,35 @@ body.theme-glass-kaapav .cat .n{
+ }
+ </style>
+ 
++
++<style>
++/* ===== CUSTOMER RETURN / EXCHANGE WORKFLOW ===== */
++#returnRequestMo{z-index:10004}
++#returnRequestMo .co-box{position:relative;z-index:10005;max-width:560px}
++.rr-policy{background:#fffaf0;border:1px solid rgba(196,148,50,.28);border-radius:12px;padding:11px 12px;margin-bottom:12px;font-size:11px;line-height:1.6;color:var(--dark2)}
++.rr-policy strong{color:var(--dark)}
++.rr-choice{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
++.rr-radio{position:relative;display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 11px;font-size:12px;color:var(--dark2);cursor:pointer}
++.rr-radio input{accent-color:var(--gold)}
++.rr-items{display:none;background:#fff;border:1px solid var(--border);border-radius:12px;padding:10px;margin-bottom:12px}
++.rr-items.on{display:block}
++.rr-item{display:grid;grid-template-columns:auto minmax(0,1fr) 72px;gap:9px;align-items:center;padding:9px 0;border-bottom:1px solid #f0ece4}
++.rr-item:last-child{border-bottom:none}
++.rr-item input[type="checkbox"]{width:18px;height:18px;accent-color:var(--gold)}
++.rr-item-name{font-size:11px;line-height:1.4;color:var(--dark)}
++.rr-item-sku{font-size:9px;color:var(--gray);margin-top:2px}
++.rr-qty{width:100%;background:var(--cream);border:1px solid var(--border);border-radius:8px;padding:8px 6px;font:inherit;font-size:12px;color:var(--dark);text-align:center}
++.rr-status{border-radius:12px;padding:12px;margin-bottom:10px;background:#fff;border:1px solid var(--border)}
++.rr-status strong{display:block;color:var(--dark);font-size:13px;margin-bottom:4px}
++.rr-status span{display:block;color:var(--gray);font-size:11px;line-height:1.55}
++.od-return{background:#fff7e8!important;color:#8a5f16!important;border-color:#d7bd82!important}
++.rr-submit{width:100%;background:var(--dark);color:var(--gold-l);border:none;border-radius:10px;padding:13px;font-family:var(--font-sans);font-size:13px;font-weight:600;cursor:pointer}
++.rr-submit:disabled{opacity:.55;cursor:not-allowed}
++.theme-ivory .rr-policy{background:#fffaf4;border-color:#d8c18f}
++.theme-ivory .rr-radio,.theme-ivory .rr-items,.theme-ivory .rr-status{background:#fffaf4;border-color:#ded4c5}
++.theme-ivory .rr-submit{background:#64182e;color:#fff5e6}
++@media(max-width:480px){.rr-choice{grid-template-columns:1fr}.rr-item{grid-template-columns:auto minmax(0,1fr) 62px}}
++</style>
+ </head>
+ <body class="theme-ivory theme-glass-kaapav">
+ 
+@@ -3158,6 +3187,17 @@ body.theme-glass-kaapav .cat .n{
+     <div class="co-body" id="orderDetailBody"></div>
+   </div>
+ </div>
++<!-- RETURN / EXCHANGE REQUEST MODAL -->
++<div class="co-mo" id="returnRequestMo">
++  <div class="co-box">
++    <div class="co-hdr">
++      <span class="co-title">Return / Exchange</span>
++      <button class="drw-close" onclick="closeReturnRequest()">✕</button>
++    </div>
++    <div class="co-body" id="returnRequestBody"></div>
++  </div>
++</div>
++
+ <!-- CHECKOUT MODAL -->
+ <div class="co-mo" id="coMo">
+   <div class="co-box">
+@@ -4479,6 +4519,201 @@ document.getElementById('ordersDrw').classList.add('on');
+ }
+ function closeOrders(){ document.getElementById('ordersDrw').classList.remove('on'); }
+ function closeOrderDetails(){ document.getElementById('orderDetailMo').classList.remove('on'); }
++
++let returnRequestSubmitting = false;
++let activeReturnOrderId = '';
++
++function closeReturnRequest(){
++  document.getElementById('returnRequestMo').classList.remove('on');
++  activeReturnOrderId = '';
++  returnRequestSubmitting = false;
++}
++
++function isReturnEligible(order){
++  return order?.return_eligible === true ||
++    Number(order?.return_eligible || 0) === 1;
++}
++
++function isOpenReturnRequest(request){
++  if(!request) return false;
++  const closed = ['rejected','refunded','completed','cancelled'];
++  return !closed.includes(String(request.status || '').toLowerCase());
++}
++
++function returnRequestLabel(request){
++  if(!request) return '';
++  const type = String(request.request_type || 'return');
++  const status = String(request.status || 'requested');
++  return `${type.replace(/_/g,' ')} — ${status.replace(/_/g,' ')}`;
++}
++
++function returnWindowText(order){
++  if(order?.return_expires_at){
++    return `Available until ${fmtDate(order.return_expires_at)} — 7 days from purchase date.`;
++  }
++  return order?.return_ineligible_reason || 'Return information unavailable.';
++}
++
++function toggleReturnScope(){
++  const scope = document.querySelector('input[name="rr_scope"]:checked')?.value || 'full_order';
++  document.getElementById('rrItems')?.classList.toggle('on', scope === 'items');
++}
++
++function openReturnRequest(orderId){
++  const order = ordersCache.find(x => String(x.order_id) === String(orderId));
++  if(!order) return;
++
++  const latest = order.return_request || null;
++  if(isOpenReturnRequest(latest)){
++    toast(`Request already ${String(latest.status || 'submitted').replace(/_/g,' ')}`);
++    return;
++  }
++
++  if(!isReturnEligible(order)){
++    toast(order.return_ineligible_reason || 'Return or exchange is not available for this order');
++    return;
++  }
++
++  activeReturnOrderId = String(order.order_id);
++  const items = parseOrderItems(order.items);
++
++  document.getElementById('returnRequestBody').innerHTML = `
++    <div class="rr-policy">
++      <strong>7-day return / exchange window</strong><br>
++      This order is eligible from its purchase date until ${esc(fmtDate(order.return_expires_at || ''))}. A ₹60 reverse-shipping fee may apply. Submitting this form creates a review request only; it does not cancel the order or trigger a refund.
++    </div>
++
++    <label class="co-lbl" for="rr_type">Request type</label>
++    <select class="co-inp" id="rr_type">
++      <option value="return">Return</option>
++      <option value="exchange">Exchange</option>
++    </select>
++
++    <div class="co-lbl">Request scope</div>
++    <div class="rr-choice">
++      <label class="rr-radio">
++        <input type="radio" name="rr_scope" value="full_order" checked onchange="toggleReturnScope()">
++        Full order
++      </label>
++      <label class="rr-radio">
++        <input type="radio" name="rr_scope" value="items" onchange="toggleReturnScope()">
++        Selected items
++      </label>
++    </div>
++
++    <div class="rr-items" id="rrItems">
++      ${items.map((item,index) => {
++        const orderedQty = Math.max(1, Number(item.qty || item.quantity || 1));
++        return `
++          <div class="rr-item">
++            <input class="rr-item-check" type="checkbox" data-line-index="${index}" data-sku="${esc(item.sku || '')}">
++            <div>
++              <div class="rr-item-name">${esc(item.name || item.sku || 'Jewellery')}</div>
++              <div class="rr-item-sku">${esc(item.sku || '')} · ordered ${orderedQty}</div>
++            </div>
++            <input class="rr-qty" type="number" min="1" max="${orderedQty}" value="1" aria-label="Return quantity">
++          </div>
++        `;
++      }).join('') || '<div class="od-note">No returnable items found.</div>'}
++    </div>
++
++    <label class="co-lbl" for="rr_reason_code">Reason</label>
++    <select class="co-inp" id="rr_reason_code">
++      <option value="damaged">Damaged / defective</option>
++      <option value="wrong_item">Wrong item received</option>
++      <option value="not_as_expected">Not as expected</option>
++      <option value="size_issue">Size / fit issue</option>
++      <option value="changed_mind">Changed mind</option>
++      <option value="other">Other</option>
++    </select>
++
++    <label class="co-lbl" for="rr_reason_text">Reason details</label>
++    <textarea class="co-inp" id="rr_reason_text" rows="3" maxlength="1000" placeholder="Explain the issue clearly"></textarea>
++
++    <label class="co-lbl" for="rr_customer_note">Additional note</label>
++    <textarea class="co-inp" id="rr_customer_note" rows="2" maxlength="2000" placeholder="For exchange, mention the preferred replacement"></textarea>
++
++    <button class="rr-submit" id="rrSubmit" onclick="submitReturnRequest()">Submit Request</button>
++  `;
++
++  document.getElementById('returnRequestMo').classList.add('on');
++}
++
++async function submitReturnRequest(){
++  if(returnRequestSubmitting || !activeReturnOrderId) return;
++
++  const order = ordersCache.find(x => String(x.order_id) === String(activeReturnOrderId));
++  if(!order) return;
++
++  const requestType = String(document.getElementById('rr_type')?.value || 'return');
++  const requestScope = document.querySelector('input[name="rr_scope"]:checked')?.value || 'full_order';
++  const reasonCode = String(document.getElementById('rr_reason_code')?.value || 'other');
++  const reasonText = String(document.getElementById('rr_reason_text')?.value || '').trim();
++  const customerNote = String(document.getElementById('rr_customer_note')?.value || '').trim();
++
++  if(reasonText.length < 3){
++    toast('Please enter the return or exchange reason');
++    return;
++  }
++
++  const selectedItems = [];
++  if(requestScope === 'items'){
++    document.querySelectorAll('#rrItems .rr-item-check:checked').forEach(check => {
++      const row = check.closest('.rr-item');
++      const qtyInput = row?.querySelector('.rr-qty');
++      const maxQty = Math.max(1, Number(qtyInput?.max || 1));
++      const quantity = Math.min(maxQty, Math.max(1, Number(qtyInput?.value || 1)));
++      selectedItems.push({
++        line_index: Number(check.dataset.lineIndex),
++        sku: check.dataset.sku || '',
++        quantity,
++      });
++    });
++
++    if(!selectedItems.length){
++      toast('Select at least one item');
++      return;
++    }
++  }
++
++  returnRequestSubmitting = true;
++  const submitButton = document.getElementById('rrSubmit');
++  if(submitButton){
++    submitButton.disabled = true;
++    submitButton.textContent = 'Submitting...';
++  }
++
++  try{
++    const result = await customerApi(
++      `/orders/${encodeURIComponent(activeReturnOrderId)}/return-requests`,
++      {
++        method:'POST',
++        body:JSON.stringify({
++          request_type:requestType,
++          request_scope:requestScope,
++          reason_code:reasonCode,
++          reason_text:reasonText,
++          customer_note:customerNote,
++          items:selectedItems,
++        }),
++      }
++    );
++
++    const requestId = result?.request?.request_id || '';
++    closeReturnRequest();
++    toast(requestId ? `Request submitted: ${requestId}` : 'Return request submitted');
++    await fetchCustomerOrders();
++  }catch(error){
++    console.error('Return request error:', error);
++    toast(error.message || 'Could not submit return request');
++  }finally{
++    returnRequestSubmitting = false;
++    if(submitButton){
++      submitButton.disabled = false;
++      submitButton.textContent = 'Submit Request';
++    }
++  }
++}
+ function parseOrderItems(items){
+   if(Array.isArray(items)) return items;
+   try{
+@@ -4527,6 +4762,22 @@ function openOrderDetails(orderId){
+ 
+   const items = parseOrderItems(o.items);
+   const helpText = encodeURIComponent(`Hi KAAPAV, I need help with order ${o.order_id}`);
++  const latestReturn = o.return_request || null;
++  const openReturn = isOpenReturnRequest(latestReturn);
++  const eligible = isReturnEligible(o);
++
++  const returnSection = latestReturn ? `
++    <div class="rr-status">
++      <strong>${esc(returnRequestLabel(latestReturn))}</strong>
++      <span>Request ID: ${esc(latestReturn.request_id || '')}</span>
++      <span>Submitted: ${fmtDate(latestReturn.requested_at || latestReturn.created_at || '')}</span>
++    </div>
++  ` : `
++    <div class="rr-status">
++      <strong>${eligible ? 'Eligible for return / exchange' : 'Return / exchange unavailable'}</strong>
++      <span>${esc(returnWindowText(o))}</span>
++    </div>
++  `;
+ 
+   document.getElementById('orderDetailBody').innerHTML = `
+     <div class="od-section">
+@@ -4581,6 +4832,14 @@ function openOrderDetails(orderId){
+       </div>
+     </div>
+ 
++    <div class="od-section">
++      <div class="od-section-title">Returns & Exchanges</div>
++      ${returnSection}
++      ${eligible && !openReturn ? `
++        <button class="rr-submit" data-order-id="${esc(o.order_id)}" onclick="openReturnRequest(this.dataset.orderId)">Start Return / Exchange</button>
++      ` : ''}
++    </div>
++
+     <div class="od-actions">
+       ${(o.payment_link && String(o.payment_status).toLowerCase() !== 'paid') ? `<a class="od-btn od-pay" href="${esc(o.payment_link)}" target="_blank">Pay Now</a>` : ''}
+       ${o.tracking_url ? `<a class="od-btn" href="${esc(o.tracking_url)}" target="_blank">Track Order</a>` : ''}
+@@ -4590,6 +4849,7 @@ function openOrderDetails(orderId){
+ 
+   document.getElementById('orderDetailMo').classList.add('on');
+ }
++
+ async function fetchCustomerOrders(){
+   if(!hasValidCustomerToken()){
+     renderProfileHome();
+@@ -4628,7 +4888,7 @@ const phoneBox = `
+     document.getElementById('ordersBody').innerHTML = phoneBox + `
+       <div class="od-empty">
+         <div class="ei">🛍️</div>
+-        No orders found for this number yet.<br>Place an order from the catalogue and it will show here.
++        No orders found for this account yet.<br>Place an order from the catalogue and it will show here.
+       </div>
+     `;
+     return;
+@@ -4638,6 +4898,14 @@ const phoneBox = `
+     const items = parseOrderItems(o.items);
+     const badge = orderBadgeClass(o);
+     const helpText = encodeURIComponent(`Hi KAAPAV, I need help with order ${o.order_id}`);
++    const latestReturn = o.return_request || null;
++    const openReturn = isOpenReturnRequest(latestReturn);
++    const eligible = isReturnEligible(o);
++
++    const returnLine = latestReturn
++      ? `<div class="od-note">Return / exchange: <strong>${esc(returnRequestLabel(latestReturn))}</strong></div>`
++      : `<div class="od-note">${esc(returnWindowText(o))}</div>`;
++
+     return `
+       <div class="od-card">
+         <div class="od-top">
+@@ -4662,8 +4930,11 @@ const phoneBox = `
+           <strong>${money(o.total)}</strong>
+         </div>
+ 
++        ${returnLine}
++
+         <div class="od-actions">
+           <button class="od-btn" data-order-id="${esc(o.order_id)}" onclick="openOrderDetails(this.dataset.orderId)">View Details</button>
++          ${eligible && !openReturn ? `<button class="od-btn od-return" data-order-id="${esc(o.order_id)}" onclick="openReturnRequest(this.dataset.orderId)">Return / Exchange</button>` : ''}
+           ${(o.payment_link && String(o.payment_status).toLowerCase() !== 'paid') ? `<a class="od-btn od-pay" href="${esc(o.payment_link)}" target="_blank">Pay Now</a>` : ''}
+           ${o.tracking_url ? `<a class="od-btn" href="${esc(o.tracking_url)}" target="_blank">Track</a>` : ''}
+           ${o.awb_number ? `<span class="od-btn">AWB: ${esc(o.awb_number)}</span>` : ''}
+diff --git a/worker/src/index.js b/worker/src/index.js
+index 085b2cf..d7a1ee3 100644
+--- a/worker/src/index.js
++++ b/worker/src/index.js
+@@ -7146,6 +7146,123 @@ function parseReturnJsonArray(value) {
+   }
+ }
+ 
++
++const CUSTOMER_RETURN_WINDOW_DAYS = 7;
++const CUSTOMER_RETURN_WINDOW_MS =
++  CUSTOMER_RETURN_WINDOW_DAYS * 24 * 60 * 60 * 1000;
++
++const CLOSED_RETURN_REQUEST_STATUSES = new Set([
++  'rejected',
++  'refunded',
++  'completed',
++  'cancelled',
++]);
++
++function parseD1DateMilliseconds(value) {
++  const text = cleanReturnText(value, 100);
++  if (!text) return Number.NaN;
++
++  const normalized =
++    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(text)
++      ? `${text.replace(' ', 'T')}Z`
++      : text;
++
++  return Date.parse(normalized);
++}
++
++function isOpenReturnRequestStatus(value) {
++  const status = cleanReturnText(value, 50).toLowerCase();
++  return Boolean(status) &&
++    !CLOSED_RETURN_REQUEST_STATUSES.has(status);
++}
++
++function getPurchaseReturnEligibility(order) {
++  const purchaseTime = parseD1DateMilliseconds(
++    order?.created_at
++  );
++
++  const expiresTime = Number.isFinite(purchaseTime)
++    ? purchaseTime + CUSTOMER_RETURN_WINDOW_MS
++    : Number.NaN;
++
++  const expiresAt = Number.isFinite(expiresTime)
++    ? new Date(expiresTime).toISOString()
++    : null;
++
++  const daysRemaining = Number.isFinite(expiresTime)
++    ? Math.max(
++        0,
++        Math.ceil(
++          (expiresTime - Date.now()) /
++          (24 * 60 * 60 * 1000)
++        )
++      )
++    : 0;
++
++  const status = cleanReturnText(
++    order?.status,
++    50
++  ).toLowerCase();
++
++  const paymentStatus = cleanReturnText(
++    order?.payment_status,
++    50
++  ).toLowerCase();
++
++  if (!Number.isFinite(purchaseTime)) {
++    return {
++      eligible: false,
++      reason: 'Purchase date is unavailable',
++      code: 'purchase_date_missing',
++      expiresAt,
++      daysRemaining,
++    };
++  }
++
++  if (paymentStatus !== 'paid') {
++    return {
++      eligible: false,
++      reason: 'Return or exchange is available only after payment',
++      code: 'payment_not_completed',
++      expiresAt,
++      daysRemaining,
++    };
++  }
++
++  if (
++    status === 'cancelled' ||
++    status === 'returned' ||
++    paymentStatus === 'refunded'
++  ) {
++    return {
++      eligible: false,
++      reason: 'This order is already closed',
++      code: 'order_closed',
++      expiresAt,
++      daysRemaining,
++    };
++  }
++
++  if (Date.now() > expiresTime) {
++    return {
++      eligible: false,
++      reason:
++        'Seven-day return or exchange window from the purchase date has expired',
++      code: 'return_window_expired',
++      expiresAt,
++      daysRemaining: 0,
++    };
++  }
++
++  return {
++    eligible: true,
++    reason: '',
++    code: 'eligible',
++    expiresAt,
++    daysRemaining,
++  };
++}
++
+ function generateReturnRequestId() {
+   const date = new Date()
+     .toISOString()
+@@ -7350,18 +7467,21 @@ function buildReturnRequestItems(order, body) {
+ async function handleCreateReturnRequest(
+   orderId,
+   request,
+-  env
++  env,
++  options = {}
+ ) {
+-  const body = await request
+-    .json()
+-    .catch(() => ({}));
++  const body = options.body ??
++    await request
++      .json()
++      .catch(() => ({}));
+ 
+-  const order = await env.DB.prepare(`
+-    SELECT *
+-    FROM orders
+-    WHERE order_id = ?
+-    LIMIT 1
+-  `).bind(orderId).first();
++  const order = options.order ??
++    await env.DB.prepare(`
++      SELECT *
++      FROM orders
++      WHERE order_id = ?
++      LIMIT 1
++    `).bind(orderId).first();
+ 
+   if (!order) {
+     return errorResponse(
+@@ -7408,42 +7528,19 @@ async function handleCreateReturnRequest(
+   }
+ 
+   const ownerOverride =
++    options.allowOwnerOverride !== false &&
+     body.owner_override === true;
+ 
+-  if (
+-    !ownerOverride &&
+-    String(order.status || '').toLowerCase() ===
+-      'cancelled'
+-  ) {
++  const eligibility =
++    getPurchaseReturnEligibility(order);
++
++  if (!ownerOverride && !eligibility.eligible) {
+     return errorResponse(
+-      'Cancelled orders cannot be returned',
++      eligibility.reason,
+       409
+     );
+   }
+ 
+-  if (
+-    !ownerOverride &&
+-    order.delivered_at
+-  ) {
+-    const deliveredTime = Date.parse(
+-      order.delivered_at
+-    );
+-
+-    const returnWindowMilliseconds =
+-      7 * 24 * 60 * 60 * 1000;
+-
+-    if (
+-      Number.isFinite(deliveredTime) &&
+-      Date.now() - deliveredTime >
+-        returnWindowMilliseconds
+-    ) {
+-      return errorResponse(
+-        'Seven-day return window has expired',
+-        409
+-      );
+-    }
+-  }
+-
+   const existingRequest =
+     await env.DB.prepare(`
+       SELECT request_id, status
+@@ -7491,7 +7588,9 @@ async function handleCreateReturnRequest(
+   const reverseShippingFee = Math.max(
+     0,
+     Number(
+-      body.reverse_shipping_fee ?? 60
++      options.fixedReverseShippingFee ??
++      body.reverse_shipping_fee ??
++      60
+     )
+   );
+ 
+@@ -7612,6 +7711,11 @@ async function handleCreateReturnRequest(
+ 
+   await env.DB.batch(statements);
+ 
++  const eventSource = cleanReturnText(
++    options.eventSource || 'admin',
++    50
++  ) || 'admin';
++
+   await logOrderEvent(
+     env,
+     orderId,
+@@ -7627,10 +7731,64 @@ async function handleCreateReturnRequest(
+       itemCount:
+         itemResult.items.length,
+       reasonCode,
++      returnExpiresAt:
++        eligibility.expiresAt,
+     },
+-    'admin'
++    eventSource
+   );
+ 
++  if (options.notifyCustomer === true) {
++    const typeLabel =
++      requestType === 'exchange'
++        ? 'Exchange'
++        : 'Return';
++
++    const customerName = cleanReturnText(
++      order.customer_name || 'Customer',
++      300
++    );
++
++    try {
++      await sendWhatsAppText(
++        env,
++        order.phone,
++        `*${typeLabel} Request Received*\n\n` +
++        `Hi ${customerName},\n\n` +
++        `Order: *${orderId}*\n` +
++        `Request ID: *${requestId}*\n` +
++        `Status: Requested\n\n` +
++        `Our team will review the request before pickup, exchange, or refund action.\n` +
++        `Reverse shipping fee: ₹${reverseShippingFee}\n\n` +
++        `KAAPAV Fashion Jewellery`
++      );
++    } catch (notificationError) {
++      console.error(
++        'RETURN_CUSTOMER_NOTIFICATION_FAILED',
++        requestId,
++        notificationError?.message || notificationError
++      );
++    }
++
++    try {
++      await sendWhatsAppText(
++        env,
++        env.OWNER_PHONE,
++        `*New ${typeLabel} Request*\n\n` +
++        `Order: *${orderId}*\n` +
++        `Request ID: *${requestId}*\n` +
++        `Customer: ${customerName} (${order.phone || '-'})\n` +
++        `Reason: ${reasonText || reasonCode}\n\n` +
++        `Review required in the KAAPAV order workflow.`
++      );
++    } catch (notificationError) {
++      console.error(
++        'RETURN_OWNER_NOTIFICATION_FAILED',
++        requestId,
++        notificationError?.message || notificationError
++      );
++    }
++  }
++
+   const createdRequest =
+     await env.DB.prepare(`
+       SELECT *
+@@ -7658,6 +7816,12 @@ async function handleCreateReturnRequest(
+           ),
+         items: createdItems || [],
+       },
++      returnWindow: {
++        days:
++          CUSTOMER_RETURN_WINDOW_DAYS,
++        expiresAt:
++          eligibility.expiresAt,
++      },
+     },
+     201
+   );
+@@ -11328,6 +11492,370 @@ async function handleCustomerMe(request, env) {
+   });
+ }
+ 
++async function getCustomerOrderContext(
++  request,
++  env,
++  orderId
++) {
++  const auth = await getCustomerAuth(
++    request,
++    env
++  );
++
++  if (!auth) {
++    return {
++      authenticated: false,
++      order: null,
++      account: null,
++    };
++  }
++
++  const account = await env.DB.prepare(`
++    SELECT email, phone, customer_id
++    FROM customer_accounts
++    WHERE email = ?
++    LIMIT 1
++  `).bind(auth.email).first();
++
++  const email = normalizeCustomerEmail(
++    account?.email || auth.email
++  );
++
++  const phone91 = normalizePhone91(
++    account?.phone
++  );
++
++  const phone10 = phone91
++    ? phone91.slice(-10)
++    : '';
++
++  const cleanOrderId = cleanReturnText(
++    orderId,
++    100
++  );
++
++  const order = await env.DB.prepare(`
++    SELECT *
++    FROM orders
++    WHERE order_id = ?
++      AND (
++        lower(COALESCE(email, '')) = ?
++        OR REPLACE(
++          REPLACE(
++            REPLACE(COALESCE(phone, ''), '+', ''),
++            ' ',
++            ''
++          ),
++          '-',
++          ''
++        ) = ?
++        OR REPLACE(
++          REPLACE(
++            REPLACE(COALESCE(phone, ''), '+', ''),
++            ' ',
++            ''
++          ),
++          '-',
++          ''
++        ) = ?
++      )
++    LIMIT 1
++  `).bind(
++    cleanOrderId,
++    email,
++    phone91,
++    phone10
++  ).first();
++
++  return {
++    authenticated: true,
++    auth,
++    account,
++    email,
++    phone91,
++    phone10,
++    order: order || null,
++  };
++}
++
++function packCustomerReturnRequest(
++  returnRequest,
++  items = []
++) {
++  if (!returnRequest) return null;
++
++  return {
++    request_id:
++      returnRequest.request_id,
++    order_id:
++      returnRequest.order_id,
++    request_type:
++      returnRequest.request_type,
++    request_scope:
++      returnRequest.request_scope,
++    reason_code:
++      returnRequest.reason_code,
++    reason_text:
++      returnRequest.reason_text,
++    customer_note:
++      returnRequest.customer_note,
++    status:
++      returnRequest.status,
++    reverse_shipping_fee:
++      Number(
++        returnRequest.reverse_shipping_fee || 0
++      ),
++    refund_amount:
++      Number(
++        returnRequest.refund_amount || 0
++      ),
++    price_difference:
++      Number(
++        returnRequest.price_difference || 0
++      ),
++    refund_status:
++      returnRequest.refund_status || '',
++    requested_at:
++      returnRequest.requested_at,
++    approved_at:
++      returnRequest.approved_at,
++    rejected_at:
++      returnRequest.rejected_at,
++    pickup_scheduled_at:
++      returnRequest.pickup_scheduled_at,
++    picked_up_at:
++      returnRequest.picked_up_at,
++    received_at:
++      returnRequest.received_at,
++    qc_completed_at:
++      returnRequest.qc_completed_at,
++    refund_processed_at:
++      returnRequest.refund_processed_at,
++    refund_failed_at:
++      returnRequest.refund_failed_at,
++    completed_at:
++      returnRequest.completed_at,
++    created_at:
++      returnRequest.created_at,
++    updated_at:
++      returnRequest.updated_at,
++    items,
++  };
++}
++
++async function handleCustomerOrderReturnRequests(
++  request,
++  env,
++  orderId
++) {
++  const context =
++    await getCustomerOrderContext(
++      request,
++      env,
++      orderId
++    );
++
++  if (!context.authenticated) {
++    return errorResponse(
++      'Unauthorized',
++      401
++    );
++  }
++
++  if (!context.order) {
++    return errorResponse(
++      'Order not found',
++      404
++    );
++  }
++
++  if (request.method === 'POST') {
++    const body = await request
++      .json()
++      .catch(() => ({}));
++
++    const safeItems = Array.isArray(body.items)
++      ? body.items.slice(0, 50).map(
++          (item) => ({
++            line_index:
++              item?.line_index,
++            sku:
++              item?.sku,
++            quantity:
++              item?.quantity ??
++              item?.qty,
++            replacement_sku:
++              item?.replacement_sku,
++            replacement_name:
++              item?.replacement_name,
++            condition_note:
++              item?.condition_note,
++            evidence_urls:
++              item?.evidence_urls,
++          })
++        )
++      : [];
++
++    const safeBody = {
++      request_type:
++        body.request_type,
++      request_scope:
++        body.request_scope,
++      reason_code:
++        body.reason_code,
++      reason_text:
++        body.reason_text,
++      customer_note:
++        body.customer_note,
++      evidence_urls:
++        body.evidence_urls,
++      items:
++        safeItems,
++      reverse_shipping_fee: 60,
++      owner_override: false,
++    };
++
++    return handleCreateReturnRequest(
++      context.order.order_id,
++      request,
++      env,
++      {
++        body: safeBody,
++        order: context.order,
++        eventSource: 'customer',
++        allowOwnerOverride: false,
++        fixedReverseShippingFee: 60,
++        notifyCustomer: true,
++      }
++    );
++  }
++
++  const { results: requests } =
++    await env.DB.prepare(`
++      SELECT
++        request_id,
++        order_id,
++        request_type,
++        request_scope,
++        reason_code,
++        reason_text,
++        customer_note,
++        status,
++        reverse_shipping_fee,
++        refund_amount,
++        price_difference,
++        refund_status,
++        requested_at,
++        approved_at,
++        rejected_at,
++        pickup_scheduled_at,
++        picked_up_at,
++        received_at,
++        qc_completed_at,
++        refund_processed_at,
++        refund_failed_at,
++        completed_at,
++        created_at,
++        updated_at
++      FROM return_requests
++      WHERE order_id = ?
++      ORDER BY id DESC
++    `).bind(
++      context.order.order_id
++    ).all();
++
++  const { results: itemRows } =
++    await env.DB.prepare(`
++      SELECT
++        request_id,
++        line_index,
++        sku,
++        product_name,
++        quantity,
++        unit_price,
++        replacement_sku,
++        replacement_name,
++        condition_note,
++        created_at,
++        updated_at
++      FROM return_request_items
++      WHERE order_id = ?
++      ORDER BY request_id, line_index
++    `).bind(
++      context.order.order_id
++    ).all();
++
++  const itemsByRequest = new Map();
++
++  for (const item of itemRows || []) {
++    const current =
++      itemsByRequest.get(
++        item.request_id
++      ) || [];
++
++    current.push(item);
++
++    itemsByRequest.set(
++      item.request_id,
++      current
++    );
++  }
++
++  const packedRequests =
++    (requests || []).map(
++      (returnRequest) =>
++        packCustomerReturnRequest(
++          returnRequest,
++          itemsByRequest.get(
++            returnRequest.request_id
++          ) || []
++        )
++    );
++
++  const latestRequest =
++    packedRequests[0] || null;
++
++  const eligibility =
++    getPurchaseReturnEligibility(
++      context.order
++    );
++
++  const hasOpenRequest =
++    isOpenReturnRequestStatus(
++      latestRequest?.status
++    );
++
++  return jsonResponse({
++    success: true,
++    orderId:
++      context.order.order_id,
++    requests:
++      packedRequests,
++    total:
++      packedRequests.length,
++    latestRequest,
++    returnEligibility: {
++      eligible:
++        eligibility.eligible &&
++        !hasOpenRequest,
++      windowDays:
++        CUSTOMER_RETURN_WINDOW_DAYS,
++      expiresAt:
++        eligibility.expiresAt,
++      daysRemaining:
++        eligibility.daysRemaining,
++      reason:
++        hasOpenRequest
++          ? 'An active return or exchange request already exists'
++          : eligibility.reason,
++      code:
++        hasOpenRequest
++          ? 'active_request_exists'
++          : eligibility.code,
++    },
++  });
++}
++
+ async function handleCustomerOrders(request, env) {
+   const auth = await getCustomerAuth(request, env);
+   if (!auth) return errorResponse('Unauthorized', 401);
+@@ -11339,9 +11867,17 @@ async function handleCustomerOrders(request, env) {
+     LIMIT 1
+   `).bind(auth.email).first();
+ 
+-  const email = normalizeCustomerEmail(account?.email || auth.email);
+-  const phone91 = normalizePhone91(account?.phone);
+-  const phone10 = phone91 ? phone91.slice(-10) : '';
++  const email = normalizeCustomerEmail(
++    account?.email || auth.email
++  );
++
++  const phone91 = normalizePhone91(
++    account?.phone
++  );
++
++  const phone10 = phone91
++    ? phone91.slice(-10)
++    : '';
+ 
+   const result = await env.DB.prepare(`
+     SELECT
+@@ -11361,27 +11897,178 @@ async function handleCustomerOrders(request, env) {
+       payment_method,
+       payment_id,
+       payment_link,
++      shipping_name,
++      shipping_phone,
++      shipping_address,
++      shipping_city,
++      shipping_state,
++      shipping_pincode,
+       tracking_id,
+       tracking_url,
+       courier,
+       awb_number,
++      paid_at,
++      shipped_at,
++      delivered_at,
++      cancelled_at,
+       created_at,
+       updated_at
+     FROM orders
+     WHERE lower(COALESCE(email, '')) = ?
+-       OR REPLACE(COALESCE(phone, ''), '+', '') = ?
+-       OR REPLACE(COALESCE(phone, ''), '+', '') = ?
++       OR REPLACE(
++            REPLACE(
++              REPLACE(COALESCE(phone, ''), '+', ''),
++              ' ',
++              ''
++            ),
++            '-',
++            ''
++          ) = ?
++       OR REPLACE(
++            REPLACE(
++              REPLACE(COALESCE(phone, ''), '+', ''),
++              ' ',
++              ''
++            ),
++            '-',
++            ''
++          ) = ?
+     ORDER BY datetime(created_at) DESC
+     LIMIT 100
+-  `).bind(email, phone91, phone10).all();
++  `).bind(
++    email,
++    phone91,
++    phone10
++  ).all();
++
++  const returnResult = await env.DB.prepare(`
++    SELECT
++      rr.request_id,
++      rr.order_id,
++      rr.request_type,
++      rr.request_scope,
++      rr.reason_code,
++      rr.reason_text,
++      rr.customer_note,
++      rr.status,
++      rr.reverse_shipping_fee,
++      rr.refund_amount,
++      rr.price_difference,
++      rr.refund_status,
++      rr.requested_at,
++      rr.approved_at,
++      rr.rejected_at,
++      rr.pickup_scheduled_at,
++      rr.picked_up_at,
++      rr.received_at,
++      rr.qc_completed_at,
++      rr.refund_processed_at,
++      rr.refund_failed_at,
++      rr.completed_at,
++      rr.created_at,
++      rr.updated_at
++    FROM return_requests rr
++    INNER JOIN orders o
++      ON o.order_id = rr.order_id
++    WHERE lower(COALESCE(o.email, '')) = ?
++       OR REPLACE(
++            REPLACE(
++              REPLACE(COALESCE(o.phone, ''), '+', ''),
++              ' ',
++              ''
++            ),
++            '-',
++            ''
++          ) = ?
++       OR REPLACE(
++            REPLACE(
++              REPLACE(COALESCE(o.phone, ''), '+', ''),
++              ' ',
++              ''
++            ),
++            '-',
++            ''
++          ) = ?
++    ORDER BY rr.id DESC
++  `).bind(
++    email,
++    phone91,
++    phone10
++  ).all();
++
++  const latestReturnByOrder = new Map();
++
++  for (const returnRequest of
++    returnResult.results || []) {
++    if (
++      !latestReturnByOrder.has(
++        returnRequest.order_id
++      )
++    ) {
++      latestReturnByOrder.set(
++        returnRequest.order_id,
++        packCustomerReturnRequest(
++          returnRequest
++        )
++      );
++    }
++  }
++
++  const orders = (result.results || []).map(
++    (order) => {
++      const latestReturn =
++        latestReturnByOrder.get(
++          order.order_id
++        ) || null;
++
++      const eligibility =
++        getPurchaseReturnEligibility(order);
++
++      const hasOpenRequest =
++        isOpenReturnRequestStatus(
++          latestReturn?.status
++        );
++
++      return {
++        ...order,
++        return_eligible:
++          eligibility.eligible &&
++          !hasOpenRequest,
++        return_window_days:
++          CUSTOMER_RETURN_WINDOW_DAYS,
++        return_expires_at:
++          eligibility.expiresAt,
++        return_days_remaining:
++          eligibility.daysRemaining,
++        return_ineligible_reason:
++          hasOpenRequest
++            ? 'An active return or exchange request already exists'
++            : eligibility.reason,
++        return_ineligible_code:
++          hasOpenRequest
++            ? 'active_request_exists'
++            : eligibility.code,
++        return_request:
++          latestReturn,
++      };
++    }
++  );
+ 
+   return jsonResponse({
+     success: true,
+-    orders: result.results || [],
++    orders,
+     identity: {
+       email,
+       phone: phone91,
+-      customerId: account?.customer_id || '',
++      customerId:
++        account?.customer_id || '',
++    },
++    returnPolicy: {
++      windowDays:
++        CUSTOMER_RETURN_WINDOW_DAYS,
++      startsFrom:
++        'purchase_date',
++      reverseShippingFee: 60,
+     },
+   });
+ }
+@@ -13859,6 +14546,23 @@ if (path === '/api/customer/orders' && method === 'GET') {
+   return handleCustomerOrders(request, env);
+ }
+ 
++if (
++  path.match(
++    /^\/api\/customer\/orders\/[^/]+\/return-requests$/
++  ) &&
++  (method === 'GET' || method === 'POST')
++) {
++  const orderId = decodeURIComponent(
++    path.split('/')[4]
++  );
++
++  return handleCustomerOrderReturnRequests(
++    request,
++    env,
++    orderId
++  );
++}
++
+ if (path === '/api/customer/logout' && method === 'POST') {
+   return handleCustomerLogout(request, env);
+ }
+@@ -15025,109 +15729,26 @@ if (path.match(/^\/api\/orders\/[^/]+\/payment-link$/) && method === 'POST') {
+   }
+ }
+ 
+-// ── POST /api/orders/:id/return — mark return requested ──
+-if (path.match(/^\/api\/orders\/[^/]+\/return$/) && method === 'POST') {
+-  const orderId = path.split('/')[3];
+-  const { reason } = await request.json();
+-  const order = await env.DB.prepare(
+-    `SELECT * FROM orders WHERE order_id = ?`
+-  ).bind(orderId).first();
+-  if (!order) return errorResponse('Order not found', 404);
+-
+-  await env.DB.prepare(`
+-    UPDATE orders SET
+-      return_requested = 1,
+-      return_reason = ?,
+-      return_requested_at = datetime('now'),
+-      status = 'cancelled',
+-      updated_at = datetime('now')
+-    WHERE order_id = ?
+-  `).bind(reason || 'Return requested', orderId).run();
+-
+-  await logOrderEvent(env, orderId, 'return_requested', 'Order-level return requested', {
+-  reason: reason || 'Return requested',
+-}, 'customer');
+-
+-  const name = order.customer_name || 'Customer';
+-
+-  // Customer WA
+-  await sendWhatsAppText(env, order.phone,
+-    `🔄 *Return Request Received*\n\n` +
+-    `Hi ${name}!\n\n` +
+-    `Order ID: *${orderId}*\n` +
+-    `Reason: ${reason || 'Return requested'}\n\n` +
+-    `📋 *Next steps:*\n` +
+-    `1. Record unboxing video (mandatory)\n` +
+-    `2. Keep item unused & in original packaging\n` +
+-    `3. We'll arrange reverse pickup within 24 hrs\n\n` +
+-    `⚠️ ₹60/- reverse shipping will be deducted\n` +
+-    `💰 Refund in 5–7 working days after QC\n\n` +
+-    `Questions? Just message us here 😊\n` +
+-    `💎 KAAPAV Fashion Jewellery`
+-  );
+-
+-  // Owner WA
+-  await sendWhatsAppText(env, env.OWNER_PHONE,
+-    `🔄 *Return Requested!*\n\n` +
+-    `Order: *${orderId}*\n` +
+-    `Customer: ${name} (${order.phone})\n` +
+-    `Amount: ₹${order.total}\n` +
+-    `Reason: ${reason || 'Not specified'}\n\n` +
+-    `⚠️ Action needed: Arrange reverse pickup.`
++// Legacy destructive return endpoints are disabled.
++// Production flow uses /return-requests and never cancels an order on request creation.
++if (
++  path.match(/^\/api\/orders\/[^/]+\/return$/) &&
++  method === 'POST'
++) {
++  return errorResponse(
++    'Legacy return endpoint disabled. Use the return-request workflow.',
++    410
+   );
+-
+-  return jsonResponse({ success: true });
+ }
+ 
+-
+-if (path.match(/^\/api\/orders\/[^/]+\/item-return$/) && method === 'POST') {
+-  const orderId = path.split('/')[3];
+-  const { sku, reason } = await request.json();
+-
+-  if (!sku) return errorResponse('sku required');
+-
+-  const order = await env.DB.prepare(
+-    `SELECT * FROM orders WHERE order_id = ?`
+-  ).bind(orderId).first();
+-
+-  if (!order) return errorResponse('Order not found', 404);
+-
+-  let items = [];
+-  try { items = JSON.parse(order.items || '[]'); } catch(e) {}
+-
+-  const item = items.find(i => i.sku === sku);
+-  if (!item) return errorResponse('Item not found in order', 404);
+-
+-  await env.DB.prepare(`
+-    INSERT INTO return_requests (
+-      order_id, phone, sku, item_name, reason, status, created_at, updated_at
+-    ) VALUES (?, ?, ?, ?, ?, 'requested', datetime('now'), datetime('now'))
+-  `).bind(
+-    orderId,
+-    order.phone,
+-    sku,
+-    item.name || '',
+-    reason || 'Item return requested'
+-  ).run();
+-
+-  await sendWhatsAppText(env, order.phone,
+-    `🔄 *Item Return Request Received*\n\n` +
+-    `Order ID: *${orderId}*\n` +
+-    `Item: *${item.name || sku}*\n` +
+-    `Reason: ${reason || 'Not specified'}\n\n` +
+-    `Our team will review and contact you shortly.\n\n` +
+-    `💎 KAAPAV Fashion Jewellery`
+-  );
+-
+-  await sendWhatsAppText(env, env.OWNER_PHONE,
+-    `🔄 *Item Return Requested*\n\n` +
+-    `Order: *${orderId}*\n` +
+-    `Customer: ${order.customer_name || 'Customer'} (${order.phone})\n` +
+-    `Item: *${item.name || sku}*\n` +
+-    `Reason: ${reason || 'Not specified'}`
++if (
++  path.match(/^\/api\/orders\/[^/]+\/item-return$/) &&
++  method === 'POST'
++) {
++  return errorResponse(
++    'Legacy item-return endpoint disabled. Use the return-request workflow.',
++    410
+   );
+-
+-  return jsonResponse({ success: true });
+ }
+ 
+ // ── GET /api/customers/:phone/orders — customer order history ──

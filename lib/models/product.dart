@@ -27,6 +27,7 @@ class Product {
   final String? updatedAt;
   final String? websiteLink;
   final String? material;
+  final String? finish;
 
   const Product({
     this.id,
@@ -55,6 +56,7 @@ class Product {
     this.updatedAt,
     this.websiteLink,
     this.material,
+    this.finish,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -93,6 +95,7 @@ class Product {
       updatedAt: json['updated_at'] as String?,
       websiteLink: json['website_link'] as String?,
       material: json['material'] as String?,
+      finish: json['finish'] as String?,
     );
   }
 
@@ -123,6 +126,7 @@ class Product {
         'updated_at': updatedAt,
         'website_link': websiteLink,
         'material': material,
+        'finish': finish,
       };
 
   static const _unset = Object();
@@ -154,6 +158,7 @@ class Product {
     Object? updatedAt = _unset,
     Object? websiteLink = _unset,
     Object? material = _unset,
+    Object? finish = _unset,
   }) {
     return Product(
       id: id ?? this.id,
@@ -206,6 +211,9 @@ class Product {
       material: identical(material, _unset)
           ? this.material
           : material as String?,
+      finish: identical(finish, _unset)
+    ? this.finish
+    : finish as String?,
     );
   }
 

@@ -32,6 +32,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
     'processing',
     'shipped',
     'delivered',
+    'returns',
     'cancelled',
   ];
 
@@ -41,6 +42,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
     'processing': Color(0xFF8B5CF6),
     'shipped': Color(0xFF06B6D4),
     'delivered': Color(0xFF10B981),
+    'returns': Color(0xFF7C3AED),
     'cancelled': Color(0xFFEF4444),
   };
 
@@ -149,7 +151,20 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
 
     final counts = <String, int>{'all': orderState.orders.length};
     for (final s in _statusTabs.skip(1)) {
-      counts[s] = orderState.orders.where((o) => o.status == s).length;
+      if (s == 'returns') {
+        counts[s] = orderState.orders.where((o) {
+          final st = o.status.toLowerCase();
+          final ps = o.paymentStatus.toLowerCase();
+          final cn = (o.customerNotes ?? '').toLowerCase();
+          final inN = (o.internalNotes ?? '').toLowerCase();
+          return st.contains('return') ||
+              ps.contains('refund') ||
+              cn.contains('return') ||
+              inN.contains('return');
+        }).length;
+      } else {
+        counts[s] = orderState.orders.where((o) => o.status == s).length;
+      }
     }
 
     return Scaffold(
@@ -301,7 +316,18 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
   Widget _buildOrderList(OrderState orderState, String statusFilter) {
     var orders = [...orderState.orders];
 
-    if (statusFilter != 'all') {
+    if (statusFilter == 'returns') {
+      orders = orders.where((o) {
+        final st = o.status.toLowerCase();
+        final ps = o.paymentStatus.toLowerCase();
+        final cn = (o.customerNotes ?? '').toLowerCase();
+        final inN = (o.internalNotes ?? '').toLowerCase();
+        return st.contains('return') ||
+            ps.contains('refund') ||
+            cn.contains('return') ||
+            inN.contains('return');
+      }).toList();
+    } else if (statusFilter != 'all') {
       orders = orders.where((o) => o.status == statusFilter).toList();
     }
 

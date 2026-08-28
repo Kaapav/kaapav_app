@@ -1,0 +1,427 @@
+<!--
+  KAAPAV — Odoo Online v19 homepage widget
+  Paste the complete contents of this file into an Odoo Website "Embed Code" block.
+
+  Odoo-specific notes:
+  - Internal links intentionally use native Odoo routes such as /shop and /shop/cart.
+  - The logo path uses website ID 3, matching the current KAAPAV site. Change 3 if your
+    Odoo website has a different ID.
+  - This widget has no external catalogue API, no external JavaScript, and no custom module.
+-->
+
+<section class="kpv-embed" id="kpv-home" aria-label="KAAPAV fashion jewellery">
+  <style>
+    #kpv-home {
+      --kpv-wine: #64182e;
+      --kpv-wine-deep: #3d0d1d;
+      --kpv-gold: #c4953a;
+      --kpv-gold-soft: #e8c778;
+      --kpv-ivory: #f8f3ea;
+      --kpv-cream: #fffdf9;
+      --kpv-ink: #2d2521;
+      --kpv-muted: #766b64;
+      --kpv-line: rgba(61, 13, 29, .14);
+      color: var(--kpv-ink);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.5;
+      max-width: 1440px;
+      margin: 0 auto;
+      overflow: hidden;
+      background: var(--kpv-ivory);
+    }
+
+    #kpv-home *,
+    #kpv-home *::before,
+    #kpv-home *::after { box-sizing: border-box; }
+
+    #kpv-home a { color: inherit; text-decoration: none; }
+
+    #kpv-home .kpv-wrap {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    #kpv-home .kpv-eyebrow {
+      color: var(--kpv-gold);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .28em;
+      text-transform: uppercase;
+    }
+
+    #kpv-home .kpv-hero {
+      position: relative;
+      min-height: 510px;
+      padding: 74px 0 64px;
+      color: #fff8f1;
+      background:
+        radial-gradient(circle at 82% 16%, rgba(232, 199, 120, .28), transparent 24%),
+        radial-gradient(circle at 58% 100%, rgba(196, 149, 58, .16), transparent 30%),
+        linear-gradient(112deg, var(--kpv-wine-deep), var(--kpv-wine) 57%, #76223a);
+      isolation: isolate;
+    }
+
+    #kpv-home .kpv-hero::before,
+    #kpv-home .kpv-hero::after {
+      position: absolute;
+      z-index: -1;
+      border: 1px solid rgba(232, 199, 120, .20);
+      border-radius: 50%;
+      content: "";
+    }
+
+    #kpv-home .kpv-hero::before {
+      width: 680px;
+      height: 680px;
+      right: -160px;
+      top: -315px;
+    }
+
+    #kpv-home .kpv-hero::after {
+      width: 560px;
+      height: 560px;
+      right: -110px;
+      bottom: -380px;
+    }
+
+    #kpv-home .kpv-hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(320px, .86fr);
+      align-items: center;
+      gap: 48px;
+    }
+
+    #kpv-home .kpv-hero-copy { max-width: 590px; }
+
+    #kpv-home .kpv-hero h1 {
+      max-width: 680px;
+      margin: 16px 0 18px;
+      color: #fff8f1;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(42px, 6vw, 76px);
+      font-weight: 400;
+      letter-spacing: -.055em;
+      line-height: .98;
+    }
+
+    #kpv-home .kpv-hero h1 em { color: var(--kpv-gold-soft); font-style: italic; }
+
+    #kpv-home .kpv-hero p {
+      max-width: 510px;
+      margin: 0;
+      color: rgba(255, 248, 241, .76);
+      font-size: 15px;
+    }
+
+    #kpv-home .kpv-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 30px;
+    }
+
+    #kpv-home .kpv-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      padding: 0 22px;
+      border: 1px solid var(--kpv-gold);
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      transition: transform .2s ease, background .2s ease, color .2s ease;
+    }
+
+    #kpv-home .kpv-button:hover { transform: translateY(-2px); }
+    #kpv-home .kpv-button--gold { color: var(--kpv-wine-deep); background: var(--kpv-gold-soft); }
+    #kpv-home .kpv-button--ghost { color: #fff8f1; background: transparent; }
+    #kpv-home .kpv-button--ghost:hover { color: var(--kpv-wine-deep); background: #fff8f1; }
+
+    /* Product-card hero: this is intentionally a card, not decorative placeholder art. */
+    #kpv-home .kpv-art {
+      position: relative;
+      min-height: 390px;
+      border: 1px solid rgba(232, 199, 120, .34);
+      border-radius: 4px 4px 30px 4px;
+      background: linear-gradient(145deg, rgba(255,255,255,.11), rgba(255,255,255,.025));
+      box-shadow: 0 30px 72px rgba(31, 4, 14, .34);
+      transform: rotate(2.5deg);
+    }
+
+    #kpv-home .kpv-art::before {
+      position: absolute;
+      width: 500px;
+      height: 500px;
+      right: -190px;
+      top: -235px;
+      border: 1px solid rgba(232, 199, 120, .24);
+      border-radius: 50%;
+      box-shadow: 0 0 0 24px rgba(232, 199, 120, .03), 0 0 0 48px rgba(232, 199, 120, .03);
+      content: "";
+    }
+
+    #kpv-home .kpv-art::after {
+      position: absolute;
+      right: 24px;
+      bottom: 22px;
+      color: rgba(232, 199, 120, .83);
+      content: "WEAR YOUR LIGHT";
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: .25em;
+      transform: rotate(-2.5deg);
+    }
+
+    #kpv-home .kpv-product-card {
+      position: absolute;
+      z-index: 2;
+      left: 28px;
+      right: 28px;
+      top: 34px;
+      bottom: 38px;
+      overflow: hidden;
+      border-radius: 3px 3px 28px 3px;
+      color: var(--kpv-ink);
+      background: #f8f1e7;
+      box-shadow: 0 20px 34px rgba(31, 4, 14, .22);
+      transform: rotate(-5deg);
+    }
+
+    #kpv-home .kpv-product-image {
+      position: absolute;
+      z-index: 0;
+      inset: 0 0 0 40%;
+      width: 60%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center;
+      background: linear-gradient(135deg, #f7eee1, #dcc4b6);
+    }
+
+    #kpv-home .kpv-product-wash {
+      position: absolute;
+      z-index: 1;
+      inset: 0;
+      background: linear-gradient(90deg, #f8f1e7 0%, rgba(248, 241, 231, .94) 39%, rgba(248, 241, 231, .10) 75%, rgba(248, 241, 231, 0));
+      pointer-events: none;
+    }
+
+    #kpv-home .kpv-product-copy {
+      position: absolute;
+      z-index: 2;
+      left: 27px;
+      top: 34px;
+      width: 54%;
+    }
+
+    #kpv-home .kpv-product-copy small { color: var(--kpv-gold); font-size: 9px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; }
+    #kpv-home .kpv-product-copy strong { display: block; margin: 9px 0 12px; font-family: Georgia, "Times New Roman", serif; font-size: clamp(22px, 3vw, 32px); font-weight: 400; line-height: 1.02; }
+    #kpv-home .kpv-product-copy span { display: block; color: var(--kpv-wine); font-size: 17px; font-weight: 700; }
+    #kpv-home .kpv-product-copy a { display: inline-block; margin-top: 22px; color: var(--kpv-wine); font-size: 9px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+    #kpv-home .kpv-product-card > span { display: none; }
+
+    #kpv-home .kpv-k-mark {
+      position: absolute;
+      z-index: 3;
+      right: 25px;
+      bottom: 26px;
+      display: grid;
+      width: 82px;
+      height: 82px;
+      place-items: center;
+      border: 1px solid rgba(232, 199, 120, .72);
+      border-radius: 50%;
+      color: rgba(255, 248, 241, .88);
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 40px;
+      background: rgba(61, 13, 29, .30);
+      box-shadow: inset 0 0 0 10px rgba(255, 248, 241, .07);
+    }
+
+    #kpv-home .kpv-k-mark::after { position: absolute; inset: 12px; border: 1px solid rgba(232, 199, 120, .55); border-radius: 50%; content: ""; }
+
+    #kpv-home .kpv-trust {
+      color: #fff8f1;
+      background: var(--kpv-wine-deep);
+    }
+
+    #kpv-home .kpv-trust-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+    }
+
+    #kpv-home .kpv-trust-item {
+      padding: 16px 12px;
+      border-right: 1px solid rgba(255, 248, 241, .16);
+      color: rgba(255, 248, 241, .76);
+      font-size: 11px;
+      letter-spacing: .08em;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    #kpv-home .kpv-trust-item:last-child { border-right: 0; }
+    #kpv-home .kpv-trust-item b { display: block; margin-bottom: 3px; color: var(--kpv-gold-soft); font-size: 10px; }
+
+    #kpv-home .kpv-section { padding: 80px 0; background: var(--kpv-ivory); }
+    #kpv-home .kpv-section--light { background: var(--kpv-cream); }
+
+    #kpv-home .kpv-section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 28px;
+      margin-bottom: 28px;
+    }
+
+    #kpv-home .kpv-section h2 {
+      margin: 10px 0 0;
+      color: var(--kpv-ink);
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(36px, 5vw, 62px);
+      font-weight: 400;
+      letter-spacing: -.055em;
+      line-height: .98;
+    }
+
+    #kpv-home .kpv-section-intro { max-width: 300px; margin: 0 0 4px; color: var(--kpv-muted); font-size: 13px; }
+
+    #kpv-home .kpv-category-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 12px;
+    }
+
+    #kpv-home .kpv-category {
+      position: relative;
+      min-height: 170px;
+      padding: 20px;
+      overflow: hidden;
+      border: 1px solid var(--kpv-line);
+      border-radius: 16px;
+      background: linear-gradient(145deg, #fffdf9, #f2e8dc);
+      transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+    }
+
+    #kpv-home .kpv-category:hover { border-color: rgba(196, 149, 58, .6); box-shadow: 0 12px 24px rgba(61, 13, 29, .10); transform: translateY(-5px); }
+    #kpv-home .kpv-category::after { position: absolute; width: 105px; height: 105px; right: -28px; top: -27px; border-radius: 50%; background: radial-gradient(circle at 30% 28%, #ffe8a8, #b5792f 48%, #5b1930 76%); content: ""; }
+    #kpv-home .kpv-category span { position: absolute; z-index: 1; bottom: 19px; left: 20px; font-family: Georgia, "Times New Roman", serif; font-size: 20px; }
+    #kpv-home .kpv-category small { position: absolute; z-index: 1; top: 20px; left: 20px; color: var(--kpv-gold); font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+
+    #kpv-home .kpv-style-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    #kpv-home .kpv-style { display: flex; align-items: center; justify-content: space-between; min-height: 92px; padding: 20px 22px; border: 1px solid var(--kpv-line); border-radius: 16px; background: #fffdf9; }
+    #kpv-home .kpv-style:hover { border-color: var(--kpv-gold); }
+    #kpv-home .kpv-style b { font-family: Georgia, "Times New Roman", serif; font-size: 24px; font-weight: 400; }
+    #kpv-home .kpv-style i { color: var(--kpv-gold); font-size: 22px; font-style: normal; }
+
+    @media (max-width: 900px) {
+      #kpv-home .kpv-hero-grid { grid-template-columns: 1fr; }
+      #kpv-home .kpv-art { max-width: 560px; min-height: 285px; }
+      #kpv-home .kpv-category-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    @media (max-width: 620px) {
+      #kpv-home .kpv-wrap { width: min(100% - 28px, 500px); }
+      #kpv-home .kpv-hero { min-height: auto; padding: 54px 0 46px; }
+      #kpv-home .kpv-hero-grid { gap: 36px; }
+      #kpv-home .kpv-art { min-height: 300px; }
+      #kpv-home .kpv-product-card { left: 18px; right: 18px; top: 27px; bottom: 28px; }
+      #kpv-home .kpv-product-copy { left: 20px; top: 23px; width: 56%; }
+      #kpv-home .kpv-product-copy strong { font-size: 21px; }
+      #kpv-home .kpv-k-mark { right: 15px; bottom: 16px; width: 62px; height: 62px; font-size: 30px; }
+      #kpv-home .kpv-k-mark::after { inset: 9px; }
+      #kpv-home .kpv-trust-row { grid-template-columns: repeat(2, 1fr); }
+      #kpv-home .kpv-trust-item:nth-child(2) { border-right: 0; }
+      #kpv-home .kpv-section { padding: 58px 0; }
+      #kpv-home .kpv-section-head { display: block; }
+      #kpv-home .kpv-section-intro { margin-top: 18px; }
+      #kpv-home .kpv-category-grid { grid-template-columns: repeat(2, 1fr); }
+      #kpv-home .kpv-category { min-height: 145px; }
+      #kpv-home .kpv-style-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+
+  <div class="kpv-hero">
+    <div class="kpv-wrap kpv-hero-grid">
+      <div class="kpv-hero-copy">
+        <div class="kpv-eyebrow">Curated with love · KAAPAV</div>
+        <h1>Jewellery that speaks <em>to your soul.</em></h1>
+        <p>Elegant, colourful, contemporary and modern pieces made to match the way you express yourself.</p>
+        <div class="kpv-actions">
+          <a class="kpv-button kpv-button--gold" href="/shop">Shop all jewellery ↗</a>
+          <a class="kpv-button kpv-button--ghost" href="#kpv-categories">Choose your style</a>
+        </div>
+      </div>
+
+      <div class="kpv-art" aria-label="KAAPAV signature product card">
+        <div class="kpv-product-card">
+          <img class="kpv-product-image" src="/web/image/product.product/692/image_1024" alt="Elegant Butterfly Bracelet - Artificial Yellow Gold" loading="eager">
+          <div class="kpv-product-wash" aria-hidden="true"></div>
+          <div class="kpv-product-copy">
+            <small>Bracelets · signature edit</small>
+            <strong>Elegant Butterfly Bracelet</strong>
+            <span>₹499</span>
+            <a href="/shop/all-jewellery-12/0202006-elegant-butterfly-bracelet-artificial-yellow-gold-484">View product ↗</a>
+          </div>
+          <div class="kpv-k-mark" aria-hidden="true">K</div>
+          <span>Explore the collection ↗</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="kpv-trust" aria-label="KAAPAV service promises">
+    <div class="kpv-wrap kpv-trust-row">
+      <div class="kpv-trust-item"><b>✦ Premium quality</b>Made to be noticed</div>
+      <div class="kpv-trust-item"><b>✦ Free shipping</b>On orders over ₹498</div>
+      <div class="kpv-trust-item"><b>✦ 7-day easy returns</b>Shop with confidence</div>
+      <div class="kpv-trust-item"><b>✦ Secure payments</b>Checkout safely</div>
+    </div>
+  </div>
+
+  <section class="kpv-section" id="kpv-categories">
+    <div class="kpv-wrap">
+      <div class="kpv-section-head">
+        <div>
+          <div class="kpv-eyebrow">Shop by category</div>
+          <h2>Find your form.</h2>
+        </div>
+        <p class="kpv-section-intro">Start with the piece you came for, then stay for the rest of the collection.</p>
+      </div>
+
+      <div class="kpv-category-grid">
+        <a class="kpv-category" href="/shop/category/all-jewellery-bracelets-13"><small>01 · Everyday shine</small><span>Bracelets</span></a>
+        <a class="kpv-category" href="/shop/category/all-jewellery-necklace-19"><small>02 · Layer your look</small><span>Necklaces</span></a>
+        <a class="kpv-category" href="/shop/category/all-jewellery-earrings-16"><small>03 · Frame the face</small><span>Earrings</span></a>
+        <a class="kpv-category" href="/shop/category/all-jewellery-sets-23"><small>04 · Curated pairs</small><span>Sets</span></a>
+        <a class="kpv-category" href="/shop/category/all-jewellery-pendant-22"><small>05 · A little detail</small><span>Pendants</span></a>
+        <a class="kpv-category" href="/shop/category/all-jewellery-rings-21"><small>06 · Make a mark</small><span>Rings</span></a>
+      </div>
+    </div>
+  </section>
+
+  <section class="kpv-section kpv-section--light" id="kpv-styles">
+    <div class="kpv-wrap">
+      <div class="kpv-section-head">
+        <div>
+          <div class="kpv-eyebrow">Discover your style</div>
+          <h2>Choose your mood.</h2>
+        </div>
+        <p class="kpv-section-intro">Six ways to wear your light. Use these as collection links or keep them as visual style filters.</p>
+      </div>
+
+      <div class="kpv-style-grid">
+        <a class="kpv-style" href="/shop"><b>Elegant</b><i>✦</i></a>
+        <a class="kpv-style" href="/shop"><b>Colourful</b><i>✦</i></a>
+        <a class="kpv-style" href="/shop"><b>Contemporary</b><i>✦</i></a>
+        <a class="kpv-style" href="/shop"><b>Subtle</b><i>✦</i></a>
+        <a class="kpv-style" href="/shop"><b>Fashion</b><i>✦</i></a>
+        <a class="kpv-style" href="/shop"><b>Modern</b><i>✦</i></a>
+      </div>
+    </div>
+  </section>
+</section>

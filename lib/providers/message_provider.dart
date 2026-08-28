@@ -8,10 +8,11 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/message.dart';
-import '../services/notification_service.dart';
 import '../services/api/message_api.dart';
+import '../services/sms_alert_service.dart';
 import '../providers/chat_provider.dart';
 import '../utils/logger.dart';
+import '../utils/formatters.dart';
 import '../services/api/api_client.dart';
 // ═══════════════════════════════════════════════════════════════
 // STATE CLASS
@@ -94,6 +95,19 @@ class MessageNotifier extends StateNotifier<MessageState> {
           final bTime = b.timestamp ?? '';
           return bTime.compareTo(aTime);
         });
+
+        // Ingest incoming WhatsApp messages for OTP, Razorpay, and Shiprocket alerts
+        for (final msg in messagesList) {
+          final content = (msg.text ?? msg.mediaCaption ?? '').trim();
+          if (content.isNotEmpty && msg.direction == 'incoming') {
+            final time = Formatters.parseDate(msg.timestamp) ?? DateTime.now();
+            SmsAlertService.instance.ingestMessage(
+              sender: phone,
+              body: content,
+              timestamp: time,
+            );
+          }
+        }
 
         state = state.copyWith(
           messagesByPhone: {...state.messagesByPhone, phone: messagesList},
@@ -511,9 +525,9 @@ for (final msg in newOnly) {
     // ── DELETE MESSAGE (local only) ──
 Future<bool> deleteMessage(String phone, String messageId) async {
   try {
-    final response = await ApiClient.instance.delete(
-      '/messages/${Uri.encodeComponent(messageId)}',
-    );
+final response = await ApiClient.instance.delete(
+  '/api/messages/${Uri.encodeComponent(messageId)}',
+);
 
     final success =
         response.statusCode == 200 &&

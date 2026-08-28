@@ -569,7 +569,15 @@ class _ChatTile extends ConsumerWidget {
   }
 
   String _previewText() {
-    if (chat.lastMessage?.isNotEmpty == true) return chat.lastMessage!;
+    final msg = chat.lastMessage?.trim() ?? '';
+    if (msg.isNotEmpty) {
+      if (msg.toLowerCase().contains('unsupported') ||
+          msg.contains('131051') ||
+          msg.toLowerCase().contains('waiting for conversion')) {
+        return '📡 System / Vendor Event';
+      }
+      return msg;
+    }
 
     switch (chat.lastMessageType) {
       case 'image':
@@ -580,6 +588,8 @@ class _ChatTile extends ConsumerWidget {
         return '🎵 Audio';
       case 'document':
         return '📄 Document';
+      case 'unsupported':
+        return '📡 System / Vendor Event';
       default:
         return 'Tap to open chat';
     }

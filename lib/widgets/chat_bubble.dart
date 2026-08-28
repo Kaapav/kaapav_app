@@ -713,7 +713,7 @@ Widget _buildButtonMessage(List<Map<String, dynamic>> buttons, bool isDark) {
         final parsedBody = parsed['body'];
         final parsedText = parsed['text'];
 
-        if (bodyText == null || bodyText!.isEmpty) {
+        if (bodyText == null || bodyText.isEmpty) {
           if (parsedBody is Map) {
             bodyText = parsedBody['text']?.toString().trim();
           } else if (parsedBody != null) {
@@ -721,7 +721,7 @@ Widget _buildButtonMessage(List<Map<String, dynamic>> buttons, bool isDark) {
           }
         }
 
-        if (bodyText == null || bodyText!.isEmpty) {
+        if (bodyText == null || bodyText.isEmpty) {
           if (parsedText is Map) {
             bodyText = parsedText['body']?.toString().trim();
           } else if (parsedText != null) {
@@ -850,7 +850,7 @@ Widget _buildButtonMessage(List<Map<String, dynamic>> buttons, bool isDark) {
               ),
             ),
 
-          if (bodyText != null && bodyText.isNotEmpty)
+          if (bodyText.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 13, 14, 10),
               child: _buildRichText(
@@ -1906,20 +1906,51 @@ Widget _buildUnsupportedBubble(bool isDark) {
     } catch (_) {}
   }
 
+  final isConverted = meta?['kaapav_converted'] == true;
+  final isPendingVendor = meta?['kaapav_pending_vendor_message'] == true;
+  final matchedType = (meta?['matched_alert_type'] ?? '').toString().toLowerCase();
+  final vendorSender = (meta?['vendor_sender'] ?? message.phone).toString();
+
   Map<String, dynamic>? firstError;
   final errors = meta?['errors'];
-
   if (errors is List && errors.isNotEmpty && errors.first is Map) {
     firstError = Map<String, dynamic>.from(errors.first as Map);
   }
 
   final code = firstError?['code']?.toString() ?? '';
-  final title = firstError?['title']?.toString() ??
-      firstError?['message']?.toString() ??
-      'Unsupported WhatsApp message';
 
-  final details = firstError?['details']?.toString() ??
-      'Meta did not expose the readable message body for this webhook.';
+  // Classify notification category
+  final textBody = (message.text ?? '').trim();
+  final lowerText = textBody.toLowerCase();
+  final isPayment = matchedType == 'payment' || lowerText.contains('razorpay') || lowerText.contains('payment');
+  final isShipping = matchedType == 'shipping' || lowerText.contains('shiprocket') || lowerText.contains('delivery') || lowerText.contains('shipped') || lowerText.contains('awb');
+  final isOtp = matchedType == 'otp' || lowerText.contains('otp') || lowerText.contains('auth') || lowerText.contains('code');
+
+  final Color accentColor = isPayment
+      ? const Color(0xFF10B981)
+      : isShipping
+          ? const Color(0xFF8B5CF6)
+          : isOtp
+              ? const Color(0xFFF59E0B)
+              : KaapavTheme.gold;
+
+  final IconData headerIcon = isPayment
+      ? Icons.account_balance_wallet_outlined
+      : isShipping
+          ? Icons.local_shipping_outlined
+          : isOtp
+              ? Icons.key_rounded
+              : Icons.sensors_rounded;
+
+  final String cardTitle = isPayment
+      ? '💰 Razorpay Payment Notification'
+      : isShipping
+          ? '📦 Shiprocket Logistics Update'
+          : isOtp
+              ? '🔑 Authentication / OTP Alert'
+              : isPendingVendor
+                  ? '📡 Vendor/System Event Received'
+                  : '⚙️ System / Vendor Notification';
 
   final isNormalOutgoing = isOutgoing && !message.isAutoReply;
 
@@ -1935,9 +1966,12 @@ Widget _buildUnsupportedBubble(bool isDark) {
           ? KaapavTheme.grayLight.withValues(alpha: 0.78)
           : KaapavTheme.gray.withValues(alpha: 0.82);
 
+  // Check if readable converted text exists
+  final hasReadableText = isConverted || (textBody.isNotEmpty && !textBody.startsWith('[Unsupported'));
+
   return Container(
-    constraints: const BoxConstraints(minWidth: 230, maxWidth: 350),
-    padding: const EdgeInsets.fromLTRB(13, 11, 13, 8),
+    constraints: const BoxConstraints(minWidth: 240, maxWidth: 360),
+    padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
     decoration: BoxDecoration(
       gradient: isNormalOutgoing
           ? KaapavTheme.luxeGoldGradient
@@ -1945,9 +1979,9 @@ Widget _buildUnsupportedBubble(bool isDark) {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                Colors.white.withValues(alpha: isDark ? 0.105 : 0.72),
-                KaapavTheme.amber.withValues(alpha: isDark ? 0.09 : 0.06),
-                Colors.black.withValues(alpha: isDark ? 0.145 : 0.000),
+                accentColor.withValues(alpha: isDark ? 0.12 : 0.08),
+                Colors.white.withValues(alpha: isDark ? 0.08 : 0.75),
+                Colors.black.withValues(alpha: isDark ? 0.15 : 0.00),
               ],
             ),
       borderRadius: BorderRadius.only(
@@ -1957,14 +1991,15 @@ Widget _buildUnsupportedBubble(bool isDark) {
         bottomRight: Radius.circular(isOutgoing ? 7 : 20),
       ),
       border: Border.all(
-        color: KaapavTheme.amber.withValues(alpha: isDark ? 0.26 : 0.34),
+        color: accentColor.withValues(alpha: isDark ? 0.35 : 0.40),
+        width: 1.2,
       ),
       boxShadow: [
         BoxShadow(
-          color: KaapavTheme.amber.withValues(alpha: isDark ? 0.14 : 0.08),
-          blurRadius: 21,
-          spreadRadius: -8,
-          offset: const Offset(0, 10),
+          color: accentColor.withValues(alpha: isDark ? 0.14 : 0.08),
+          blurRadius: 18,
+          spreadRadius: -6,
+          offset: const Offset(0, 8),
         ),
       ],
     ),
@@ -1975,30 +2010,30 @@ Widget _buildUnsupportedBubble(bool isDark) {
         Row(
           children: [
             Container(
-              width: 34,
-              height: 34,
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
-                color: KaapavTheme.amber.withValues(alpha: 0.14),
+                color: accentColor.withValues(alpha: 0.15),
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: KaapavTheme.amber.withValues(alpha: 0.22),
+                  color: accentColor.withValues(alpha: 0.30),
                 ),
               ),
-              child: const Icon(
-                Icons.warning_amber_rounded,
-                color: KaapavTheme.amber,
-                size: 19,
+              child: Icon(
+                headerIcon,
+                color: accentColor,
+                size: 17,
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                title,
+                cardTitle,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w900,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
                   color: textColor,
                 ),
               ),
@@ -2006,73 +2041,159 @@ Widget _buildUnsupportedBubble(bool isDark) {
           ],
         ),
 
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
 
-        Text(
-          details,
-          style: TextStyle(
-            fontSize: 12,
-            height: 1.35,
-            fontWeight: FontWeight.w600,
-            color: subTextColor,
-          ),
-        ),
-
-        if (code.isNotEmpty) ...[
-          const SizedBox(height: 8),
+        if (hasReadableText) ...[
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: KaapavTheme.amber.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(999),
+              color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF9FAFB),
+              borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: KaapavTheme.amber.withValues(alpha: 0.20),
+                color: isDark ? Colors.white12 : const Color(0xFFE5E7EB),
               ),
             ),
             child: Text(
-              'Meta code: $code',
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: KaapavTheme.amber,
+              textBody,
+              style: TextStyle(
+                fontSize: 12.5,
+                height: 1.4,
+                fontWeight: FontWeight.w500,
+                color: textColor,
               ),
+            ),
+          ),
+        ] else ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF9FAFB),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isDark ? Colors.white12 : const Color(0xFFE5E7EB),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (vendorSender.isNotEmpty)
+                  Text(
+                    'Sender: $vendorSender',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: textColor),
+                  ),
+                const SizedBox(height: 4),
+                Text(
+                  'Meta Cloud API restricts direct body delivery for third-party OTP & automated business templates for privacy.\n\nAll real-time payment, shipping & OTP events are tracked live in Owner Inbox.',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    height: 1.35,
+                    color: subTextColor,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
 
-        if (raw.isNotEmpty) ...[
-          const SizedBox(height: 9),
-          InkWell(
-            onTap: () {
-              Clipboard.setData(ClipboardData(text: raw));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Raw webhook copied')),
-              );
-            },
-            borderRadius: BorderRadius.circular(999),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: isDark ? 0.08 : 0.42),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: isDark ? 0.10 : 0.46),
+        const SizedBox(height: 10),
+
+        // Action Buttons Row
+        Row(
+          children: [
+            Expanded(
+              child: InkWell(
+                onTap: () {
+                  Navigator.pushNamed(context, '/owner-inbox');
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: accentColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: accentColor.withValues(alpha: 0.35)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.inbox_rounded, size: 13, color: accentColor),
+                      const SizedBox(width: 5),
+                      Text(
+                        'Owner Inbox',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: accentColor,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: InkWell(
+                onTap: () {
+                  Navigator.pushNamed(context, '/orders');
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: isDark ? 0.08 : 0.42),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white.withValues(alpha: isDark ? 0.12 : 0.46)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.receipt_long_outlined, size: 13, color: subTextColor),
+                      const SizedBox(width: 5),
+                      Text(
+                        'Orders',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: subTextColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        if (code.isNotEmpty || raw.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          InkWell(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: raw.isNotEmpty ? raw : textBody));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Notification details copied')),
+              );
+            },
+            borderRadius: BorderRadius.circular(6),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
                     Icons.content_copy_rounded,
-                    size: 13,
+                    size: 12,
                     color: subTextColor,
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 5),
                   Text(
-                    'Copy raw webhook',
+                    code.isNotEmpty ? 'Meta code: $code • Copy details' : 'Copy details',
                     style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
                       color: subTextColor,
                     ),
                   ),
@@ -2082,7 +2203,7 @@ Widget _buildUnsupportedBubble(bool isDark) {
           ),
         ],
 
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
 
         Align(
           alignment: Alignment.centerRight,

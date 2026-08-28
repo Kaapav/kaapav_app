@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#FAF7F2">
+  <title>Contact Us | KAAPAV</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Jost:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    
+  :root {
+    --bg-mesh: radial-gradient(at 0% 0%, rgba(245, 237, 224, 0.8) 0, transparent 50%),
+               radial-gradient(at 100% 0%, rgba(235, 219, 192, 0.7) 0, transparent 50%),
+               radial-gradient(at 50% 50%, rgba(250, 247, 242, 1) 0, transparent 100%),
+               radial-gradient(at 100% 100%, rgba(240, 226, 202, 0.7) 0, transparent 50%),
+               #FAF7F2;
+    --glass-card: rgba(255, 255, 255, 0.78);
+    --glass-card-hover: rgba(255, 255, 255, 0.92);
+    --glass-border: rgba(196, 148, 50, 0.22);
+    --glass-border-hover: rgba(196, 148, 50, 0.45);
+    --glass-shadow: 0 10px 36px -4px rgba(60, 40, 20, 0.06), 0 0 1px 1px rgba(255, 255, 255, 0.8) inset;
+    --glass-blur: blur(20px) saturate(180%);
+    --gold: #C49432;
+    --gold-l: #D4A84B;
+    --gold-d: #9A7424;
+    --ink: #1C1917;
+    --muted: #78716C;
+    --green: #10B981;
+    --red: #EF4444;
+    --serif: "Cormorant Garamond", Georgia, serif;
+    --sans: "Jost", -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: var(--bg-mesh);
+    background-attachment: fixed;
+    color: var(--ink);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  a { color: inherit; text-decoration: none; cursor: pointer; }
+  button { font: inherit; cursor: pointer; }
+  img { display: block; max-width: 100%; }
+  .shell { width: min(1180px, calc(100% - 32px)); margin: auto; }
+
+  /* Glassmorphism Header */
+  .top-header {
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border-bottom: 1px solid var(--glass-border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 4px 20px rgba(60,40,20,0.03);
+  }
+  .top-nav-inner { display: flex; align-items: center; justify-content: space-between; min-height: 70px; padding: 10px 0; }
+  .brand-wrap { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .brand-mark { width: 34px; height: 34px; border-radius: 50%; border: 1.5px solid var(--gold); display: flex; align-items: center; justify-content: center; font-family: var(--serif); font-weight: 700; color: var(--gold-d); font-size: 16px; background: rgba(255,255,255,0.6); }
+  .brand-name { font-family: var(--serif); font-size: 22px; letter-spacing: 0.18em; font-weight: 600; color: var(--gold-d); line-height: 1; }
+  .brand-name small { display: block; font-size: 7px; letter-spacing: 0.3em; color: var(--muted); font-family: var(--sans); margin-top: 3px; }
+
+  .nav-menu { display: flex; gap: 18px; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 500; }
+  .nav-menu a { transition: 0.2s; cursor: pointer; padding: 6px 4px; }
+  .nav-menu a:hover, .nav-menu a.active { color: var(--gold-d); font-weight: 600; }
+
+  .nav-icons { display: flex; align-items: center; gap: 14px; }
+  .btn-icon { background: none; border: none; font-size: 16px; cursor: pointer; position: relative; }
+  .badge-count { position: absolute; top: -6px; right: -8px; background: #7A1C30; color: #fff; font-size: 9px; font-weight: 700; border-radius: 10px; padding: 2px 6px; }
+
+  /* Glass Category Pills */
+  .cat-bar { display: flex; gap: 10px; overflow-x: auto; padding: 4px 2px 14px; margin-bottom: 28px; scrollbar-width: none; justify-content: center; }
+  .cat-bar::-webkit-scrollbar { display: none; }
+  .cat-pill {
+    padding: 9px 20px;
+    border-radius: 30px;
+    border: 1px solid var(--glass-border);
+    background: rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: 0.25s;
+    color: #574D42;
+    box-shadow: 0 2px 10px rgba(60,40,20,0.02);
+  }
+  .cat-pill.on, .cat-pill:hover {
+    background: #1C1917;
+    color: #E2B755;
+    border-color: #1C1917;
+    font-weight: 600;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.15);
+  }
+
+  /* Glass Product Cards */
+  .glass-card {
+    background: var(--glass-card);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 18px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: var(--glass-shadow);
+  }
+  .glass-card:hover {
+    background: var(--glass-card-hover);
+    transform: translateY(-6px);
+    border-color: var(--glass-border-hover);
+    box-shadow: 0 16px 40px rgba(60,40,20,0.1), 0 0 1px 1px rgba(255, 255, 255, 0.9) inset;
+  }
+  .glass-card-img-wrap { width: 100%; aspect-ratio: 1; background: rgba(248,246,240,0.6); overflow: hidden; position: relative; }
+  .glass-card-img-wrap img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+  .glass-card:hover .glass-card-img-wrap img { transform: scale(1.05); }
+
+  .glass-card-body { padding: 16px 14px; display: flex; flex-direction: column; flex: 1; }
+  .glass-card-tag { font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold-d); font-weight: 700; margin-bottom: 4px; }
+  .glass-card-title { font-size: 12px; font-weight: 500; color: #1C1917; line-height: 1.4; margin-bottom: 12px; min-height: 34px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .glass-card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: auto; }
+  .glass-card-price { font-size: 16px; font-weight: 700; color: #1C1917; }
+  .glass-card-mrp { font-size: 11px; color: var(--muted); text-decoration: line-through; margin-left: 4px; }
+  .btn-gold { padding: 7px 14px; background: linear-gradient(135deg, #2A241C, #181510); color: #E2B755; border: 1px solid rgba(212,168,75,0.4); border-radius: 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; transition: 0.2s; }
+  .btn-gold:hover { background: #1C1917; color: #fff; border-color: var(--gold); }
+
+  /* Glass Footer */
+  .site-footer {
+    background: rgba(253, 251, 248, 0.88);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border-top: 1px solid var(--glass-border);
+    padding: 50px 0 25px;
+    margin-top: auto;
+    font-size: 12px;
+  }
+  .footer-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 30px; margin-bottom: 30px; }
+  .footer-col h5 { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #1C1917; font-weight: 700; margin-bottom: 14px; }
+  .footer-col a { display: block; color: #665C51; margin-bottom: 8px; font-size: 12px; cursor: pointer; transition: 0.2s; }
+  .footer-col a:hover { color: var(--gold-d); }
+  .footer-bottom-bar { border-top: 1px solid var(--glass-border); padding-top: 20px; text-align: center; font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; align-items: center; }
+
+  @media(max-width: 900px) {
+    .footer-grid { grid-template-columns: 1fr 1fr; }
+    .nav-menu { display: none; }
+  }
+
+    .content-box {
+      background: var(--glass-card);
+      backdrop-filter: var(--glass-blur);
+      -webkit-backdrop-filter: var(--glass-blur);
+      border: 1px solid var(--glass-border);
+      border-radius: 24px;
+      padding: clamp(24px, 5vw, 48px);
+      box-shadow: var(--glass-shadow);
+      max-width: 860px;
+      margin: auto;
+      font-size: 14px;
+      line-height: 1.85;
+      color: #4A3E31;
+    }
+  </style>
+<style>
+  /* Exact Top Header CSS (Matched to Image) */
+  .kaapav-main-header {
+    background: #FAF7F2;
+    border-bottom: 1px solid rgba(196, 148, 50, 0.2);
+    position: sticky;
+    top: 0;
+    z-index: 999;
+    box-shadow: 0 2px 14px rgba(60, 40, 20, 0.04);
+  }
+  .header-shell {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 10px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 72px;
+  }
+  
+  /* Brand Logo */
+  .header-brand-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-decoration: none;
+    line-height: 1;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .brand-text-kaapav {
+    font-family: "Jost", -apple-system, sans-serif;
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    font-weight: 700;
+    color: #9A7424;
+    text-transform: uppercase;
+  }
+
+  /* Center Navigation */
+  .header-nav-menu {
+    display: flex;
+    align-items: center;
+    gap: clamp(16px, 2.2vw, 32px);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .nav-link-item {
+    font-family: "Jost", -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #C49432;
+    text-decoration: none;
+    transition: color 0.2s, transform 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 0;
+  }
+  .nav-link-item:hover {
+    color: #8E681C;
+    transform: translateY(-1px);
+  }
+  .dropdown-caret {
+    font-size: 11px;
+    opacity: 0.8;
+  }
+
+  /* Dropdown Menu */
+  .nav-dropdown-wrap {
+    position: relative;
+  }
+  .nav-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(196, 148, 50, 0.25);
+    border-radius: 14px;
+    padding: 10px 0;
+    min-width: 220px;
+    box-shadow: 0 16px 36px rgba(60, 40, 20, 0.12);
+    display: none;
+    flex-direction: column;
+    z-index: 1000;
+  }
+  .nav-dropdown-wrap:hover .nav-dropdown-menu {
+    display: flex;
+  }
+  .nav-dropdown-menu a {
+    padding: 9px 18px;
+    font-size: 12.5px;
+    color: #37302A;
+    text-decoration: none;
+    font-weight: 500;
+    transition: background 0.15s, color 0.15s;
+  }
+  .nav-dropdown-menu a:hover {
+    background: #FAF5EB;
+    color: #9A7424;
+    font-weight: 600;
+  }
+
+  /* Right Action Buttons */
+  .header-actions-wrap {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .hdr-btn-circle {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #F1ECE4;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.2s, transform 0.2s;
+  }
+  .hdr-btn-circle:hover {
+    background: #E8E0D5;
+    transform: translateY(-1px);
+  }
+  .hdr-cart-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: #7A1C30;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    border-radius: 10px;
+    padding: 2px 6px;
+  }
+  .hdr-btn-signin {
+    background: #F1ECE4;
+    color: #1C1917;
+    font-family: "Jost", -apple-system, sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 9px 20px;
+    border-radius: 30px;
+    text-decoration: none;
+    transition: background 0.2s, transform 0.2s;
+  }
+  .hdr-btn-signin:hover {
+    background: #E8E0D5;
+    transform: translateY(-1px);
+  }
+
+  /* Mobile Subnav Bar */
+  .mobile-subnav-bar {
+    display: none;
+    overflow-x: auto;
+    padding: 6px 14px 10px;
+    gap: 8px;
+    scrollbar-width: none;
+    border-top: 1px solid rgba(196, 148, 50, 0.12);
+    background: #F7F3EC;
+  }
+  .mobile-subnav-bar::-webkit-scrollbar { display: none; }
+  .m-subnav-chip {
+    padding: 6px 14px;
+    border-radius: 20px;
+    background: rgba(255,255,255,0.85);
+    border: 1px solid rgba(196, 148, 50, 0.2);
+    font-size: 11px;
+    font-weight: 600;
+    color: #9A7424;
+    text-decoration: none;
+    white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  @media (max-width: 992px) {
+    .header-nav-menu { display: none; }
+    .mobile-subnav-bar { display: flex; }
+    .hdr-btn-signin { padding: 7px 14px; font-size: 12px; }
+  }
+</style>
+
+
+
+</head>
+<body>
+  <!-- Header -->
+  
+  <!-- Top Navigation Header (Configured Exactly to Reference Image) -->
+  
+  <!-- Top Navigation Header -->
+  <header class="kaapav-main-header">
+    <div class="header-shell">
+      <a href="../index.html" class="header-brand-wrap">
+        <img src="../assets/kaapav-logo.png" onerror="this.src='assets/kaapav-logo.png'" alt="KAAPAV" class="header-logo-img">
+      </a>
+      <nav class="header-nav-menu">
+        <div class="nav-dropdown-wrap">
+          <a href="../shop/index.html" class="nav-link-item has-dropdown">
+            ALL JEWELLERY <span class="dropdown-caret">&#9662;</span>
+          </a>
+          <div class="nav-dropdown-menu">
+            <a href="../shop/index.html">All Jewellery</a>
+            <a href="../category/earrings/index.html">Earrings</a>
+            <a href="../category/necklaces/index.html">Necklaces</a>
+            <a href="../category/bracelets/index.html">Bracelets</a>
+            <a href="../category/rings/index.html">Rings</a>
+            <a href="../category/pendants/index.html">Pendants</a>
+            <a href="../category/sets/index.html">Jewellery Sets</a>
+            <a href="../category/bestsellers/index.html">Bestsellers</a>
+          </div>
+        </div>
+        <a href="../shop/index.html?style=elegant" class="nav-link-item">ELEGANT</a>
+        <a href="../shop/index.html?style=colourful" class="nav-link-item">COLOURFUL</a>
+        <a href="../shop/index.html?style=contemporary" class="nav-link-item">CONTEMPORARY</a>
+        <a href="../shop/index.html?style=subtle" class="nav-link-item">SUBTLE</a>
+        <a href="../shop/index.html?style=fashion" class="nav-link-item">FASHION</a>
+        <a href="../shop/index.html?style=modern" class="nav-link-item">MODERN</a>
+      </nav>
+      <div class="header-actions-wrap">
+        <button class="hdr-btn-circle" onclick="openGlobalSearch()" title="Search">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#2B2620" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        </button>
+        <a href="../admin/index.html" class="hdr-btn-signin">Sign in</a>
+        <button class="hdr-btn-circle" onclick="window.location.href='../shop/index.html'" title="Bag">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#2B2620" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
+        </button>
+        <button class="hdr-btn-circle" onclick="alert('Wishlist: Saved in session')" title="Wishlist">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="#2B2620"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+
+  <main class="shell" style="padding:40px 0 80px;flex:1">
+    <div class="content-box">
+      <h1 style="font-family:var(--serif);font-size:clamp(32px,5vw,46px);font-weight:500;margin-bottom:6px;color:#1C1917">Contact Us</h1>
+      <div style="font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:var(--gold-d);font-weight:700;margin-bottom:24px">Human Care 7 Days a Week</div>
+      <p>We are always here to assist you with order tracking, styling advice, or custom inquiries.</p><div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:16px;margin:24px 0"><div style="background:rgba(255,255,255,0.7);padding:20px;border-radius:14px;border:1px solid var(--glass-border)"><h4 style="font-size:14px;color:#1C1917;margin-bottom:4px">💬 WhatsApp Support</h4><p style="font-size:12px;color:#78716C;margin-bottom:12px">10:00 AM – 7:00 PM IST</p><a href="https://wa.me/919148330016" target="_blank" style="display:inline-block;padding:8px 16px;background:#25D366;color:#fff;border-radius:6px;font-size:12px;font-weight:600">+91 91483 30016</a></div><div style="background:rgba(255,255,255,0.7);padding:20px;border-radius:14px;border:1px solid var(--glass-border)"><h4 style="font-size:14px;color:#1C1917;margin-bottom:4px">✉️ Email Support</h4><p style="font-size:12px;color:#78716C;margin-bottom:12px">Direct assistance inbox</p><a href="mailto:care.kaapav@gmail.com" style="display:inline-block;padding:8px 16px;background:#1C1917;color:#D4A84B;border-radius:6px;font-size:12px;font-weight:600">care.kaapav@gmail.com</a></div></div>
+    </div>
+  </main>
+
+  
+
+
+
+
+
+  
+<script>
+  function getRelRoot() {
+    const p = window.location.pathname.replace(/\\/g, '/');
+    if (p.includes('/category/')) return '../../';
+    if (p.includes('/shop/') || p.includes('/product/') || p.includes('/admin/') || p.includes('-policy/') || p.includes('/terms-') || p.includes('/privacy-') || p.includes('/about-') || p.includes('/contact-') || p.includes('/faq/') || p.includes('/returns/') || p.includes('/shipping/') || p.includes('/terms/') || p.includes('/privacy/') || p.includes('/about/') || p.includes('/contact/')) return '../';
+    return './';
+  }
+
+  function navToProduct(skuOrName) {
+    const root = getRelRoot();
+    if (!skuOrName) {
+      window.location.href = root + 'shop/index.html';
+      return;
+    }
+    const clean = decodeURIComponent(skuOrName).trim().toLowerCase();
+    const found = MASTER_PRODUCTS.find(p => p.sku.toLowerCase() === clean || p.name.toLowerCase() === clean || clean.includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(clean)) || MASTER_PRODUCTS[0];
+    window.location.href = root + 'product/index.html?sku=' + encodeURIComponent(found ? found.sku : skuOrName);
+  }
+
+  function navToCategory(cat) {
+    const root = getRelRoot();
+    if (!cat || cat === 'all') {
+      window.location.href = root + 'shop/index.html';
+    } else {
+      window.location.href = root + 'category/' + encodeURIComponent(cat.toLowerCase()) + '/index.html';
+    }
+  }
+
+  function navToShop(cat) {
+    const root = getRelRoot();
+    if (cat && cat !== 'all') {
+      window.location.href = root + 'shop/index.html?cat=' + encodeURIComponent(cat);
+    } else {
+      window.location.href = root + 'shop/index.html';
+    }
+  }
+
+  function navToHome() {
+    window.location.href = getRelRoot() + 'index.html';
+  }
+</script>
+
+
+<script>
+  (function syncPolicyFromAdmin() {
+    try {
+      const data = JSON.parse(localStorage.getItem('kpv_policy_data') || '{}');
+      const cur = data['contact-us'];
+      if (cur) {
+        if (cur.title) {
+          const h1 = document.querySelector('h1');
+          if (h1) h1.textContent = cur.title;
+          document.title = cur.title + ' | KAAPAV';
+        }
+        if (cur.subtitle) {
+          const sub = document.querySelector('.policy-badge, .sec-badge, header p');
+          if (sub) sub.textContent = cur.subtitle;
+        }
+        if (cur.content) {
+          const bodyEl = document.querySelector('.policy-body, .prose, .glass-card > div:last-child');
+          if (bodyEl) bodyEl.innerHTML = cur.content;
+        }
+      }
+    } catch(e) {}
+  })();
+</script>
+
+<script src="../assets/kaapav-live-sync.js"></script>
+
+
+
+<style id="kaapav-maroon-footer-css">
+/* ========================================================
+   KAAPAV LUXURY MAROON WINE FOOTER (3 VERTICAL, 1 HORIZONTAL)
+   ======================================================== */
+.kaapav-footer {
+  --gold: #f2cf87;
+  --gold-hover: #ffffff;
+  --ink: #fff8ed;
+  --muted: rgba(255, 248, 237, 0.75);
+  background: radial-gradient(circle at 10% 8%, rgba(239, 202, 123, 0.18), transparent 22%),
+              radial-gradient(circle at 91% 77%, rgba(193, 91, 121, 0.16), transparent 25%),
+              linear-gradient(133deg, #310713 0%, #5c1329 55%, #3b0a18 100%) !important;
+  border-top: none !important;
+  padding: 60px 20px 28px !important;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  color: var(--ink) !important;
+  width: 100% !important;
+  margin-top: auto !important;
+  box-sizing: border-box !important;
+}
+.kaapav-footer * {
+  box-sizing: border-box;
+}
+.kaapav-footer-grid {
+  max-width: 1180px;
+  margin: 0 auto 32px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  border-top: none !important;
+  border-bottom: none !important;
+  padding: 0 0 36px;
+  align-items: stretch !important;
+  position: relative;
+}
+/* The 1 Horizontal Line at the bottom of the grid */
+.kaapav-footer-grid::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--gold);
+  border-radius: 2px;
+}
+.kaapav-footer-grid > div {
+  padding: 8px 16px;
+  border-right: none !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  justify-content: flex-start;
+  height: 100% !important;
+  position: relative;
+}
+/* The 3 Vertical Lines dividing the 4 columns */
+.kaapav-footer-grid > div:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 2px;
+  background: var(--gold);
+  border-radius: 2px;
+}
+.kaapav-footer-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center !important;
+  text-align: center !important;
+  justify-content: flex-start;
+  gap: 10px;
+  height: 100%;
+}
+.kaapav-footer-brand img {
+  max-width: 130px;
+  height: auto;
+  margin-bottom: 4px;
+  display: block;
+}
+.kaapav-footer-contact { word-break: break-word;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.75;
+  text-align: center;
+}
+.kaapav-footer-contact a {
+  color: #fff8ed;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.25s ease;
+}
+.kaapav-footer-contact a:hover {
+  color: var(--gold);
+}
+.kaapav-footer h4 {
+  font-size: 12.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 16px;
+  position: relative;
+  font-weight: 700;
+  display: inline-block;
+  padding-bottom: 8px;
+  text-align: center;
+}
+/* The exact underline format */
+.kaapav-footer h4::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 32px;
+  height: 2px;
+  background: var(--gold);
+  border-radius: 2px;
+  transform: translateX(-50%);
+}
+.kaapav-footer ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  width: 100%;
+}
+.kaapav-footer li {
+  width: 100%;
+  text-align: center;
+  margin: 0;
+}
+.kaapav-footer ul a {
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.25s ease;
+  display: block;
+  text-align: center;
+  width: 100%;
+}
+.kaapav-footer ul a:hover {
+  color: var(--gold);
+}
+.kaapav-social {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+  justify-content: center;
+  align-items: center;
+}
+.kaapav-social a {
+  width: 38px;
+  height: 38px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid var(--gold);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+.kaapav-social a:hover {
+  transform: translateY(-3px);
+  background: rgba(255, 255, 255, 0.2);
+}
+.kaapav-social svg {
+  width: 17px;
+  height: 17px;
+}
+.kaapav-seo-footer {
+  max-width: 1180px;
+  margin: 28px auto 0;
+  padding-top: 0;
+  border-top: none !important;
+  font-size: 12px;
+  color: rgba(255, 248, 237, 0.65);
+  text-align: center;
+}
+.kaapav-seo-footer h5 {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 6px;
+  font-weight: 700;
+  text-align: center;
+}
+.kaapav-seo-footer p {
+  line-height: 1.75;
+  margin-bottom: 18px;
+  text-align: center;
+}
+.kaapav-seo-footer a {
+  color: rgba(255, 248, 237, 0.68);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+.kaapav-seo-footer a:hover {
+  color: var(--gold);
+}
+.kaapav-footer-bottom {
+  border-top: 2px solid var(--gold); 
+  padding-top: 18px;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 248, 237, 0.6);
+  margin-top: 20px;
+}
+@media (max-width: 860px) {
+  .kaapav-footer-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+  .kaapav-footer-grid::after {
+    display: none;
+  }
+  .kaapav-footer-grid > div:not(:last-child)::after {
+    display: none;
+  }
+  .kaapav-footer-grid > div:nth-child(1),
+  .kaapav-footer-grid > div:nth-child(2) {
+    border-bottom: 2px solid var(--gold);
+    padding-bottom: 20px;
+  }
+  .kaapav-footer-grid > div:nth-child(1) {
+    border-right: 2px solid var(--gold) !important;
+  }
+  .kaapav-footer-grid > div:nth-child(3) {
+    border-right: 2px solid var(--gold) !important;
+  }
+}
+@media (max-width: 520px) {
+  .kaapav-footer {
+    padding: 44px 16px 24px !important;
+  }
+  .kaapav-footer-grid {
+    grid-template-columns: 1fr;
+  }
+  .kaapav-footer-grid > div {
+    border-right: none !important;
+    border-bottom: 2px solid var(--gold);
+    padding: 18px 10px;
+  }
+  .kaapav-footer-grid > div:last-child {
+    border-bottom: none;
+  }
+}
+</style>
+
+<footer class="kaapav-footer" role="contentinfo">
+  <div class="kaapav-footer-grid">
+    
+    <!-- Brand & Contact -->
+    <div class="kaapav-footer-brand">
+      <img src="../assets/kaapav-logo.png" onerror="this.src='https://kaapav1.odoo.com/web/image/website/3/logo/KAAPAV?unique=7206b26'" alt="KAAPAV" loading="lazy">
+      <div class="kaapav-footer-contact">
+        <div>Mobile: <a href="https://wa.me/919148330016" target="_blank">+91 91483 30016</a> (WhatsApp Only)</div>
+        <div style="margin-top:4px">Email: <a href="mailto:care.kaapav@gmail.com">care.kaapav@gmail.com</a></div>
+      </div>
+    </div>
+
+    <!-- Jewellery Column (Centered in Line Border) -->
+    <div>
+      <h4>Jewellery</h4>
+      <ul>
+        <li><a href="../category/earrings/index.html">Earrings</a></li>
+        <li><a href="../category/necklaces/index.html">Necklaces</a></li>
+        <li><a href="../category/bracelets/index.html">Bracelets</a></li>
+        <li><a href="../category/rings/index.html">Rings</a></li>
+        <li><a href="../category/pendants/index.html">Pendants</a></li>
+        <li><a href="../category/sets/index.html">Jewellery Sets</a></li>
+        <li><a href="../shop/index.html">All Jewellery</a></li>
+      </ul>
+    </div>
+
+    <!-- Policies Column (Centered in Line Border) -->
+    <div>
+      <h4>Policies</h4>
+      <ul>
+        <li><a href="../about-us/index.html">About Us</a></li>
+        <li><a href="../return-policy/index.html">Return &amp; Refund Policy</a></li>
+        <li><a href="../shipping-policy/index.html">Shipping &amp; Delivery</a></li>
+        <li><a href="../privacy-policy/index.html">Privacy Policy</a></li>
+        <li><a href="../terms-of-service/index.html">Terms of Service</a></li>
+      </ul>
+    </div>
+
+    <!-- Follow Us Column -->
+    <div>
+      <h4>Follow Us</h4>
+      <div class="kaapav-social">
+        <a class="ig" href="https://www.instagram.com/kaapavfashionjewellery/" target="_blank" title="Instagram">
+          <svg viewbox="0 0 24 24">
+            <defs>
+              <lineargradient id="igGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#f58529"></stop>
+                <stop offset="50%" stop-color="#dd2a7b"></stop>
+                <stop offset="100%" stop-color="#515bd4"></stop>
+              </lineargradient>
+            </defs>
+            <path fill="url(#igGradient)" d="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5zm5 5a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm6.5-.9a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2z"></path>
+          </svg>
+        </a>
+        <a class="fb" href="https://www.facebook.com/kaapavfashionjewellery" target="_blank" title="Facebook">
+          <svg viewbox="0 0 320 512">
+            <path fill="#1877F2" d="M279.14 288l14.22-92.66h-88.91V127.41c0-25.35 12.42-50.06 52.24-50.06h40.42V6.26S260.43 0 225.36 0c-73.22 0-121.08 44.38-121.08 124.72v70.62H22.89V288h81.39v224h100.2V288z"></path>
+          </svg>
+        </a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Popular Searches SEO Cluster -->
+  <div class="kaapav-seo-footer"> 
+    <h5>Popular Searches</h5>
+    <p>
+      <a href="../category/bracelets/index.html">Bracelets</a> |
+      <a href="../category/earrings/index.html">Earrings</a> |
+      <a href="../category/rings/index.html">Rings</a> |
+      <a href="../category/necklaces/index.html">Necklaces</a> |
+      <a href="../category/pendants/index.html">Pendants</a> |
+      <a href="../shop/index.html">All Jewellery</a>
+    </p>
+
+    <h5>Women’s Artificial Jewellery</h5>
+    <p>
+      <a href="../category/earrings/index.html">Earrings for Women</a> |
+      <a href="../category/rings/index.html">Rings for Women</a> |
+      <a href="../category/bracelets/index.html">Bracelets for Women</a> |
+      <a href="../category/necklaces/index.html">Necklaces for Women</a> |
+      <a href="../category/pendants/index.html">Pendants for Women</a>
+    </p>
+
+    <h5>Jewellery by Occasion</h5>
+    <p>
+      <a href="../category/rings/index.html">Engagement Rings</a> |
+      <a href="../category/earrings/index.html">Party Wear Earrings</a> |
+      <a href="../category/bracelets/index.html">Gift Bracelets</a> |
+      <a href="../category/necklaces/index.html">Festive Necklaces</a>
+    </p>
+
+    <h5>Gifting Jewellery</h5>
+    <p>
+      <a href="../category/rings/index.html">Gifting Rings</a> |
+      <a href="../category/necklaces/index.html">Gifting Necklaces</a> |
+      <a href="../category/bracelets/index.html">Gifting Bracelets</a> |
+      <a href="../category/pendants/index.html">Gifting Pendants</a>
+    </p>
+
+    <h5>Trending Jewellery</h5>
+    <p>
+      <a href="../category/earrings/index.html">Minimal Earrings</a> |
+      <a href="../category/rings/index.html">Dailywear Rings</a> |
+      <a href="../category/bracelets/index.html">Lightweight Bracelets</a> |
+      <a href="../category/necklaces/index.html">Modern Necklaces</a>
+    </p>
+  </div>
+
+  <div class="kaapav-footer-bottom">
+    Copyright &copy; 2026 KAAPAV Fashion Jewellery. All Rights Reserved.
+  </div>
+</footer>
+</body>
+</html>

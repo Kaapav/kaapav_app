@@ -2643,6 +2643,7 @@ Padding(
     return DateTime.now().difference(sentTime).inHours < 1;
   }
 
+  // ignore: unused_element
   Future<void> _deleteForEveryone(Message message) async {
     final success = await ref.read(messageProvider.notifier).deleteForEveryone(
       widget.phone, message.messageId,
@@ -2843,6 +2844,7 @@ class _GlassOptionTile extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _AttachOption extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -2869,7 +2871,7 @@ class _AttachOption extends StatelessWidget {
   }
 }
 
-
+// ignore: unused_element
 class _DisappearingOption extends StatelessWidget {
   final String label;
   final String subtitle;

@@ -1412,6 +1412,7 @@ CREATE TABLE IF NOT EXISTS business_enquiries (
   phone TEXT NOT NULL,
   name TEXT DEFAULT '',
   enquiry_type TEXT DEFAULT 'other',
+  collab_type TEXT DEFAULT '',
   profession TEXT DEFAULT '',
   brand_name TEXT DEFAULT '',
   insta_handle TEXT DEFAULT '',
@@ -1422,4 +1423,13 @@ CREATE TABLE IF NOT EXISTS business_enquiries (
   created_at TEXT,
   updated_at TEXT
 );
+
+-- ═══════════════════════════════════════════════
+-- RETURN LOGISTICS TRACKING
+-- ═══════════════════════════════════════════════
+ALTER TABLE return_requests ADD COLUMN return_courier TEXT NOT NULL DEFAULT '';
+ALTER TABLE return_requests ADD COLUMN return_awb_number TEXT NOT NULL DEFAULT '';
+ALTER TABLE return_requests ADD COLUMN return_shipment_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE return_requests ADD COLUMN return_tracking_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE return_requests ADD COLUMN pickup_scheduled_date TEXT;
 

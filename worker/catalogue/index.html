@@ -22,7 +22,7 @@
   --success:#10B981;--error:#EF4444;--warn:#F59E0B;
   --font-serif:'Cormorant Garamond',serif;
   --font-sans:'Jost',sans-serif;
-} 
+}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{font-family:var(--font-sans);background:var(--cream);color:var(--dark);min-height:100vh;overscroll-behavior:none}
 
@@ -3001,6 +3001,318 @@ body.theme-glass-kaapav .cat .n{
 }
 </style>
 
+<style>
+/* CUSTOMER RETURN / EXCHANGE WORKFLOW */
+
+#returnRequestMo {
+  z-index: 10004;
+}
+
+#returnRequestMo .co-box {
+  position: relative;
+  z-index: 10005;
+  max-width: 560px;
+}
+
+.rr-policy {
+  background: #fffaf0;
+  border: 1px solid
+    rgba(196, 148, 50, 0.28);
+  border-radius: 12px;
+  padding: 11px 12px;
+  margin-bottom: 12px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dark2);
+}
+
+.rr-policy strong {
+  color: var(--dark);
+}
+
+.rr-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.rr-radio {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 11px;
+  font-size: 12px;
+  color: var(--dark2);
+  cursor: pointer;
+}
+
+.rr-radio input {
+  accent-color: var(--gold);
+}
+
+.rr-items {
+  display: none;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.rr-items.on {
+  display: block;
+}
+
+.rr-item {
+  display: grid;
+  grid-template-columns:
+    auto minmax(0, 1fr) 72px;
+  gap: 9px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom:
+    1px solid #f0ece4;
+}
+
+.rr-item:last-child {
+  border-bottom: none;
+}
+
+.rr-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--gold);
+}
+
+.rr-item-name {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--dark);
+}
+
+.rr-item-sku {
+  font-size: 9px;
+  color: var(--gray);
+  margin-top: 2px;
+}
+
+.rr-qty {
+  width: 100%;
+  background: var(--cream);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--dark);
+  text-align: center;
+}
+
+.rr-status {
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 10px;
+  background: #fff;
+  border: 1px solid var(--border);
+}
+
+.rr-status strong {
+  display: block;
+  color: var(--dark);
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.rr-status span {
+  display: block;
+  color: var(--gray);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.od-return {
+  background: #fff7e8 !important;
+  color: #8a5f16 !important;
+  border-color: #d7bd82 !important;
+}
+
+.rr-submit {
+  width: 100%;
+  background: var(--dark);
+  color: var(--gold-l);
+  border: none;
+  border-radius: 10px;
+  padding: 13px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rr-submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.theme-ivory .rr-policy {
+  background: #fffaf4;
+  border-color: #d8c18f;
+}
+
+.theme-ivory .rr-radio,
+.theme-ivory .rr-items,
+.theme-ivory .rr-status {
+  background: #fffaf4;
+  border-color: #ded4c5;
+}
+
+.theme-ivory .rr-submit {
+  background: #64182e;
+  color: #fff5e6;
+}
+
+@media (max-width: 480px) {
+  .rr-choice {
+    grid-template-columns: 1fr;
+  }
+
+  .rr-item {
+    grid-template-columns:
+      auto minmax(0, 1fr) 62px;
+  }
+}
+
+/* RETURN & REFUND TRACKER STYLES */
+.rr-track-box {
+  background: #fff;
+  border: 1px solid rgba(196, 148, 50, 0.28);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.rr-track-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.rr-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.rr-badge-requested { background: #fef3c7; color: #92400e; }
+.rr-badge-approved { background: #dbeafe; color: #1e40af; }
+.rr-badge-pickup_scheduled { background: #ede9fe; color: #6d28d9; }
+.rr-badge-picked_up { background: #e0e7ff; color: #3730a3; }
+.rr-badge-received { background: #ccfbf1; color: #115e59; }
+.rr-badge-qc_passed { background: #d1fae5; color: #065f46; }
+.rr-badge-refunded { background: #d1fae5; color: #047857; }
+.rr-badge-failed, .rr-badge-rejected { background: #fee2e2; color: #991b1b; }
+
+.rr-stepper {
+  display: flex;
+  justify-content: space-between;
+  position: relative;
+  margin: 14px 0 12px 0;
+}
+.rr-stepper::before {
+  content: '';
+  position: absolute;
+  top: 11px;
+  left: 10px;
+  right: 10px;
+  height: 2px;
+  background: #e5e7eb;
+  z-index: 1;
+}
+.rr-step {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  flex: 1;
+}
+.rr-step-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #e5e7eb;
+  color: #6b7280;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 5px auto;
+  border: 2px solid #fff;
+  transition: all 0.2s;
+}
+.rr-step.active .rr-step-dot {
+  background: #c49432;
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(196,148,50,0.25);
+}
+.rr-step.done .rr-step-dot {
+  background: #10b981;
+  color: #fff;
+}
+.rr-step-label {
+  font-size: 9px;
+  color: #6b7280;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.rr-step.active .rr-step-label {
+  color: #c49432;
+  font-weight: 700;
+}
+.rr-step.done .rr-step-label {
+  color: #10b981;
+}
+
+.rr-logistics-card {
+  background: #faf8f5;
+  border: 1px solid #e8dec8;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--dark);
+  line-height: 1.5;
+}
+.rr-logistics-card strong { color: var(--dark); }
+.rr-track-btn {
+  display: inline-block;
+  margin-top: 8px;
+  background: #1f2937;
+  color: #fde68a;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.rr-refund-card {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: #065f46;
+  line-height: 1.5;
+}
+.rr-refund-card strong { color: #047857; }
+</style>
+
 </head>
 <body class="theme-ivory theme-glass-kaapav">
 
@@ -3156,6 +3468,31 @@ body.theme-glass-kaapav .cat .n{
       <button class="drw-close" onclick="closeOrderDetails()">✕</button>
     </div>
     <div class="co-body" id="orderDetailBody"></div>
+  </div>
+</div>
+<!-- RETURN / EXCHANGE REQUEST MODAL -->
+<div
+  class="co-mo"
+  id="returnRequestMo"
+>
+  <div class="co-box">
+    <div class="co-hdr">
+      <span class="co-title">
+        Return / Exchange
+      </span>
+
+      <button
+        class="drw-close"
+        onclick="closeReturnRequest()"
+      >
+        ✕
+      </button>
+    </div>
+
+    <div
+      class="co-body"
+      id="returnRequestBody"
+    ></div>
   </div>
 </div>
 <!-- CHECKOUT MODAL -->
@@ -4478,8 +4815,636 @@ document.getElementById('ordersDrw').classList.add('on');
   openProfileOrders();
 }
 function closeOrders(){ document.getElementById('ordersDrw').classList.remove('on'); }
-function closeOrderDetails(){ document.getElementById('orderDetailMo').classList.remove('on'); }
-function parseOrderItems(items){
+function closeOrderDetails() {
+  document
+    .getElementById(
+      'orderDetailMo'
+    )
+    .classList
+    .remove('on');
+}
+
+let returnRequestSubmitting =
+  false;
+
+let activeReturnOrderId =
+  '';
+
+function closeReturnRequest() {
+  document
+    .getElementById(
+      'returnRequestMo'
+    )
+    .classList
+    .remove('on');
+
+  activeReturnOrderId = '';
+  returnRequestSubmitting =
+    false;
+}
+
+function isReturnEligible(order) {
+  return (
+    order?.return_eligible === true ||
+    Number(
+      order?.return_eligible || 0
+    ) === 1
+  );
+}
+
+function isOpenReturnRequest(
+  request
+) {
+  if (!request) {
+    return false;
+  }
+
+  const closed = [
+    'rejected',
+    'refunded',
+    'completed',
+    'cancelled',
+  ];
+
+  return !closed.includes(
+    String(
+      request.status || ''
+    ).toLowerCase()
+  );
+}
+
+function returnRequestLabel(
+  request
+) {
+  if (!request) {
+    return '';
+  }
+
+  const type =
+    String(
+      request.request_type ||
+      'return'
+    );
+
+  const status =
+    String(
+      request.status ||
+      'requested'
+    );
+
+  return (
+    `${type.replace(/_/g, ' ')}` +
+    ` — ` +
+    `${status.replace(/_/g, ' ')}`
+  );
+}
+
+function returnWindowText(order) {
+  if (order?.return_expires_at) {
+    return (
+      `Available until ` +
+      `${fmtDate(order.return_expires_at)}` +
+      ` — 7 days from delivery date.`
+    );
+  }
+
+  return (
+    order?.return_ineligible_reason ||
+    'Return information unavailable.'
+  );
+}
+
+function toggleReturnScope() {
+  const scope =
+    document.querySelector(
+      'input[name="rr_scope"]:checked'
+    )?.value ||
+    'full_order';
+
+  document
+    .getElementById(
+      'rrItems'
+    )
+    ?.classList
+    .toggle(
+      'on',
+      scope === 'items'
+    );
+}
+
+function openReturnRequest(
+  orderId
+) {
+  const order =
+    ordersCache.find(
+      (item) =>
+        String(item.order_id) ===
+        String(orderId)
+    );
+
+  if (!order) {
+    return;
+  }
+
+  const latest =
+    order.return_request ||
+    null;
+
+  if (
+    isOpenReturnRequest(
+      latest
+    )
+  ) {
+    toast(
+      `Request already ` +
+      `${String(
+        latest.status ||
+        'submitted'
+      ).replace(/_/g, ' ')}`
+    );
+
+    return;
+  }
+
+  if (
+    !isReturnEligible(order)
+  ) {
+    toast(
+      order.return_ineligible_reason ||
+      'Return or exchange is not available for this order'
+    );
+
+    return;
+  }
+
+  activeReturnOrderId =
+    String(order.order_id);
+
+  const items =
+    parseOrderItems(
+      order.items
+    );
+
+  document
+    .getElementById(
+      'returnRequestBody'
+    )
+    .innerHTML = `
+      <div class="rr-policy">
+        <strong>
+          7-day return / exchange window
+        </strong>
+        <br>
+
+This order is eligible from its
+delivery date until
+${esc(
+  fmtDate(
+    order.return_expires_at ||
+    ''
+  )
+)}.
+
+        A ₹60 reverse-shipping fee may
+        apply.
+
+        Submitting this form creates a
+        review request only. It does not
+        cancel the order or trigger a
+        refund.
+      </div>
+
+      <label
+        class="co-lbl"
+        for="rr_type"
+      >
+        Request type
+      </label>
+
+      <select
+        class="co-inp"
+        id="rr_type"
+      >
+        <option value="return">
+          Return
+        </option>
+
+        <option value="exchange">
+          Exchange
+        </option>
+      </select>
+
+      <div class="co-lbl">
+        Request scope
+      </div>
+
+      <div class="rr-choice">
+        <label class="rr-radio">
+          <input
+            type="radio"
+            name="rr_scope"
+            value="full_order"
+            checked
+            onchange="toggleReturnScope()"
+          >
+
+          Full order
+        </label>
+
+        <label class="rr-radio">
+          <input
+            type="radio"
+            name="rr_scope"
+            value="items"
+            onchange="toggleReturnScope()"
+          >
+
+          Selected items
+        </label>
+      </div>
+
+      <div
+        class="rr-items"
+        id="rrItems"
+      >
+        ${
+          items.map(
+            (item, index) => {
+              const orderedQty =
+                Math.max(
+                  1,
+                  Number(
+                    item.qty ||
+                    item.quantity ||
+                    1
+                  )
+                );
+
+              return `
+                <div class="rr-item">
+                  <input
+                    class="rr-item-check"
+                    type="checkbox"
+                    data-line-index="${index}"
+                    data-sku="${esc(
+                      item.sku || ''
+                    )}"
+                  >
+
+                  <div>
+                    <div class="rr-item-name">
+                      ${esc(
+                        item.name ||
+                        item.sku ||
+                        'Jewellery'
+                      )}
+                    </div>
+
+                    <div class="rr-item-sku">
+                      ${esc(
+                        item.sku || ''
+                      )}
+                      · ordered
+                      ${orderedQty}
+                    </div>
+                  </div>
+
+                  <input
+                    class="rr-qty"
+                    type="number"
+                    min="1"
+                    max="${orderedQty}"
+                    value="1"
+                    aria-label="Return quantity"
+                  >
+                </div>
+              `;
+            }
+          ).join('') ||
+          `
+            <div class="od-note">
+              No returnable items found.
+            </div>
+          `
+        }
+      </div>
+
+      <label
+        class="co-lbl"
+        for="rr_reason_code"
+      >
+        Reason
+      </label>
+
+      <select
+        class="co-inp"
+        id="rr_reason_code"
+      >
+        <option value="damaged">
+          Damaged / defective
+        </option>
+
+        <option value="wrong_item">
+          Wrong item received
+        </option>
+
+        <option value="not_as_expected">
+          Not as expected
+        </option>
+
+        <option value="size_issue">
+          Size / fit issue
+        </option>
+
+        <option value="changed_mind">
+          Changed mind
+        </option>
+
+        <option value="other">
+          Other
+        </option>
+      </select>
+
+      <label
+        class="co-lbl"
+        for="rr_reason_text"
+      >
+        Reason details
+      </label>
+
+      <textarea
+        class="co-inp"
+        id="rr_reason_text"
+        rows="3"
+        maxlength="1000"
+        placeholder="Explain the issue clearly"
+      ></textarea>
+
+      <label
+        class="co-lbl"
+        for="rr_customer_note"
+      >
+        Additional note
+      </label>
+
+      <textarea
+        class="co-inp"
+        id="rr_customer_note"
+        rows="2"
+        maxlength="2000"
+        placeholder="For exchange, mention the preferred replacement"
+      ></textarea>
+
+      <button
+        class="rr-submit"
+        id="rrSubmit"
+        onclick="submitReturnRequest()"
+      >
+        Submit Request
+      </button>
+    `;
+
+  document
+    .getElementById(
+      'returnRequestMo'
+    )
+    .classList
+    .add('on');
+}
+
+async function submitReturnRequest() {
+  if (
+    returnRequestSubmitting ||
+    !activeReturnOrderId
+  ) {
+    return;
+  }
+
+  const order =
+    ordersCache.find(
+      (item) =>
+        String(item.order_id) ===
+        String(
+          activeReturnOrderId
+        )
+    );
+
+  if (!order) {
+    return;
+  }
+
+  const requestType =
+    String(
+      document
+        .getElementById(
+          'rr_type'
+        )
+        ?.value ||
+      'return'
+    );
+
+  const requestScope =
+    document.querySelector(
+      'input[name="rr_scope"]:checked'
+    )?.value ||
+    'full_order';
+
+  const reasonCode =
+    String(
+      document
+        .getElementById(
+          'rr_reason_code'
+        )
+        ?.value ||
+      'other'
+    );
+
+  const reasonText =
+    String(
+      document
+        .getElementById(
+          'rr_reason_text'
+        )
+        ?.value ||
+      ''
+    ).trim();
+
+  const customerNote =
+    String(
+      document
+        .getElementById(
+          'rr_customer_note'
+        )
+        ?.value ||
+      ''
+    ).trim();
+
+  if (
+    reasonText.length < 3
+  ) {
+    toast(
+      'Please enter the return or exchange reason'
+    );
+
+    return;
+  }
+
+  const selectedItems = [];
+
+  if (
+    requestScope === 'items'
+  ) {
+    document
+      .querySelectorAll(
+        '#rrItems .rr-item-check:checked'
+      )
+      .forEach(
+        (check) => {
+          const row =
+            check.closest(
+              '.rr-item'
+            );
+
+          const qtyInput =
+            row?.querySelector(
+              '.rr-qty'
+            );
+
+          const maxQty =
+            Math.max(
+              1,
+              Number(
+                qtyInput?.max ||
+                1
+              )
+            );
+
+          const quantity =
+            Math.min(
+              maxQty,
+              Math.max(
+                1,
+                Number(
+                  qtyInput?.value ||
+                  1
+                )
+              )
+            );
+
+          selectedItems.push({
+            line_index:
+              Number(
+                check.dataset
+                  .lineIndex
+              ),
+
+            sku:
+              check.dataset.sku ||
+              '',
+
+            quantity,
+          });
+        }
+      );
+
+    if (
+      !selectedItems.length
+    ) {
+      toast(
+        'Select at least one item'
+      );
+
+      return;
+    }
+  }
+
+  returnRequestSubmitting =
+    true;
+
+  const submitButton =
+    document.getElementById(
+      'rrSubmit'
+    );
+
+  if (submitButton) {
+    submitButton.disabled =
+      true;
+
+    submitButton.textContent =
+      'Submitting...';
+  }
+
+  try {
+    const result =
+      await customerApi(
+        `/orders/${encodeURIComponent(
+          activeReturnOrderId
+        )}/return-requests`,
+        {
+          method: 'POST',
+
+          body:
+            JSON.stringify({
+              request_type:
+                requestType,
+
+              request_scope:
+                requestScope,
+
+              reason_code:
+                reasonCode,
+
+              reason_text:
+                reasonText,
+
+              customer_note:
+                customerNote,
+
+              items:
+                selectedItems,
+            }),
+        }
+      );
+
+    const requestId =
+      result?.request
+        ?.request_id ||
+      '';
+
+    closeReturnRequest();
+
+    toast(
+      requestId
+        ? `Request submitted: ${requestId}`
+        : 'Return request submitted'
+    );
+
+    await fetchCustomerOrders();
+  } catch (error) {
+    console.error(
+      'Return request error:',
+      error
+    );
+
+    toast(
+      error.message ||
+      'Could not submit return request'
+    );
+  } finally {
+    returnRequestSubmitting =
+      false;
+
+    if (submitButton) {
+      submitButton.disabled =
+        false;
+
+      submitButton.textContent =
+        'Submit Request';
+    }
+  }
+}
+
+function parseOrderItems(items) {
   if(Array.isArray(items)) return items;
   try{
     const parsed = JSON.parse(items || '[]');
@@ -4521,75 +5486,494 @@ function orderStep(label, value){
   `;
 }
 
-function openOrderDetails(orderId){
-  const o = ordersCache.find(x => String(x.order_id) === String(orderId));
-  if(!o) return;
+function openOrderDetails(
+  orderId
+) {
+  const order =
+    ordersCache.find(
+      (item) =>
+        String(item.order_id) ===
+        String(orderId)
+    );
 
-  const items = parseOrderItems(o.items);
-  const helpText = encodeURIComponent(`Hi KAAPAV, I need help with order ${o.order_id}`);
+  if (!order) {
+    return;
+  }
 
-  document.getElementById('orderDetailBody').innerHTML = `
-    <div class="od-section">
-      <div class="od-section-title">Order</div>
-      <div class="od-kv"><span>Order ID</span><strong>${esc(o.order_id)}</strong></div>
-      <div class="od-kv"><span>Placed</span><strong>${fmtDate(o.created_at)}</strong></div>
-      <div class="od-kv"><span>Status</span><strong>${esc(o.status || 'pending')}</strong></div>
-      <div class="od-kv"><span>Payment</span><strong>${esc(o.payment_status || 'unpaid')}</strong></div>
-    </div>
+  const items =
+    parseOrderItems(
+      order.items
+    );
 
-    <div class="od-section">
-      <div class="od-section-title">Delivery Address</div>
-      <div class="od-kv"><span>Name</span><strong>${esc(o.shipping_name || o.customer_name || '')}</strong></div>
-      <div class="od-kv"><span>Phone</span><strong>${esc(o.shipping_phone || o.phone || '')}</strong></div>
-      <div class="od-kv od-address"><span>Address</span><strong>${deliveryAddressHTML(o)}</strong></div>
-    </div>
+  const helpText =
+    encodeURIComponent(
+      `Hi KAAPAV, I need help with order ${order.order_id}`
+    );
 
-    <div class="od-section">
-      <div class="od-section-title">Items</div>
-      ${items.length ? items.map(i => `
-        <div class="od-kv">
-          <span>${esc(i.name || i.sku || 'Jewellery')} × ${Number(i.qty || i.quantity || 1)}</span>
-          <strong>${money(Number(i.price || 0) * Number(i.qty || i.quantity || 1))}</strong>
-        </div>
-      `).join('') : '<div class="od-kv"><span>Items</span><strong>-</strong></div>'}
-    </div>
+  const latestReturn =
+    order.return_request ||
+    null;
 
-    <div class="od-section">
-      <div class="od-section-title">Bill Summary</div>
-      <div class="od-kv"><span>Subtotal</span><strong>${money(o.subtotal)}</strong></div>
-      <div class="od-kv"><span>Discount</span><strong>${money(o.discount)}</strong></div>
-      <div class="od-kv"><span>Shipping</span><strong>${Number(o.shipping_cost || 0) === 0 ? 'FREE' : money(o.shipping_cost)}</strong></div>
-      <div class="od-kv"><span>Total</span><strong>${money(o.total)}</strong></div>
-    </div>
+  const openReturn =
+    isOpenReturnRequest(
+      latestReturn
+    );
 
-    <div class="od-section">
-      <div class="od-section-title">Shipping</div>
-      <div class="od-kv"><span>Courier</span><strong>${esc(o.courier || 'Not assigned yet')}</strong></div>
-      <div class="od-kv"><span>AWB</span><strong>${esc(o.awb_number || 'Not generated yet')}</strong></div>
-      <div class="od-kv"><span>Tracking ID</span><strong>${esc(o.tracking_id || 'Not generated yet')}</strong></div>
-      <div class="od-kv od-address"><span>Ship to</span><strong>${deliveryAddressHTML(o)}</strong></div>
-    </div>
+  const eligible =
+    isReturnEligible(
+      order
+    );
 
-    <div class="od-section">
-      <div class="od-section-title">Timeline</div>
-      <div class="od-timeline">
-        ${orderStep('Order placed', o.created_at)}
-        ${orderStep('Payment received', o.paid_at)}
-        ${orderStep('Shipped', o.shipped_at)}
-        ${orderStep('Delivered', o.delivered_at)}
-        ${o.cancelled_at ? orderStep('Cancelled', o.cancelled_at) : ''}
+function renderReturnTrackingSection(latestReturn, order, eligible) {
+  if (!latestReturn) {
+    return `
+      <div class="rr-status">
+        <strong>${eligible ? 'Eligible for return / exchange' : 'Return / exchange unavailable'}</strong>
+        <span>${esc(returnWindowText(order))}</span>
       </div>
-    </div>
+    `;
+  }
 
-    <div class="od-actions">
-      ${(o.payment_link && String(o.payment_status).toLowerCase() !== 'paid') ? `<a class="od-btn od-pay" href="${esc(o.payment_link)}" target="_blank">Pay Now</a>` : ''}
-      ${o.tracking_url ? `<a class="od-btn" href="${esc(o.tracking_url)}" target="_blank">Track Order</a>` : ''}
-      <a class="od-btn od-wa" href="${WA}?text=${helpText}" target="_blank">WhatsApp Help</a>
+  const st = String(latestReturn.status || '').toLowerCase();
+  const isReturn = (latestReturn.request_type || 'return') === 'return';
+  const typeLabel = isReturn ? 'Return' : 'Exchange';
+
+  const steps = [
+    { key: 'requested', label: 'Requested', num: 1 },
+    { key: 'approved', label: 'Approved', num: 2 },
+    { key: 'pickup_scheduled', label: 'Pickup Sched.', num: 3 },
+    { key: 'received', label: 'QC Check', num: 4 },
+    { key: isReturn ? 'refunded' : 'completed', label: isReturn ? 'Refunded' : 'Completed', num: 5 },
+  ];
+
+  let currentStepIdx = 0;
+  if (st === 'requested') currentStepIdx = 0;
+  else if (st === 'approved') currentStepIdx = 1;
+  else if (st === 'pickup_scheduled' || st === 'picked_up') currentStepIdx = 2;
+  else if (st === 'received' || st === 'qc_passed') currentStepIdx = 3;
+  else if (st === 'refund_pending' || st === 'refunded' || st === 'completed') currentStepIdx = 4;
+  else if (st === 'rejected' || st === 'qc_failed') currentStepIdx = -1;
+
+  const isFailed = st === 'rejected' || st === 'qc_failed';
+  const badgeClass = `rr-badge rr-badge-${st.replace(/[^a-z0-9_-]/g, '_')}`;
+
+  const stepperHtml = isFailed ? '' : `
+    <div class="rr-stepper">
+      ${steps.map((step, idx) => {
+        let stepClass = 'rr-step';
+        if (idx < currentStepIdx) stepClass += ' done';
+        else if (idx === currentStepIdx) stepClass += ' active';
+        return `
+          <div class="${stepClass}">
+            <div class="rr-step-dot">${idx < currentStepIdx ? '✓' : step.num}</div>
+            <div class="rr-step-label">${step.label}</div>
+          </div>
+        `;
+      }).join('')}
     </div>
   `;
 
-  document.getElementById('orderDetailMo').classList.add('on');
+  let logisticsHtml = '';
+  if (latestReturn.return_courier || latestReturn.return_awb_number) {
+    const courier = latestReturn.return_courier || 'Reverse Courier';
+    const awb = latestReturn.return_awb_number || '';
+    const trackUrl = latestReturn.return_tracking_url || (awb ? `https://www.shiprocket.in/shipment-tracking/?id=${awb}` : '');
+    const pickupDate = latestReturn.pickup_scheduled_date ? `<br><span>Scheduled Pickup: <strong>${esc(latestReturn.pickup_scheduled_date)}</strong></span>` : '';
+
+    logisticsHtml = `
+      <div class="rr-logistics-card">
+        <div><strong>Reverse Pickup Details</strong></div>
+        <span>Courier: <strong>${esc(courier)}</strong></span>
+        ${awb ? `<br><span>AWB / Tracking No: <strong>${esc(awb)}</strong></span>` : ''}
+        ${pickupDate}
+        ${trackUrl ? `<br><a href="${esc(trackUrl)}" target="_blank" rel="noopener" class="rr-track-btn">Track Return Package ➔</a>` : ''}
+      </div>
+    `;
+  }
+
+  let refundHtml = '';
+  const refStatus = String(latestReturn.refund_status || '').toLowerCase();
+  const hasRefund = Number(latestReturn.refund_amount || 0) > 0 || latestReturn.refund_id || ['processing', 'processed', 'pending'].includes(refStatus) || ['qc_passed', 'refund_pending', 'refunded'].includes(st);
+
+  if (isReturn && hasRefund) {
+    const refAmount = Number(latestReturn.refund_amount || 0);
+    const refId = latestReturn.refund_id || 'Processing';
+    const acquirer = latestReturn.refund_acquirer_reference ? `<br><span>Bank Reference: <strong>${esc(latestReturn.refund_acquirer_reference)}</strong></span>` : '';
+    const feeNotice = Number(latestReturn.reverse_shipping_fee || 0) > 0 ? ` <span style="font-size:10px; color:#6b7280;">(₹${Number(latestReturn.reverse_shipping_fee)} reverse shipping deducted)</span>` : '';
+
+    refundHtml = `
+      <div class="rr-refund-card">
+        <div><strong>${refStatus === 'processed' || st === 'refunded' ? '✓ Refund Credited / Processed' : 'Refund Initiated'}</strong></div>
+        ${refAmount > 0 ? `<span>Refund Amount: <strong>₹${refAmount.toFixed(2)}</strong>${feeNotice}</span><br>` : ''}
+        <span>Razorpay Refund ID: <strong>${esc(refId)}</strong></span>
+        ${acquirer}
+        <div style="margin-top:4px; font-size:10px; color:#047857;">Refunds reflect in original payment source within 5-7 business days.</div>
+      </div>
+    `;
+  }
+
+  let failNotice = '';
+  if (st === 'rejected') {
+    failNotice = `<div style="margin-top:8px; padding:8px 10px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; font-size:11px; color:#991b1b;">Return request was rejected. Please reach out to customer support on WhatsApp.</div>`;
+  } else if (st === 'qc_failed') {
+    failNotice = `<div style="margin-top:8px; padding:8px 10px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; font-size:11px; color:#991b1b;">Item inspection did not pass quality guidelines. Our team will contact you.</div>`;
+  }
+
+  return `
+    <div class="rr-track-box">
+      <div class="rr-track-header">
+        <div>
+          <strong style="font-size:13px; color:var(--dark);">${typeLabel} Request</strong>
+          <span style="font-size:11px; color:#6b7280; display:block;">#${esc(latestReturn.request_id || '')}</span>
+        </div>
+        <span class="${badgeClass}">${esc(returnRequestLabel(latestReturn))}</span>
+      </div>
+      ${stepperHtml}
+      ${logisticsHtml}
+      ${refundHtml}
+      ${failNotice}
+    </div>
+  `;
 }
+
+  const returnSection = renderReturnTrackingSection(latestReturn, order, eligible);
+
+  document
+    .getElementById(
+      'orderDetailBody'
+    )
+    .innerHTML = `
+      <div class="od-section">
+        <div class="od-section-title">
+          Order
+        </div>
+
+        <div class="od-kv">
+          <span>Order ID</span>
+          <strong>
+            ${esc(order.order_id)}
+          </strong>
+        </div>
+
+        <div class="od-kv">
+          <span>Placed</span>
+          <strong>
+            ${fmtDate(order.created_at)}
+          </strong>
+        </div>
+
+        <div class="od-kv">
+          <span>Status</span>
+          <strong>
+            ${esc(
+              order.status ||
+              'pending'
+            )}
+          </strong>
+        </div>
+
+        <div class="od-kv">
+          <span>Payment</span>
+          <strong>
+            ${esc(
+              order.payment_status ||
+              'unpaid'
+            )}
+          </strong>
+        </div>
+      </div>
+
+      <div class="od-section">
+        <div class="od-section-title">
+          Delivery Address
+        </div>
+
+        <div class="od-kv">
+          <span>Name</span>
+          <strong>
+            ${esc(
+              order.shipping_name ||
+              order.customer_name ||
+              ''
+            )}
+          </strong>
+        </div>
+
+        <div class="od-kv">
+          <span>Phone</span>
+          <strong>
+            ${esc(
+              order.shipping_phone ||
+              order.phone ||
+              ''
+            )}
+          </strong>
+        </div>
+
+        <div class="od-kv od-address">
+          <span>Address</span>
+          <strong>
+            ${deliveryAddressHTML(
+              order
+            )}
+          </strong>
+        </div>
+      </div>
+
+      <div class="od-section">
+        <div class="od-section-title">
+          Items
+        </div>
+
+        ${
+          items.length
+            ? items.map(
+                (item) => `
+                  <div class="od-kv">
+                    <span>
+                      ${esc(
+                        item.name ||
+                        item.sku ||
+                        'Jewellery'
+                      )}
+                      ×
+                      ${Number(
+                        item.qty ||
+                        item.quantity ||
+                        1
+                      )}
+                    </span>
+
+                    <strong>
+                      ${money(
+                        Number(
+                          item.price ||
+                          0
+                        ) *
+                        Number(
+                          item.qty ||
+                          item.quantity ||
+                          1
+                        )
+                      )}
+                    </strong>
+                  </div>
+                `
+              ).join('')
+            : `
+                <div class="od-kv">
+                  <span>Items</span>
+                  <strong>-</strong>
+                </div>
+              `
+        }
+      </div>
+
+      <div class="od-section">
+        <div class="od-section-title">
+          Bill Summary
+        </div>
+
+        <div class="od-kv">
+          <span>Subtotal</span>
+          <strong>
+            ${money(order.subtotal)}
+          </strong>
+        </div>
+
+        <div class="od-kv">
+          <span>Discount</span>
+          <strong>
+            ${money(order.discount)}
+          </strong>
+        </div>
+
+        <div class="od-kv">
+          <span>Shipping</span>
+          <strong>
+            ${
+              Number(
+                order.shipping_cost ||
+                0
+              ) === 0
+                ? 'FREE'
+                : money(
+                    order.shipping_cost
+                  )
+            }
+          </strong>
+        </div>
+
+        <div class="od-kv">
+          <span>Total</span>
+          <strong>
+            ${money(order.total)}
+          </strong>
+        </div>
+      </div>
+
+      <div class="od-section">
+        <div class="od-section-title">
+          Shipping
+        </div>
+
+        <div class="od-kv">
+          <span>Courier</span>
+          <strong>
+            ${esc(
+              order.courier ||
+              'Not assigned yet'
+            )}
+          </strong>
+        </div>
+
+        <div class="od-kv">
+          <span>AWB</span>
+          <strong>
+            ${esc(
+              order.awb_number ||
+              'Not generated yet'
+            )}
+          </strong>
+        </div>
+
+        <div class="od-kv">
+          <span>Tracking ID</span>
+          <strong>
+            ${esc(
+              order.tracking_id ||
+              'Not generated yet'
+            )}
+          </strong>
+        </div>
+
+        <div class="od-kv od-address">
+          <span>Ship to</span>
+          <strong>
+            ${deliveryAddressHTML(
+              order
+            )}
+          </strong>
+        </div>
+      </div>
+
+      <div class="od-section">
+        <div class="od-section-title">
+          Timeline
+        </div>
+
+        <div class="od-timeline">
+          ${orderStep(
+            'Order placed',
+            order.created_at
+          )}
+
+          ${orderStep(
+            'Payment received',
+            order.paid_at
+          )}
+
+          ${orderStep(
+            'Shipped',
+            order.shipped_at
+          )}
+
+          ${orderStep(
+            'Delivered',
+            order.delivered_at
+          )}
+
+          ${
+            order.cancelled_at
+              ? orderStep(
+                  'Cancelled',
+                  order.cancelled_at
+                )
+              : ''
+          }
+        </div>
+      </div>
+
+      <div class="od-section">
+        <div class="od-section-title">
+          Returns & Exchanges
+        </div>
+
+        ${returnSection}
+
+        ${
+          eligible &&
+          !openReturn
+            ? `
+              <button
+                class="rr-submit"
+                data-order-id="${esc(
+                  order.order_id
+                )}"
+                onclick="openReturnRequest(this.dataset.orderId)"
+              >
+                Start Return / Exchange
+              </button>
+            `
+            : ''
+        }
+      </div>
+
+      <div class="od-actions">
+        ${
+          order.payment_link &&
+          String(
+            order.payment_status
+          ).toLowerCase() !==
+          'paid'
+            ? `
+              <a
+                class="od-btn od-pay"
+                href="${esc(
+                  order.payment_link
+                )}"
+                target="_blank"
+              >
+                Pay Now
+              </a>
+            `
+            : ''
+        }
+
+        ${
+          order.tracking_url
+            ? `
+              <a
+                class="od-btn"
+                href="${esc(
+                  order.tracking_url
+                )}"
+                target="_blank"
+              >
+                Track Order
+              </a>
+            `
+            : ''
+        }
+
+        <a
+          class="od-btn od-wa"
+          href="${WA}?text=${helpText}"
+          target="_blank"
+        >
+          WhatsApp Help
+        </a>
+      </div>
+    `;
+
+  document
+    .getElementById(
+      'orderDetailMo'
+    )
+    .classList
+    .add('on');
+}
+
 async function fetchCustomerOrders(){
   if(!hasValidCustomerToken()){
     renderProfileHome();
@@ -4615,63 +5999,296 @@ async function fetchCustomerOrders(){
   }
 }
 
-function renderCustomerOrders(orders){
-const email = customerProfile?.email || getStoredProfileEmail();
-const phoneBox = `
-  <div class="od-phone-box">
-    <div class="od-note">Showing orders for verified email <strong>${esc(email)}</strong></div>
-    <button class="od-load" onclick="fetchCustomerOrders()">Refresh Orders</button>
-  </div>
-`;
+function renderCustomerOrders(
+  orders
+) {
+  const email =
+    customerProfile?.email ||
+    getStoredProfileEmail();
 
-  if(!orders.length){
-    document.getElementById('ordersBody').innerHTML = phoneBox + `
-      <div class="od-empty">
-        <div class="ei">🛍️</div>
-        No orders found for this number yet.<br>Place an order from the catalogue and it will show here.
+  const phoneBox = `
+    <div class="od-phone-box">
+      <div class="od-note">
+        Showing orders for verified email
+        <strong>
+          ${esc(email)}
+        </strong>
       </div>
-    `;
+
+      <button
+        class="od-load"
+        onclick="fetchCustomerOrders()"
+      >
+        Refresh Orders
+      </button>
+    </div>
+  `;
+
+  if (!orders.length) {
+    document
+      .getElementById(
+        'ordersBody'
+      )
+      .innerHTML =
+        phoneBox +
+        `
+          <div class="od-empty">
+            <div class="ei">
+              🛍️
+            </div>
+
+            No orders found for this
+            account yet.
+
+            <br>
+
+            Place an order from the
+            catalogue and it will show
+            here.
+          </div>
+        `;
+
     return;
   }
 
-  document.getElementById('ordersBody').innerHTML = phoneBox + orders.map(o => {
-    const items = parseOrderItems(o.items);
-    const badge = orderBadgeClass(o);
-    const helpText = encodeURIComponent(`Hi KAAPAV, I need help with order ${o.order_id}`);
-    return `
-      <div class="od-card">
-        <div class="od-top">
-          <div>
-            <div class="od-id">${esc(o.order_id)}</div>
-            <div class="od-date">${fmtDate(o.created_at)}</div>
-          </div>
-          <span class="od-pill od-${esc(badge)}">${esc(orderBadgeText(o))}</span>
-        </div>
+  document
+    .getElementById(
+      'ordersBody'
+    )
+    .innerHTML =
+      phoneBox +
+      orders.map(
+        (order) => {
+          const items =
+            parseOrderItems(
+              order.items
+            );
 
-        <div class="od-items">
-          ${items.length ? items.map(i => `
-            <div class="od-item">
-              <span>${esc(i.name || i.sku || 'Jewellery')} × ${Number(i.qty || i.quantity || 1)}</span>
-              <strong>${money(Number(i.price || 0) * Number(i.qty || i.quantity || 1))}</strong>
+          const badge =
+            orderBadgeClass(
+              order
+            );
+
+          const helpText =
+            encodeURIComponent(
+              `Hi KAAPAV, I need help with order ${order.order_id}`
+            );
+
+          const latestReturn =
+            order.return_request ||
+            null;
+
+          const openReturn =
+            isOpenReturnRequest(
+              latestReturn
+            );
+
+          const eligible =
+            isReturnEligible(
+              order
+            );
+
+          const returnLine =
+            latestReturn
+              ? `
+                <div class="od-note">
+                  Return / exchange:
+                  <strong>
+                    ${esc(
+                      returnRequestLabel(
+                        latestReturn
+                      )
+                    )}
+                  </strong>
+                </div>
+              `
+              : `
+                <div class="od-note">
+                  ${esc(
+                    returnWindowText(
+                      order
+                    )
+                  )}
+                </div>
+              `;
+
+          return `
+            <div class="od-card">
+              <div class="od-top">
+                <div>
+                  <div class="od-id">
+                    ${esc(
+                      order.order_id
+                    )}
+                  </div>
+
+                  <div class="od-date">
+                    ${fmtDate(
+                      order.created_at
+                    )}
+                  </div>
+                </div>
+
+                <span
+                  class="od-pill od-${esc(
+                    badge
+                  )}"
+                >
+                  ${esc(
+                    orderBadgeText(
+                      order
+                    )
+                  )}
+                </span>
+              </div>
+
+              <div class="od-items">
+                ${
+                  items.length
+                    ? items.map(
+                        (item) => `
+                          <div class="od-item">
+                            <span>
+                              ${esc(
+                                item.name ||
+                                item.sku ||
+                                'Jewellery'
+                              )}
+                              ×
+                              ${Number(
+                                item.qty ||
+                                item.quantity ||
+                                1
+                              )}
+                            </span>
+
+                            <strong>
+                              ${money(
+                                Number(
+                                  item.price ||
+                                  0
+                                ) *
+                                Number(
+                                  item.qty ||
+                                  item.quantity ||
+                                  1
+                                )
+                              )}
+                            </strong>
+                          </div>
+                        `
+                      ).join('')
+                    : `
+                        <div class="od-item">
+                          <span>
+                            Items saved in order
+                          </span>
+
+                          <strong>-</strong>
+                        </div>
+                      `
+                }
+              </div>
+
+              <div class="od-total">
+                <span>Total</span>
+
+                <strong>
+                  ${money(order.total)}
+                </strong>
+              </div>
+
+              ${returnLine}
+
+              <div class="od-actions">
+                <button
+                  class="od-btn"
+                  data-order-id="${esc(
+                    order.order_id
+                  )}"
+                  onclick="openOrderDetails(this.dataset.orderId)"
+                >
+                  View Details
+                </button>
+
+                ${
+                  eligible &&
+                  !openReturn
+                    ? `
+                      <button
+                        class="od-btn od-return"
+                        data-order-id="${esc(
+                          order.order_id
+                        )}"
+                        onclick="openReturnRequest(this.dataset.orderId)"
+                      >
+                        Return / Exchange
+                      </button>
+                    `
+                    : ''
+                }
+
+                ${
+                  order.payment_link &&
+                  String(
+                    order.payment_status
+                  ).toLowerCase() !==
+                  'paid'
+                    ? `
+                      <a
+                        class="od-btn od-pay"
+                        href="${esc(
+                          order.payment_link
+                        )}"
+                        target="_blank"
+                      >
+                        Pay Now
+                      </a>
+                    `
+                    : ''
+                }
+
+                ${
+                  order.tracking_url
+                    ? `
+                      <a
+                        class="od-btn"
+                        href="${esc(
+                          order.tracking_url
+                        )}"
+                        target="_blank"
+                      >
+                        Track
+                      </a>
+                    `
+                    : ''
+                }
+
+                ${
+                  order.awb_number
+                    ? `
+                      <span class="od-btn">
+                        AWB:
+                        ${esc(
+                          order.awb_number
+                        )}
+                      </span>
+                    `
+                    : ''
+                }
+
+                <a
+                  class="od-btn od-wa"
+                  href="${WA}?text=${helpText}"
+                  target="_blank"
+                >
+                  Help
+                </a>
+              </div>
             </div>
-          `).join('') : '<div class="od-item"><span>Items saved in order</span><strong>-</strong></div>'}
-        </div>
-
-        <div class="od-total">
-          <span>Total</span>
-          <strong>${money(o.total)}</strong>
-        </div>
-
-        <div class="od-actions">
-          <button class="od-btn" data-order-id="${esc(o.order_id)}" onclick="openOrderDetails(this.dataset.orderId)">View Details</button>
-          ${(o.payment_link && String(o.payment_status).toLowerCase() !== 'paid') ? `<a class="od-btn od-pay" href="${esc(o.payment_link)}" target="_blank">Pay Now</a>` : ''}
-          ${o.tracking_url ? `<a class="od-btn" href="${esc(o.tracking_url)}" target="_blank">Track</a>` : ''}
-          ${o.awb_number ? `<span class="od-btn">AWB: ${esc(o.awb_number)}</span>` : ''}
-          <a class="od-btn od-wa" href="${WA}?text=${helpText}" target="_blank">Help</a>
-        </div>
-      </div>
-    `;
-  }).join('');
+          `;
+        }
+      ).join('');
 }
 
 // ── CHECKOUT ──

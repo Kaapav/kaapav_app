@@ -60,8 +60,7 @@ class OrderState {
       error: clearError ? null : (error ?? this.error),
       statusFilter:
           clearStatusFilter ? null : (statusFilter ?? this.statusFilter),
-      searchQuery:
-          clearSearchQuery ? null : (searchQuery ?? this.searchQuery),
+      searchQuery: clearSearchQuery ? null : (searchQuery ?? this.searchQuery),
       stats: stats ?? this.stats,
     );
   }
@@ -206,8 +205,8 @@ class OrderNotifier extends StateNotifier<OrderState> {
       return false;
     }
   }
- 
-    // ── Update AWB / courier ─────────────────────────────────────
+
+  // ── Update AWB / courier ─────────────────────────────────────
   Future<bool> updateAwb(
     String orderId, {
     required String awb,
@@ -256,6 +255,240 @@ class OrderNotifier extends StateNotifier<OrderState> {
     }
   }
 
+  // ── Get return/exchange requests ─────────────────────────────
+  Future<List<Map<String, dynamic>>> getOrderReturnRequests(
+    String orderId,
+  ) async {
+    try {
+      final response = await _api.getOrderReturnRequests(orderId);
+      final data = response.data as Map<String, dynamic>;
+      final rawRequests = data['requests'];
+
+      if (rawRequests is! List) {
+        return [];
+      }
+
+      return rawRequests
+          .whereType<Map>()
+          .map(
+            (request) => Map<String, dynamic>.from(request),
+          )
+          .toList();
+    } on ApiError catch (e) {
+      state = state.copyWith(error: e.displayMessage);
+      return [];
+    } catch (_) {
+      state = state.copyWith(
+        error: 'Failed to load return requests',
+      );
+      return [];
+    }
+  }
+
+  // ── Approve or reject return/exchange request ────────────────
+  Future<bool> reviewOrderReturnRequest(
+    String orderId,
+    String requestId, {
+    required String decision,
+    String ownerNote = '',
+  }) async {
+    try {
+      final response = await _api.reviewOrderReturnRequest(
+        orderId,
+        requestId,
+        decision: decision,
+        ownerNote: ownerNote,
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      return data['success'] == true;
+    } on ApiError catch (e) {
+      state = state.copyWith(error: e.displayMessage);
+      return false;
+    } catch (_) {
+      state = state.copyWith(
+        error: 'Failed to review return request',
+      );
+      return false;
+    }
+  }
+
+  // ── Mark approved return pickup as scheduled ────────────────
+  Future<bool> scheduleOrderReturnPickup(
+    String orderId,
+    String requestId, {
+    String courier = '',
+    String awbNumber = '',
+    String trackingUrl = '',
+    String pickupScheduledDate = '',
+    String ownerNote = '',
+  }) async {
+    try {
+      final response = await _api.scheduleOrderReturnPickup(
+        orderId,
+        requestId,
+        courier: courier,
+        awbNumber: awbNumber,
+        trackingUrl: trackingUrl,
+        pickupScheduledDate: pickupScheduledDate,
+        ownerNote: ownerNote,
+      );
+
+      final data = response.data as Map<String, dynamic>;
+
+      return data['success'] == true;
+    } on ApiError catch (e) {
+      state = state.copyWith(error: e.displayMessage);
+      return false;
+    } catch (_) {
+      state = state.copyWith(
+        error: 'Failed to schedule return pickup',
+      );
+      return false;
+    }
+  }
+
+  // ── Mark scheduled return package as picked up ──────────────
+  Future<bool> markOrderReturnPickedUp(
+    String orderId,
+    String requestId, {
+    String ownerNote = '',
+  }) async {
+    try {
+      final response = await _api.markOrderReturnPickedUp(
+        orderId,
+        requestId,
+        ownerNote: ownerNote,
+      );
+
+      final data = response.data as Map<String, dynamic>;
+
+      return data['success'] == true && data['status'] == 'picked_up';
+    } on ApiError catch (e) {
+      state = state.copyWith(error: e.displayMessage);
+      return false;
+    } catch (_) {
+      state = state.copyWith(
+        error: 'Failed to confirm return pickup',
+      );
+      return false;
+    }
+  }
+
+  // ── Mark picked-up return package as received ───────────────
+  Future<bool> markOrderReturnReceived(
+    String orderId,
+    String requestId, {
+    String ownerNote = '',
+  }) async {
+    try {
+      final response = await _api.markOrderReturnReceived(
+        orderId,
+        requestId,
+        ownerNote: ownerNote,
+      );
+
+      final data = response.data as Map<String, dynamic>;
+
+      return data['success'] == true && data['status'] == 'received';
+    } on ApiError catch (e) {
+      state = state.copyWith(error: e.displayMessage);
+      return false;
+    } catch (_) {
+      state = state.copyWith(
+        error: 'Failed to mark return package as received',
+      );
+      return false;
+    }
+  }
+
+  // ── Complete return quality inspection ──────────────────────
+  Future<Map<String, dynamic>?> reviewOrderReturnQc(
+    String orderId,
+    String requestId, {
+    required String decision,
+    String ownerNote = '',
+    bool deductReverseShippingFee = true,
+    bool autoRefund = true,
+  }) async {
+    try {
+      final response = await _api.reviewOrderReturnQc(
+        orderId,
+        requestId,
+        decision: decision,
+        ownerNote: ownerNote,
+        deductReverseShippingFee: deductReverseShippingFee,
+        autoRefund: autoRefund,
+      );
+
+      final data = response.data as Map<String, dynamic>;
+
+      if (data['success'] == true) {
+        return data;
+      }
+      return null;
+    } on ApiError catch (e) {
+      state = state.copyWith(
+        error: e.displayMessage,
+      );
+      return null;
+    } catch (_) {
+      state = state.copyWith(
+        error: 'Failed to complete quality inspection',
+      );
+      return null;
+    }
+  }
+
+  // ── Preview or process QC-approved return refund ─────────────
+  Future<Map<String, dynamic>?> processOrderReturnRefund(
+    String orderId,
+    String requestId, {
+    required bool deductReverseShippingFee,
+    bool previewOnly = false,
+    String ownerNote = '',
+  }) async {
+    try {
+      final response =
+          await _api.processOrderReturnRefund(
+        orderId,
+        requestId,
+        deductReverseShippingFee:
+            deductReverseShippingFee,
+        previewOnly: previewOnly,
+        ownerNote: ownerNote,
+      );
+
+      final data =
+          Map<String, dynamic>.from(
+        response.data as Map,
+      );
+
+      if (data['success'] == true) {
+        return data;
+      }
+
+      state = state.copyWith(
+        error: data['error']?.toString() ??
+            'Return refund failed',
+      );
+
+      return null;
+    } on ApiError catch (e) {
+      state = state.copyWith(
+        error: e.displayMessage,
+      );
+      return null;
+    } catch (_) {
+      state = state.copyWith(
+        error: previewOnly
+            ? 'Failed to calculate refund'
+            : 'Failed to process refund',
+      );
+      return null;
+    }
+  }
+
   // ── Send Invoice ─────────────────────────────────────────
   Future<bool> sendInvoice(String orderId) async {
     try {
@@ -288,8 +521,8 @@ class OrderNotifier extends StateNotifier<OrderState> {
     }
   }
 
-    // ── Cancel ───────────────────────────────────────────────────
-    Future<bool> cancelOrder(String orderId, {String? reason}) async {
+  // ── Cancel ───────────────────────────────────────────────────
+  Future<bool> cancelOrder(String orderId, {String? reason}) async {
     try {
       final response = await _api.cancelOrder(orderId, reason: reason);
       final data = response.data as Map<String, dynamic>;
@@ -335,7 +568,7 @@ class OrderNotifier extends StateNotifier<OrderState> {
     }
   }
 
-    // ── Update customer/shipping details ─────────────────────────
+  // ── Update customer/shipping details ─────────────────────────
   Future<bool> updateOrderDetails(
     String orderId, {
     required String customerName,
@@ -383,7 +616,7 @@ class OrderNotifier extends StateNotifier<OrderState> {
     }
   }
 
-     // ── Update payment info ──────────────────────────────────────
+  // ── Update payment info ──────────────────────────────────────
   Future<bool> updateOrderPayment(
     String orderId, {
     required String paymentStatus,
@@ -418,7 +651,7 @@ class OrderNotifier extends StateNotifier<OrderState> {
   }
 
   // ── Update internal notes ────────────────────────────────────
-    Future<bool> updateOrderNotes(String orderId, String notes) async {
+  Future<bool> updateOrderNotes(String orderId, String notes) async {
     try {
       final response = await _api.updateOrderNotes(orderId, notes);
       final data = response.data as Map<String, dynamic>;
@@ -440,7 +673,7 @@ class OrderNotifier extends StateNotifier<OrderState> {
   }
 
   // ── Generate payment link ────────────────────────────────────
-    Future<String?> generatePaymentLink(String orderId) async {
+  Future<String?> generatePaymentLink(String orderId) async {
     try {
       final response = await _api.generatePaymentLink(orderId);
       debugPrint('PAYMENT LINK RESPONSE RAW: ${response.data}');
@@ -563,7 +796,7 @@ class OrderNotifier extends StateNotifier<OrderState> {
     );
   }
 
-    // ── Fetch single order by ID ─────────────────────────────────
+  // ── Fetch single order by ID ─────────────────────────────────
   Future<Order?> fetchOrderById(String orderId) async {
     try {
       final existing = getOrderById(orderId);

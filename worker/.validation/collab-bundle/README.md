@@ -1,0 +1,1 @@
+This folder contains the built output assets for the worker "kaapav-app" generated at 2026-08-17T12:36:42.004Z.

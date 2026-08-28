@@ -38,7 +38,9 @@ class Coupon {
       maxDiscount: json['max_discount'] != null
           ? _toDouble(json['max_discount'])
           : null,
-      usageLimit: json['usage_limit'] as int?,
+      usageLimit: json['usage_limit'] == null
+    ? null
+    : _toInt(json['usage_limit']),
       usedCount: _toInt(json['used_count']),
       startsAt: json['starts_at'] as String?,
       expiresAt: json['expires_at'] as String?,
@@ -64,51 +66,98 @@ class Coupon {
         'created_at': createdAt,
       };
 
-  Coupon copyWith({
-    int? id,
-    String? code,
-    String? type,
-    double? value,
-    double? minOrder,
-    double? maxDiscount,
-    int? usageLimit,
-    int? usedCount,
-    String? startsAt,
-    String? expiresAt,
-    bool? isActive,
-    String? createdAt,
-  }) {
-    return Coupon(
-      id: id ?? this.id,
-      code: code ?? this.code,
-      type: type ?? this.type,
-      value: value ?? this.value,
-      minOrder: minOrder ?? this.minOrder,
-      maxDiscount: maxDiscount ?? this.maxDiscount,
-      usageLimit: usageLimit ?? this.usageLimit,
-      usedCount: usedCount ?? this.usedCount,
-      startsAt: startsAt ?? this.startsAt,
-      expiresAt: expiresAt ?? this.expiresAt,
-      isActive: isActive ?? this.isActive,
-      createdAt: createdAt ?? this.createdAt,
-    );
-  }
+  static const _unset = Object();
+
+Coupon copyWith({
+  int? id,
+  String? code,
+  String? type,
+  double? value,
+  Object? minOrder = _unset,
+  Object? maxDiscount = _unset,
+  Object? usageLimit = _unset,
+  int? usedCount,
+  Object? startsAt = _unset,
+  Object? expiresAt = _unset,
+  bool? isActive,
+  Object? createdAt = _unset,
+}) {
+  return Coupon(
+    id: id ?? this.id,
+    code: code ?? this.code,
+    type: type ?? this.type,
+    value: value ?? this.value,
+    minOrder: identical(minOrder, _unset)
+        ? this.minOrder
+        : minOrder as double?,
+    maxDiscount: identical(maxDiscount, _unset)
+        ? this.maxDiscount
+        : maxDiscount as double?,
+    usageLimit: identical(usageLimit, _unset)
+        ? this.usageLimit
+        : usageLimit as int?,
+    usedCount: usedCount ?? this.usedCount,
+    startsAt: identical(startsAt, _unset)
+        ? this.startsAt
+        : startsAt as String?,
+    expiresAt: identical(expiresAt, _unset)
+        ? this.expiresAt
+        : expiresAt as String?,
+    isActive: isActive ?? this.isActive,
+    createdAt: identical(createdAt, _unset)
+        ? this.createdAt
+        : createdAt as String?,
+  );
+}
 
   bool get isPercent => type == 'percent';
   bool get isFixed => type == 'fixed';
-  bool get hasUsageLeft =>
-      usageLimit == null || usedCount < usageLimit!;
+bool get hasUsageLeft =>
+    usageLimit == null ||
+    usageLimit! <= 0 ||
+    usedCount < usageLimit!;
 
-  bool get isExpired {
-    if (expiresAt == null) return false;
-    try {
-      return DateTime.parse(expiresAt!).isBefore(DateTime.now());
-    } catch (_) {
-      return false;
-    }
+bool get hasStarted {
+  if (startsAt == null || startsAt!.trim().isEmpty) return true;
+
+  try {
+    return !DateTime.parse(startsAt!)
+        .toLocal()
+        .isAfter(DateTime.now());
+  } catch (_) {
+    return false;
   }
+}
 
-  bool get isValid => isActive && hasUsageLeft && !isExpired;
+bool get isExpired {
+  if (expiresAt == null || expiresAt!.trim().isEmpty) return false;
+
+  try {
+    return DateTime.parse(expiresAt!)
+        .toLocal()
+        .isBefore(DateTime.now());
+  } catch (_) {
+    return true;
+  }
+}
+
+bool get isScheduled => isActive && !hasStarted;
+
+bool get isExhausted => isActive && !hasUsageLeft;
+
+bool get isValid =>
+    isActive &&
+    hasStarted &&
+    hasUsageLeft &&
+    !isExpired;
+
+String get statusLabel {
+  if (!isActive) return 'Disabled';
+  if (!hasStarted) return 'Scheduled';
+  if (isExpired) return 'Expired';
+  if (!hasUsageLeft) return 'Exhausted';
+  return 'Live';
+}
 
   String get displayValue {
     if (isPercent) return '${value.toStringAsFixed(0)}%';

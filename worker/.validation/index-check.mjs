@@ -1,0 +1,19127 @@
+import { KAAPAV_LOGO_B64 } from './logo.js';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key, X-API-Key, X-Client-Platform, X-Client-Version',
+};
+
+
+// ═══════════════════ TRACKING SESSION ═══════════════════
+function generateCID() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let result = '';
+  for (let i = 0; i < 6; i++) {
+    result += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return result;
+}
+
+async function createTrackingSession(env, phone, destination = 'website') {
+  const cid = generateCID();
+  await env.KV.put(
+    `track:${cid}`,
+    JSON.stringify({ phone, destination, created: Date.now() }),
+    { expirationTtl: 86400 }
+  );
+  return cid;
+}
+
+async function resolveTrackingSession(env, cid) {
+  try {
+    const raw = await env.KV.get(`track:${cid}`);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function normalizePhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return { phone91: '', phonePlain: '' };
+
+  if (digits.startsWith('91') && digits.length >= 12) {
+    return {
+      phone91: digits.slice(0, 12),
+      phonePlain: digits.slice(2, 12)
+    };
+  }
+
+  const phonePlain = digits.slice(-10);
+  return {
+    phone91: phonePlain ? `91${phonePlain}` : '',
+    phonePlain
+  };
+}
+
+function getEventColumn(event) {
+  return {
+    AddToCart: 'add_to_cart',
+    ViewContent: 'view_content',
+    InitiateCheckout: 'initiate_checkout',
+    AddToWishlist: 'wishlist',
+    WhatsAppIntent: 'whatsapp_intent',
+    CatalogueClick: 'clicked_catalogue',
+WebsiteClick: 'clicked_website',
+  }[event] || '';
+}
+
+function getWebsiteEventColumn(event) {
+  return {
+    AddToCart: 'w_add_to_cart',
+    ViewContent: 'w_view_content',
+    InitiateCheckout: 'w_initiate_checkout',
+    AddToWishlist: 'w_wishlist',
+  }[event] || '';
+}
+	
+async function handleCustomerEvent(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch(e) {
+    console.error('CE_BODY_PARSE_FAIL', e.message);
+    return errorResponse('invalid json body', 400);
+  }
+
+const rawPhone =
+  body.phone ||
+  body.customer_phone ||
+  '';
+
+const { phone91 } = normalizePhone(rawPhone);
+if (!phone91) return errorResponse('phone required');
+
+const event =
+  body.event_type ||
+  body.event ||
+  '';
+  if (!event) return errorResponse('event_type required');
+
+  console.log('CE_STEP_1', phone91, event);
+
+  // Upsert customer
+  await env.DB.prepare(`
+    INSERT INTO customers (phone, name, first_seen, last_seen, updated_at)
+    VALUES (?, ?, datetime('now'), datetime('now'), datetime('now'))
+    ON CONFLICT(phone) DO UPDATE SET
+      name = CASE WHEN ? != '' THEN ? ELSE customers.name END,
+      last_seen = datetime('now'),
+      updated_at = datetime('now')
+  `).bind(phone91, body.customer_name || '', body.customer_name || '', body.customer_name || '').run();
+
+  // Ensure customer_id
+  await getOrCreateCustomerId(env, phone91);
+  console.log('CE_STEP_2', phone91);
+
+const customer = await env.DB.prepare(
+    `SELECT * FROM customers WHERE phone = ?`
+  ).bind(phone91).first();
+  console.log('CE_STEP_3', customer?.customer_id);
+const source = body.source || 'website';
+
+// Website click tracking
+if (event === 'PageView' && source === 'website') {
+  await env.DB.prepare(`
+    UPDATE customers
+    SET
+      clicked_website = COALESCE(clicked_website, 0) + 1,
+      updated_at = datetime('now')
+    WHERE phone = ?
+  `).bind(phone91).run();
+
+  console.log('WEBSITE_CLICK_COUNTED', phone91);
+}
+
+  // Log to catalogue_events
+  try {
+    await env.DB.prepare(`
+
+INSERT INTO catalogue_events (
+  phone, event_type, sku, product_name, category,
+  price, quantity, cart_total, checkout_items,
+  source, utm_source, utm_medium, utm_campaign, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '+5 hours', '+30 minutes'))
+    `).bind(
+      phone91, event,
+      body.sku || '', body.product_name || '', body.category || '',
+      body.price || 0, body.quantity || 1,
+      body.cart_total || 0, body.checkout_items || '',
+      source,
+      body.utm_source || '', body.utm_medium || '', body.utm_campaign || ''
+    ).run();
+  } catch (e) { console.error('catalogue_events insert error:', e); }
+
+  // Increment customer event counters (catalogue prefix)
+const totalCol = {
+  AddToCart: 'add_to_cart',
+  ViewContent: 'view_content',
+  InitiateCheckout: 'initiate_checkout',
+  AddToWishlist: 'wishlist',
+}[event];
+
+const sourceCol = source === 'website'
+  ? {
+      AddToCart: 'w_add_to_cart',
+      ViewContent: 'w_view_content',
+      InitiateCheckout: 'w_initiate_checkout',
+      AddToWishlist: 'w_wishlist',
+    }[event]
+  : {
+      AddToCart: 'c_add_to_cart',
+      ViewContent: 'c_view_content',
+      InitiateCheckout: 'c_initiate_checkout',
+      AddToWishlist: 'c_wishlist',
+    }[event];
+
+if (sourceCol && totalCol) {
+  try {
+    if (event === 'InitiateCheckout') {
+      await env.DB.prepare(`
+        UPDATE customers
+        SET
+          ${totalCol} = COALESCE(${totalCol}, 0) + 1,
+          ${sourceCol} = COALESCE(${sourceCol}, 0) + 1,
+          last_checkout_total = ?,
+          updated_at = datetime('now')
+        WHERE phone = ?
+      `).bind(body.cart_total || 0, phone91).run();
+    } else {
+      await env.DB.prepare(`
+        UPDATE customers
+        SET
+          ${totalCol} = COALESCE(${totalCol}, 0) + 1,
+          ${sourceCol} = COALESCE(${sourceCol}, 0) + 1,
+          updated_at = datetime('now')
+        WHERE phone = ?
+      `).bind(phone91).run();
+    }
+  } catch (e) {
+    console.error('Counter update error:', e);
+  }
+}
+
+console.log('DEBUG_SOURCE', body.source);
+console.log('DEBUG_TIME',
+  new Date().toLocaleString('sv-SE', {
+    timeZone: 'Asia/Kolkata'
+  }).replace(',', '')
+);
+  // Sync to Google Sheets
+  console.log('SHEETS_APPEND_START', phone91, event);
+await appendCatalogueEventToGoogleSheets(env, {
+  customer_id: customer?.customer_id || '',
+  created_at: new Date().toLocaleString('sv-SE', {
+    timeZone: 'Asia/Kolkata'
+  }).replace(',', ''),
+  phone: phone91,
+  customer_name:
+  body.customer_name ||
+  customer?.name ||
+  '',
+  event_type: event,
+  sku: body.sku || '',
+  product_name: body.product_name || '',
+  category: body.category || '',
+  price: body.price || 0,
+  quantity: body.quantity || 1,
+  cart_total: body.cart_total || 0,
+  checkout_items: body.checkout_items || '',
+  source: body.source || 'website',
+  utm_source: body.utm_source || '',
+  utm_medium: body.utm_medium || '',
+  utm_campaign: body.utm_campaign || '',
+});
+
+console.log(
+  'CATALOGUE_SHEET_DONE',
+  phone91,
+  event
+);
+  await syncCustomerToGoogleSheetsSafe(env, phone91);
+  await syncLeadToGoogleSheetsSafe(env, phone91);
+  return jsonResponse({ success: true });
+}
+
+function getTrackingHtml(phone, customerId, redirectUrl, ogTitle, ogDesc) {
+console.log(
+  'GET_TRACKING_HTML',
+  phone,
+  customerId,
+  redirectUrl
+);
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${ogTitle}</title>
+  <meta property="og:title" content="${ogTitle}">
+  <meta property="og:description" content="${ogDesc}">
+  <meta property="og:image" content="https://www.kaapav.com/pwa-icon-512.png">
+  <meta property="og:image:width" content="512">
+  <meta property="og:image:height" content="512">
+  <meta property="og:url" content="${redirectUrl}">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="KAAPAV Fashion Jewellery">
+  <script>
+    try {
+      localStorage.setItem('kpv_wa_phone', '${phone}');
+      localStorage.setItem('customerPhone', '${phone}');
+      localStorage.setItem('customer_id', '${customerId}');
+    } catch(e) {}
+    window.location.replace('${redirectUrl}');
+  </script>
+</head>
+<body>
+  <style>
+    body { margin:0; background:#FBF8F1; display:flex; 
+           align-items:center; justify-content:center; 
+           min-height:100vh; font-family:sans-serif; }
+    .l { color:#C49432; font-size:14px; }
+  </style>
+  <div class="l">Loading KAAPAV...</div>
+</body>
+</html>`;
+}
+
+function generateCustomerId(n) {
+  const prefixIndex = Math.floor((n - 1) / 9999);
+
+  const first =
+    String.fromCharCode(
+      65 + Math.floor(prefixIndex / 26)
+    );
+
+  const second =
+    String.fromCharCode(
+      65 + (prefixIndex % 26)
+    );
+
+  const number =
+    ((n - 1) % 9999) + 1;
+
+  return `${first}${second}${String(number).padStart(4,'0')}`;
+}
+
+async function getOrCreateCustomerId(env, phone) {
+
+  const existing = await env.DB.prepare(`
+    SELECT customer_id
+    FROM customers
+    WHERE phone = ?
+  `)
+  .bind(phone)
+  .first();
+
+  if (existing?.customer_id) {
+    return existing.customer_id;
+  }
+
+const seq = await env.DB.prepare(`
+  SELECT next_number
+  FROM customer_sequence
+  WHERE id = 1
+`).first();
+
+if (!seq) {
+  throw new Error('customer_sequence not initialized');
+}
+
+  const customerId =
+    generateCustomerId(seq.next_number);
+
+  await env.DB.prepare(`
+    UPDATE customer_sequence
+    SET next_number = next_number + 1
+    WHERE id = 1
+  `).run();
+
+   await env.DB.prepare(`
+    UPDATE customers
+    SET customer_id = ?
+    WHERE phone = ?
+  `)
+  .bind(customerId, phone)
+  .run();
+
+  return customerId;
+}
+
+async function backfillCustomerIds(env) {
+
+  const { results } = await env.DB.prepare(`
+    SELECT phone
+    FROM customers
+    WHERE customer_id IS NULL
+    ORDER BY id ASC
+  `).all();
+
+  let updated = 0;
+
+  for (const row of results) {
+    await getOrCreateCustomerId(env, row.phone);
+    updated++;
+  }
+
+  return {
+    success: true,
+    updated
+  };
+}
+
+// ═══════════════════ K_PDF_LOGO_MODULE v1.0 (Self-Contained) ═══════════════════
+const K_PDF_LOGO_MODULE = (() => {
+  const DEFAULT_LOGO_URL = 'https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/kaapav_Logo.jpg';
+  let logoPromise = null;
+
+  function bytesToAsciiHex(u8) {
+    let out = '';
+    for (let i = 0; i < u8.length; i++) out += u8[i].toString(16).padStart(2, '0');
+    return out.toUpperCase() + '>';
+  }
+
+  function readJpegSize(bytes) {
+    if (bytes[0] !== 0xFF || bytes[1] !== 0xD8) return null;
+    let i = 2;
+    while (i < bytes.length) {
+      if (bytes[i] !== 0xFF) { i++; continue; }
+      const marker = bytes[i + 1];
+      i += 2;
+      if (marker === 0xDA || marker === 0xD9) break;
+      const len = (bytes[i] << 8) | bytes[i + 1];
+      if (!len || len < 2) break;
+      const isSOF = (marker >= 0xC0 && marker <= 0xC3) || (marker >= 0xC5 && marker <= 0xC7) || 
+                    (marker >= 0xC9 && marker <= 0xCB) || (marker >= 0xCD && marker <= 0xCF);
+      if (isSOF) {
+        const height = (bytes[i + 3] << 8) + bytes[i + 4];
+        const width = (bytes[i + 5] << 8) + bytes[i + 6];
+        return { width, height };
+      }
+      i += len;
+    }
+    return null;
+  }
+
+  async function load(settings, env) {
+    const logoUrl = (settings && settings.invoice_logo_url) || 
+                    (env && env.INVOICE_LOGO_URL) || 
+                    DEFAULT_LOGO_URL;
+
+    if (!logoPromise) {
+      logoPromise = (async () => {
+        try {
+          console.log('🔄 Fetching logo from:', logoUrl);
+          
+          const res = await fetch(logoUrl, {
+            cf: { cacheTtl: 86400, cacheEverything: true }
+          });
+          
+          if (!res.ok) {
+            console.error(`❌ Logo fetch failed: ${res.status} ${res.statusText}`);
+            return null;
+          }
+
+          const bytes = new Uint8Array(await res.arrayBuffer());
+          console.log('✅ Logo fetched, size:', bytes.length, 'bytes');
+
+          // Verify JPEG
+          if (!(bytes[0] === 0xFF && bytes[1] === 0xD8)) {
+            console.error('❌ Not a valid JPEG, first bytes:', bytes[0], bytes[1]);
+            return null;
+          }
+
+          const dims = readJpegSize(bytes);
+          if (!dims) {
+            console.error('❌ Could not read JPEG dimensions');
+            return null;
+          }
+
+          console.log('✅ Logo dimensions:', dims.width, 'x', dims.height);
+
+          const result = {
+            type: 'jpeg',
+            width: dims.width,
+            height: dims.height,
+            hex: bytesToAsciiHex(bytes)
+          };
+
+          console.log('✅ Logo data prepared, hex length:', result.hex.length);
+          return result;
+
+        } catch (err) {
+          console.error('❌ Logo load exception:', err.message, err.stack);
+          return null;
+        }
+      })();
+    }
+
+    return logoPromise;
+  }
+
+  return { load };
+})();
+
+function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
+
+function errorResponse(message, status = 400) {
+  return jsonResponse({ success: false, error: message }, status);
+}
+
+async function logOrderEvent(env, orderId, eventType, message, meta = {}, source = 'system') {
+  const createdAt = new Date().toISOString();
+try {
+    await env.DB.prepare(`
+      INSERT INTO order_events (
+        order_id, event_type, event_source, message, meta_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(
+      orderId,
+      eventType,
+      source,
+      message || '',
+      JSON.stringify(meta || {}),
+      createdAt
+    ).run();
+
+    await appendOrderEventToGoogleSheets(env, {
+      created_at: createdAt,
+      order_id: orderId,
+      event_type: eventType,
+      event_source: source,
+      message: message || '',
+      meta_json: JSON.stringify(meta || {}),
+    });
+  } catch (e) {
+    console.error('logOrderEvent error:', e);
+
+   await syncOrderEventToSupabase(env, {
+      created_at: createdAt,
+      order_id: orderId,
+      event_type: eventType,
+      event_source: source,
+      message: message || '',
+      meta_json: JSON.stringify(meta || {}),
+    });
+
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'order_event',
+      entity_id: orderId,
+      action: eventType,
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
+}
+
+// ═══════════════════ JWT ═══════════════════
+async function generateJWT(payload, secret) {
+  const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const body = btoa(JSON.stringify(payload)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const data = `${header}.${body}`;
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  return `${data}.${sigB64}`;
+}
+
+async function verifyJWT(token, secret) {
+  try {
+    const [header, payload, sig] = token.split('.');
+    const data = `${header}.${payload}`;
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+    const sigBytes = Uint8Array.from(atob(sig.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+    const valid = await crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(data));
+    if (!valid) return null;
+    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    if (decoded.exp < Math.floor(Date.now() / 1000)) return null;
+    return decoded;
+  } catch { return null; }
+}
+
+async function handleCustomerLinkIdentity(request, env) {
+  const auth = await getCustomerAuth(request, env);
+  if (!auth) return errorResponse('Unauthorized', 401);
+
+  const body = await request.json().catch(() => ({}));
+
+  const customerId = String(body.customerId || body.customer_id || '')
+    .trim()
+    .toUpperCase();
+
+  let phone = normalizePhone91(body.phone);
+
+  if (customerId) {
+    const customer = await env.DB.prepare(`
+      SELECT phone
+      FROM customers
+      WHERE customer_id = ?
+      LIMIT 1
+    `).bind(customerId).first();
+
+    if (customer?.phone) {
+      phone = normalizePhone91(customer.phone);
+    }
+  }
+
+  if (!customerId && !phone) {
+    return errorResponse('Customer identity missing', 400);
+  }
+
+  await env.DB.prepare(`
+    UPDATE customer_accounts
+    SET
+      phone = COALESCE(NULLIF(?, ''), phone),
+      customer_id = COALESCE(NULLIF(?, ''), customer_id),
+      updated_at = datetime('now')
+    WHERE email = ?
+  `).bind(phone, customerId, auth.email).run();
+
+  return jsonResponse({
+    success: true,
+    email: auth.email,
+    phone,
+    customerId,
+  });
+}
+
+function normalizePhone91(value) {
+  const d = String(value || '').replace(/\D/g, '');
+
+  if (d.startsWith('91') && d.length >= 12) {
+    return d.slice(0, 12);
+  }
+
+  if (d.length >= 10) {
+    return '91' + d.slice(-10);
+  }
+
+  return '';
+}
+
+async function authMiddleware(request, env) {
+  const auth = request.headers.get('Authorization');
+  if (!auth?.startsWith('Bearer ')) return null;
+  return await verifyJWT(auth.slice(7), env.JWT_SECRET);
+}
+
+// ═══════════════════ FCM ═══════════════════
+function b64url(str) {
+  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+async function getAccessToken(env) {
+  const cached = await env.KV.get('fcm_access_token');
+  if (cached) return cached;
+  try {
+    const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+    const now = Math.floor(Date.now() / 1000);
+    const claim = b64url(JSON.stringify({
+      iss: env.FCM_CLIENT_EMAIL,
+      scope: 'https://www.googleapis.com/auth/firebase.messaging',
+      aud: 'https://oauth2.googleapis.com/token',
+      iat: now,
+      exp: now + 3600,
+    }));
+    const sigInput = `${header}.${claim}`;
+    const pemBody = env.FCM_PRIVATE_KEY.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\n/g, '');
+    const binaryDer = Uint8Array.from(atob(pemBody), c => c.charCodeAt(0));
+    const privateKey = await crypto.subtle.importKey('pkcs8', binaryDer, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+    const sigBuffer = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(sigInput));
+    const sigBytes = new Uint8Array(sigBuffer);
+    let sigStr = '';
+    for (let i = 0; i < sigBytes.length; i++) sigStr += String.fromCharCode(sigBytes[i]);
+    const sig = b64url(sigStr);
+    const jwt = `${sigInput}.${sig}`;
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+    });
+    const tokenData = await tokenRes.json();
+    if (tokenData.access_token) {
+      await env.KV.put('fcm_access_token', tokenData.access_token, { expirationTtl: 3300 });
+      return tokenData.access_token;
+    }
+  } catch (e) { console.error('FCM token error:', e); }
+  return null;
+}
+
+// ═══════════════════ GOOGLE SHEETS ═══════════════════
+function base64UrlEncode(bytes) {
+  let binary = '';
+  const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  for (let i = 0; i < arr.length; i++) {
+    binary += String.fromCharCode(arr[i]);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function utf8ToBase64Url(str) {
+  return base64UrlEncode(new TextEncoder().encode(str));
+}
+
+async function getGoogleSheetsAccessToken(env) {
+  const cached = await env.KV.get('google_sheets_access_token');
+  if (cached) return cached;
+
+  const now = Math.floor(Date.now() / 1000);
+  const header = utf8ToBase64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const claim = utf8ToBase64Url(JSON.stringify({
+    iss: env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    scope: 'https://www.googleapis.com/auth/spreadsheets',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: now + 3600,
+  }));
+
+  const signingInput = `${header}.${claim}`;
+
+  const pem = env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
+    .replace(/-----END PRIVATE KEY-----/g, '')
+    .replace(/\\n/g, '\n')
+    .replace(/\n/g, '');
+
+  const binaryDer = Uint8Array.from(atob(pem), c => c.charCodeAt(0));
+
+  const privateKey = await crypto.subtle.importKey(
+    'pkcs8',
+    binaryDer.buffer,
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      hash: 'SHA-256',
+    },
+    false,
+    ['sign']
+  );
+
+  const signature = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    privateKey,
+    new TextEncoder().encode(signingInput)
+  );
+
+  const jwt = `${signingInput}.${base64UrlEncode(signature)}`;
+
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt,
+    }),
+  });
+
+  const tokenJson = await tokenRes.json();
+  if (!tokenRes.ok || !tokenJson.access_token) {
+    throw new Error(`Google token error: ${JSON.stringify(tokenJson)}`);
+  }
+
+  await env.KV.put('google_sheets_access_token', tokenJson.access_token, {
+    expirationTtl: 3300,
+  });
+
+  return tokenJson.access_token;
+}
+
+async function googleSheetsRequest(env, method, path, body) {
+  const token = await getGoogleSheetsAccessToken(env);
+
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${env.GOOGLE_SHEETS_SPREADSHEET_ID}${path}`, {
+    method,
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const text = await res.text();
+  let json = {};
+  try { json = text ? JSON.parse(text) : {}; } catch (_) {}
+
+  if (!res.ok) {
+    throw new Error(`Sheets API ${method} ${path} failed: ${text}`);
+  }
+
+  return json;
+}
+
+async function clearSheetRange(env, tabName) {
+  const encodedRange = encodeURIComponent(`${tabName}!A:ZZ`);
+  return await googleSheetsRequest(
+    env,
+    'POST',
+    `/values/${encodedRange}:clear`,
+    {}
+  );
+}
+
+async function getSheetValues(env, tabName) {
+  const encodedRange = encodeURIComponent(`${tabName}!A:ZZ`);
+  const json = await googleSheetsRequest(env, 'GET', `/values/${encodedRange}`, null);
+  return json.values || [];
+}
+
+async function appendSheetRow(env, tabName, row) {
+   const encodedRange = encodeURIComponent(`${tabName}!A:ZZ`);
+  return await googleSheetsRequest(env, 'POST', `/values/${encodedRange}:append?valueInputOption=RAW`, {
+    values: [row],
+  });
+}
+
+
+async function updateSheetRow(env, tabName, rowIndex1Based, row) {
+  const encodedRange = encodeURIComponent(`${tabName}!A${rowIndex1Based}:ZZ${rowIndex1Based}`);
+  return await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, {
+    values: [row],
+  });
+}
+
+async function findSheetRowIndexByKey(env, tabName, keyColumnIndex, keyValue) {
+  const rows = await getSheetValues(env, tabName);
+  if (!rows || rows.length < 2) return null;
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i] || [];
+    if ((row[keyColumnIndex] || '').toString() === (keyValue || '').toString()) {
+      return i + 1; // 1-based row index in Google Sheets
+    }
+  }
+  return null;
+}
+
+async function upsertSheetRow(env, tabName, keyColumnIndex, keyValue, row) {
+  const existingRowIndex = await findSheetRowIndexByKey(env, tabName, keyColumnIndex, keyValue);
+  if (existingRowIndex) {
+    return await updateSheetRow(env, tabName, existingRowIndex, row);
+  }
+  return await appendSheetRow(env, tabName, row);
+}
+
+function safeText(value) {
+  return value == null ? '' : String(value);
+}
+
+function safeNumber(value) {
+  if (value == null || value === '') return 0;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function itemsSummaryFromJson(itemsRaw) {
+  try {
+    const items = typeof itemsRaw === 'string' ? JSON.parse(itemsRaw || '[]') : (itemsRaw || []);
+    if (!Array.isArray(items)) return '';
+    return items.map(i => `${i.name || i.sku || 'Item'} x${i.qty || i.quantity || 1}`).join(', ');
+  } catch (_) {
+    return '';
+  }
+}
+
+function itemsSkuList(itemsRaw) {
+  try {
+    const items = typeof itemsRaw === 'string' ? JSON.parse(itemsRaw || '[]') : (itemsRaw || []);
+    if (!Array.isArray(items)) return '';
+    return items.map(i => i.sku || '').filter(Boolean).join(', ');
+  } catch (_) { return ''; }
+}
+
+function itemsNameList(itemsRaw) {
+  try {
+    const items = typeof itemsRaw === 'string' ? JSON.parse(itemsRaw || '[]') : (itemsRaw || []);
+    if (!Array.isArray(items)) return '';
+    return items.map(i => i.name || '').filter(Boolean).join(', ');
+  } catch (_) { return ''; }
+}
+
+function labelsSummary(labelsRaw) {
+  try {
+    const labels = typeof labelsRaw === 'string' ? JSON.parse(labelsRaw || '[]') : (labelsRaw || []);
+    if (!Array.isArray(labels)) return '';
+    return labels.join(', ');
+  } catch (_) {
+    return '';
+  }
+}
+
+function tagsSummary(tagsRaw) {
+  try {
+    const tags = typeof tagsRaw === 'string' ? JSON.parse(tagsRaw || '[]') : (tagsRaw || []);
+    if (!Array.isArray(tags)) return '';
+    return tags.join(', ');
+  } catch (_) {
+    return '';
+  }
+}
+
+function mapOrderToSheetRow(order) {
+  return [
+    safeText(order.customer_id || ''),
+    safeText(order.order_id),
+    safeText(order.created_at),
+    safeText(order.updated_at),
+    safeText(order.customer_name),
+    safeText(order.phone),
+    safeText(order.source),
+    itemsSummaryFromJson(order.items),
+    safeNumber(order.item_count),
+    safeNumber(order.subtotal),
+    safeNumber(order.shipping_cost),
+    safeNumber(order.total),
+    safeText(order.status),
+    safeText(order.payment_status),
+    safeText(order.payment_id),
+    safeText(order.payment_method),
+    safeText(order.payment_link),
+    safeText(order.payment_link_expires),
+    safeText(order.shipping_name),
+    safeText(order.shipping_phone),
+    safeText(order.shipping_address),
+    safeText(order.shipping_city),
+    safeText(order.shipping_state),
+    safeText(order.shipping_pincode),
+    safeText(order.paid_at),
+    safeText(order.cancelled_at),
+    safeText(order.cancellation_reason),
+    safeText(order.customer_notes),
+    safeText(order.internal_notes),
+    '', // owner_note (manual)
+    '', // follow_up_needed (manual)
+    '', // verified (manual)
+  ];
+}
+
+async function getAllProductCategories(env) {
+  const { results } = await env.DB.prepare(`SELECT sku, category FROM products`).all();
+  const map = {};
+  for (const p of (results || [])) {
+    if (p.sku && p.category) map[p.sku] = p.category;
+  }
+  return map;
+}
+
+function getCategoryFromItems(itemsRaw, categoryMap) {
+  try {
+    const items = typeof itemsRaw === 'string' ? JSON.parse(itemsRaw || '[]') : (itemsRaw || []);
+    if (!Array.isArray(items)) return '';
+    const cats = [];
+    for (const item of items) {
+      const cat = categoryMap[item.sku];
+      if (cat && !cats.includes(cat)) cats.push(cat);
+    }
+    return cats.join(', ');
+  } catch (_) { return ''; }
+}
+
+function parseProductImages(product) {
+  let images = [];
+  try {
+    images = typeof product.images === 'string'
+      ? JSON.parse(product.images || '[]')
+      : (product.images || []);
+    if (!Array.isArray(images)) images = [];
+  } catch (_) { images = []; }
+  return {
+    image_1: images[0] || '',
+    image_2: images[1] || '',
+    image_3: images[2] || '',
+  };
+}
+
+function mapCustomerToSheetRow(customer, unpaidOrderCount = 0, unpaidOrderValue = 0) {
+  let cartItems = [];
+  try {
+    cartItems = JSON.parse(customer.cart || '[]');
+    if (!Array.isArray(cartItems)) cartItems = [];
+  } catch (_) {
+    cartItems = [];
+  }
+
+  const cartItemCount = cartItems.reduce((sum, item) => {
+    return sum + Number(item.qty || item.quantity || 1);
+  }, 0);
+
+  const cartValue = cartItems.reduce((sum, item) => {
+    const qty = Number(item.qty || item.quantity || 1);
+    const price = Number(item.price || 0);
+    return sum + (qty * price);
+  }, 0);
+
+return [
+  safeText(customer.customer_id),
+
+  safeText(customer.phone),
+  safeText(customer.name),
+  safeText(customer.email),
+  safeText(customer.city),
+  safeText(customer.state),
+  safeText(customer.pincode),
+
+  '', // source
+
+  safeText(customer.segment),
+  safeText(customer.tier),
+  labelsSummary(customer.labels),
+
+  safeNumber(customer.message_count),
+  safeNumber(customer.order_count),
+  safeNumber(customer.total_spent),
+
+  cartItemCount,
+  cartValue,
+
+  safeNumber(unpaidOrderCount),
+  safeNumber(unpaidOrderValue),
+
+  safeText(customer.first_seen),
+  safeText(customer.last_seen),
+  safeText(customer.last_order_at),
+
+  safeNumber(customer.clicked_website || 0),
+  safeNumber(customer.clicked_catalogue || 0),
+
+  safeNumber(customer.add_to_cart || 0),
+  safeNumber(customer.view_content || 0),
+  safeNumber(customer.initiate_checkout || 0),
+  safeNumber(customer.wishlist || 0),
+
+  safeNumber(customer.last_checkout_total || 0),
+
+  (
+    customer.add_to_cart > 0 ||
+    customer.initiate_checkout > 0
+  ) ? 'YES' : 'NO',
+
+  '', // owner_note
+  '', // follow_up_priority
+];
+
+}
+
+function mapProductToSheetRow(product) {
+  const images = parseProductImages(product);
+
+  return [
+    safeText(product.sku),
+    safeText(product.name),
+    safeText(product.category),
+    safeText(product.subcategory),
+
+    safeNumber(product.price),
+    safeNumber(product.compare_price),
+    safeNumber(product.stock),
+    safeNumber(product.reserved_stock),
+
+    safeText(product.is_active),
+    safeText(product.is_featured),
+
+    safeText(product.image_url),
+    safeText(product.website_link),
+    safeText(product.material),
+    safeText(product.finish),
+
+    tagsSummary(product.tags),
+    safeText(product.updated_at),
+
+    safeText(images.image_1),
+    safeText(images.image_2),
+    safeText(images.image_3),
+
+    '', // restock_note (manual)
+  ];
+}
+
+function mapShipmentToSheetRow(order) {
+  return [
+    safeText(order.order_id),
+    safeText(order.customer_name),
+    safeText(order.phone),
+    safeText(order.status),
+    safeText(order.payment_status),
+    safeText(order.shiprocket_order_id),
+    safeText(order.shipment_id),
+    safeText(order.courier),
+    safeText(order.awb_number),
+    safeText(order.awb_code),
+    safeText(order.tracking_id),
+    safeText(order.tracking_url),
+    safeText(order.shipping_city),
+    safeText(order.shipping_state),
+    safeText(order.shipping_pincode),
+    safeText(order.paid_at),
+    safeText(order.shipped_at),
+    safeText(order.delivered_at),
+    safeText(order.updated_at),
+    '', // dispatch_note (manual)
+    '', // dispatch_verified (manual)
+  ];
+}
+
+function mapCartToSheetRow(cart, customerName = '') {
+  return [
+    safeText(cart.phone),
+    safeText(customerName),
+    safeNumber(cart.item_count),
+    safeNumber(cart.total),
+    itemsSummaryFromJson(cart.items),
+    safeText(cart.status),
+    safeNumber(cart.reminder_count),
+    safeText(cart.last_reminder_at),
+    safeText(cart.created_at),
+    safeText(cart.updated_at),
+    safeText(cart.converted_at),
+    '', // owner_note (manual)
+    '', // follow_up_needed (manual)
+  ];
+}
+
+function deriveLeadStatus(customer) {
+  const orderCount = safeNumber(customer.order_count);
+  const totalSpent = safeNumber(customer.total_spent);
+  const messageCount = safeNumber(customer.message_count);
+
+  if (orderCount > 0 || totalSpent > 0) return 'ordered';
+  if (messageCount >= 5) return 'interested';
+  if (messageCount > 0) return 'engaged';
+  return 'new';
+}
+
+function mapLeadToSheetRow(customer) {
+  return [
+    safeText(customer.customer_id),
+    safeText(customer.created_at || customer.first_seen),
+    safeText(customer.phone),
+    safeText(customer.name),
+
+    '', // source
+    '', // category
+
+    deriveLeadStatus(customer), // lead_status
+
+    safeNumber(customer.message_count),
+    safeNumber(customer.order_count),
+    safeNumber(customer.total_spent),
+
+    safeText(customer.segment),
+    safeText(customer.tier),
+    labelsSummary(customer.labels),
+
+    safeText(customer.last_seen),
+    safeText(customer.first_order_at || ''),
+
+    safeNumber(customer.clicked_website || 0),
+    safeNumber(customer.clicked_catalogue || 0),
+
+    safeNumber(customer.add_to_cart || 0),
+    safeNumber(customer.view_content || 0),
+    safeNumber(customer.initiate_checkout || 0),
+    safeNumber(customer.wishlist || 0),
+
+    safeNumber(customer.last_checkout_total || 0),
+
+    '', // owner_note
+
+    (
+      customer.add_to_cart > 0 ||
+      customer.initiate_checkout > 0
+    ) ? 'YES' : 'NO' // follow_up_needed
+  ];
+}
+
+function deriveSalesStage(order) {
+  if (safeText(order.status) === 'delivered') return 'delivered';
+  if (safeText(order.status) === 'shipped') return 'shipped';
+  if (safeText(order.payment_status) === 'paid') return 'paid';
+  if (safeText(order.payment_status) === 'unpaid') return 'unpaid';
+  return 'lead';
+}
+
+function mapSalesToSheetRow(order) {
+  return [
+    safeText(customer?.customer_id || ''),
+    safeText(order.order_id),
+    safeText(order.created_at),
+    safeText(order.source),
+    safeText(order.customer_name),
+    safeText(order.phone),
+    safeNumber(order.total),
+    safeText(order.payment_status),
+    safeText(order.status),
+    safeText(order.paid_at),
+    safeText(order.shipped_at),
+    safeText(order.delivered_at),
+    safeNumber(order.item_count),
+    itemsSummaryFromJson(order.items),
+    deriveSalesStage(order),
+    '', // owner_note (manual)
+  ];
+}
+
+async function appendOrderEventToGoogleSheets(env, eventRow) {
+  try {
+    await appendSheetRow(env, 'Order Events', [
+      safeText(eventRow.created_at),
+      safeText(eventRow.order_id),
+      safeText(eventRow.event_type),
+      safeText(eventRow.event_source),
+      safeText(eventRow.message),
+      safeText(eventRow.meta_json),
+    ]);
+  } catch (e) {
+    console.error('Order Events sheet append error:', e);
+  }
+}
+
+async function appendCatalogueEventToGoogleSheets(env, eventData) {
+  try {
+
+console.log(
+  'CATALOGUE_WRITE',
+  JSON.stringify({
+    customer_id: eventData.customer_id,
+    phone: eventData.phone,
+    event: eventData.event_type,
+    source: eventData.source,
+    created_at: eventData.created_at
+  })
+);
+
+    await appendSheetRow(env, 'Catalogue Events', [
+      safeText(eventData.created_at),
+
+      safeText(eventData.customer_id || ''),
+
+safeText(eventData.phone),
+
+      safeText(eventData.customer_name || ''),
+
+      safeText(eventData.event_type),
+
+      safeText(eventData.sku),
+      safeText(eventData.product_name),
+      safeText(eventData.category),
+
+      safeNumber(eventData.price),
+      safeNumber(eventData.quantity),
+
+      safeNumber(eventData.cart_total),
+
+      safeText(eventData.checkout_items),
+
+      safeText(eventData.source || 'website'),
+
+      safeText(eventData.utm_source || ''),
+      safeText(eventData.utm_medium || ''),
+      safeText(eventData.utm_campaign || '')
+    ]);
+
+console.log(
+  'CATALOGUE_APPEND_SUCCESS',
+  eventData.phone,
+  eventData.event_type
+);
+
+} catch (e) {
+    console.error('CATALOGUE Events sheet append error:', e);
+    throw e;
+  }
+}
+
+async function appendBusinessEnquiryToSheets(env, data) {
+  try {
+    await appendSheetRow(env, 'Business Enquiries', [
+      safeText(data.created_at),
+      safeText(data.phone),
+      safeText(data.name),
+      safeText(data.enquiry_type),
+      safeText(data.profession),
+      safeText(data.brand_name),
+      safeText(data.insta_handle),
+      safeText(data.insta_url),
+      safeText(data.raw_message),
+      safeText(data.status),
+      safeText(data.notes),
+    ]);
+  } catch (e) {
+    console.error('Business Enquiries sheet error:', e);
+  }
+}
+
+async function appendSyncFailureToGoogleSheets(env, failure) {
+  try {
+    await appendSheetRow(env, 'Sync Failures', [
+      safeText(failure.created_at || new Date().toISOString()),
+      safeText(failure.destination || 'google_sheets'),
+      safeText(failure.entity_type),
+      safeText(failure.entity_id),
+      safeText(failure.action),
+      safeText(failure.error_message),
+      safeText(failure.retry_count || 0),
+      safeText(failure.status || 'failed'),
+    ]);
+  } catch (e) {
+    console.error('Sync Failures sheet append error:', e);
+  }
+}
+
+
+
+async function syncOrderToGoogleSheets(env, orderId) {
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) throw new Error(`Order not found for Sheets sync: ${orderId}`);
+
+const customer = await env.DB.prepare(`
+  SELECT customer_id
+  FROM customers
+  WHERE phone = ?
+  LIMIT 1
+`)
+.bind(order.phone)
+.first();
+
+const row = mapOrderToSheetRow({
+  ...order,
+  customer_id: customer?.customer_id || ''
+});
+
+await upsertSheetRow(env, 'Orders', 0, order.order_id, row);
+}
+
+async function syncCustomerToGoogleSheets(env, phone) {
+  const customer = await env.DB.prepare(
+    `SELECT * FROM customers WHERE phone = ?`
+  ).bind(phone).first();
+
+  if (!customer) return;
+
+  const unpaid = await env.DB.prepare(`
+    SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
+    FROM orders
+    WHERE phone = ?
+      AND payment_status = 'unpaid'
+      AND status != 'cancelled'
+  `).bind(phone).first();
+
+  const row = mapCustomerToSheetRow(
+    customer,
+    unpaid?.count || 0,
+    unpaid?.value || 0
+  );
+
+  await upsertSheetRow(env, 'Customers', 0, customer.phone, row);
+}
+
+async function syncProductToGoogleSheets(env, sku) {
+  const product = await env.DB.prepare(
+    `SELECT * FROM products WHERE sku = ?`
+  ).bind(sku).first();
+
+  if (!product) throw new Error(`Product not found for Sheets sync: ${sku}`);
+
+  const row = mapProductToSheetRow(product);
+  await upsertSheetRow(env, 'Inventory', 0, product.sku, row);
+}
+
+
+
+async function syncSalesToGoogleSheets(env, orderId) {
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) return;
+
+  const customer = await env.DB.prepare(`
+  SELECT customer_id
+  FROM customers
+  WHERE phone = ?
+`).bind(order.phone).first();
+
+
+
+  const row = mapSalesToSheetRow(order);
+  await upsertSheetRow(env, 'Sales', 0, order.order_id, row);
+}
+
+async function rebuildSourcePerformanceSheet(env) {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const sourceRows = await env.DB.prepare(`
+    SELECT
+      LOWER(COALESCE(source, 'unknown')) as source,
+      COUNT(*) as orders,
+      SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END) as paid_orders,
+      COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as revenue
+    FROM orders
+    GROUP BY LOWER(COALESCE(source, 'unknown'))
+  `).all();
+
+  const leadRows = await env.DB.prepare(`
+    SELECT
+      '' as source,
+      COUNT(*) as leads
+    FROM customers
+  `).all();
+
+  const values = [[
+    'date', 'source', 'leads', 'orders', 'paid_orders', 'revenue', 'avg_order_value', 'conversion_rate', 'notes'
+  ]];
+
+  const leadsFallback = Number(leadRows?.results?.[0]?.leads || 0);
+
+  for (const row of (sourceRows?.results || [])) {
+    const orders = Number(row.orders || 0);
+    const paidOrders = Number(row.paid_orders || 0);
+    const revenue = Number(row.revenue || 0);
+    const avgOrderValue = paidOrders > 0 ? revenue / paidOrders : 0;
+    const conversionRate = leadsFallback > 0 ? (orders / leadsFallback) * 100 : 0;
+
+    values.push([
+      today,
+      safeText(row.source),
+      leadsFallback,
+      orders,
+      paidOrders,
+      revenue,
+      avgOrderValue.toFixed(2),
+      conversionRate.toFixed(2),
+      '',
+    ]);
+  }
+
+  const encodedRange = encodeURIComponent('Source Performance!A:I');
+  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, {
+    values,
+  });
+}
+
+async function syncShipmentToGoogleSheets(env, orderId) {
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) throw new Error(`Order not found for shipment sync: ${orderId}`);
+
+  const row = mapShipmentToSheetRow(order);
+  await upsertSheetRow(env, 'Shipments', 0, order.order_id, row);
+}
+
+async function syncCartToGoogleSheets(env, phone) {
+  const cart = await env.DB.prepare(
+    `SELECT * FROM carts WHERE phone = ?`
+  ).bind(phone).first();
+
+  if (!cart) return;
+
+  const customer = await env.DB.prepare(
+    `SELECT name FROM customers WHERE phone = ?`
+  ).bind(phone).first();
+
+  const row = mapCartToSheetRow(cart, customer?.name || '');
+  await upsertSheetRow(env, 'Cart Activity', 0, cart.phone, row);
+}
+
+async function syncLeadToGoogleSheets(env, phone) {
+  const customer = await env.DB.prepare(
+    `SELECT * FROM customers WHERE phone = ?`
+  ).bind(phone).first();
+
+  if (!customer) return;
+
+  const row = mapLeadToSheetRow(customer);
+  await upsertSheetRow(env, 'Leads', 1, customer.phone, row);
+}
+
+const SHEET_MANUAL_COLUMNS = {
+  'Orders': [34, 35, 36],
+  'Shipments': [19, 20],
+  'Inventory': [19],
+  'Order Events': [],
+  'Sync Failures': [],
+  'Leads': [31, 32],
+  'Sales': [20],
+  'Source Performance': [8],
+  'Customers': [34, 35],
+  'Cart Activity': [11, 12],
+  'Catalogue Events': [],
+};
+
+const SHEET_HEADERS = {
+'Orders': [
+  'customer_id',
+  'order_id',
+  'created_at',
+  'updated_at',
+  'customer_name',
+  'phone',
+  'source',
+  'category',
+
+  'items_summary',
+  'item_count',
+
+  'subtotal',
+  'discount_code',
+  'discount',
+  'shipping_cost',
+
+  'item_skus',
+  'item_names',
+  'total',
+
+  'status',
+  'payment_status',
+  'payment_id',
+  'payment_method',
+  'payment_link',
+  'payment_link_expires',
+
+  'shipping_name',
+  'shipping_phone',
+  'shipping_address',
+  'shipping_city',
+  'shipping_state',
+  'shipping_pincode',
+
+  'paid_at',
+  'cancelled_at',
+  'cancellation_reason',
+  'customer_notes',
+  'internal_notes',
+
+  'owner_note',
+  'follow_up_needed',
+  'verified',
+
+  'shiprocket_order_id',
+  'shipment_id',
+  'courier',
+  'awb_number',
+  'awb_code',
+  'tracking_id',
+  'tracking_url',
+  'shipped_at',
+  'delivered_at'
+],
+
+  'Customers': [
+    'customer_id','phone','name','email','city','state','pincode','source','segment','tier','labels',
+    'message_count','order_count','total_spent','cart_item_count','cart_value',
+    'unpaid_order_count','unpaid_order_value','first_seen','last_seen','last_order_at',
+
+'c_add_to_cart',
+'w_add_to_cart',
+'add_to_cart',
+
+'c_view_content',
+'w_view_content',
+'view_content',
+
+'c_initiate_checkout',
+'w_initiate_checkout',
+'initiate_checkout',
+
+'c_wishlist',
+'w_wishlist',
+'wishlist',
+    'last_checkout_total',
+
+    'owner_note',
+    'follow_up_priority'
+  ],
+
+  'Leads': [
+    'customer_id','created_at','phone','name','source','category','lead_status',
+    'message_count','order_count','total_spent','segment','tier','labels',
+    'last_seen','first_order_at',
+
+    'clicked_website',
+    'clicked_catalogue',
+
+'c_add_to_cart',
+'w_add_to_cart',
+'add_to_cart',
+
+'c_view_content',
+'w_view_content',
+'view_content',
+
+'c_initiate_checkout',
+'w_initiate_checkout',
+'initiate_checkout',
+
+'c_wishlist',
+'w_wishlist',
+'wishlist',
+
+    'last_checkout_total',
+
+    'owner_note',
+    'follow_up_needed'
+  ],
+
+  'Catalogue Events': [
+    'created_at',
+    'customer_id',
+
+    'phone',
+    'customer_name',
+    'event_type',
+
+    'sku',
+    'product_name',
+    'category',
+
+    'price',
+    'quantity',
+
+    'cart_total',
+
+    'checkout_items',
+
+    'source',
+
+    'utm_source',
+    'utm_medium',
+    'utm_campaign'
+  ],
+
+'Sales': [
+  'order_id',
+  'customer_id',
+  'created_at',
+  'source',
+  'category',
+  'customer_name',
+  'phone',
+  'item_skus',
+  'item_names',
+
+  'discount_code',
+  'discount',
+  'total',
+
+  'payment_status',
+  'status',
+  'paid_at',
+  'shipped_at',
+  'delivered_at',
+  'item_count',
+  'items_summary',
+  'sales_stage',
+
+  'owner_note',
+
+  'shiprocket_order_id',
+  'shipment_id',
+  'courier',
+  'awb_number',
+  'awb_code',
+  'tracking_id',
+  'tracking_url'
+],
+
+'Inventory': [
+  'sku',
+  'name',
+  'category',
+  'subcategory',
+  'price',
+  'compare_price',
+  'stock',
+  'reserved_stock',
+  'status',
+  'is_featured',
+  'image_url',
+  'website_link',
+  'material',
+  'finish',
+  'tags_summary',
+  'updated_at',
+  'image_1',
+  'image_2',
+  'image_3',
+  'restock_note'
+],
+
+  'Shipments': [
+    'order_id','customer_name','phone','status','payment_status',
+    'shiprocket_order_id','shipment_id','courier','awb_number','awb_code',
+    'tracking_id','tracking_url','shipping_city','shipping_state','shipping_pincode',
+    'paid_at','shipped_at','delivered_at','updated_at',
+    'dispatch_note','dispatch_verified'
+  ],
+
+  'Cart Activity': [
+    'phone','customer_name','item_count','total','items_summary','status',
+    'reminder_count','last_reminder_at','created_at','updated_at','converted_at',
+    'owner_note','follow_up_needed'
+  ],
+};
+ 
+function mergeSheetRowPreservingManual(existingRow = [], newRow = [], manualIndexes = []) {
+
+  const merged = [...newRow];
+
+  for (const idx of manualIndexes) {
+    if (existingRow[idx] !== undefined && existingRow[idx] !== '') {
+      merged[idx] = existingRow[idx];
+    }
+  }
+
+  return merged;
+}
+
+async function getSheetRowByKey(env, tabName, keyColumnIndex, keyValue) {
+  const rows = await getSheetValues(env, tabName);
+  if (!rows || rows.length < 2) return null;
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i] || [];
+    if ((row[keyColumnIndex] || '').toString() === (keyValue || '').toString()) {
+      return { rowIndex1Based: i + 1, row };
+    }
+  }
+  return null;
+}
+
+async function upsertSheetRowSafe(env, tabName, keyColumnIndex, keyValue, row) {
+  const existing = await getSheetRowByKey(env, tabName, keyColumnIndex, keyValue);
+  const manualIndexes = SHEET_MANUAL_COLUMNS[tabName] || [];
+
+  if (existing) {
+    const mergedRow = mergeSheetRowPreservingManual(existing.row, row, manualIndexes);
+    return await updateSheetRow(env, tabName, existing.rowIndex1Based, mergedRow);
+  }
+
+  return await appendSheetRow(env, tabName, row);
+}
+
+async function syncOrderToGoogleSheetsSafe(env, orderId) {
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+  if (!order) return;
+
+  const categoryMap = await getAllProductCategories(env);
+  const category = getCategoryFromItems(order.items, categoryMap);
+  const customer = await env.DB.prepare(`
+  SELECT customer_id
+  FROM customers
+  WHERE phone = ?
+  LIMIT 1
+`)
+.bind(order.phone)
+.first();
+
+const row = [
+    safeText(customer?.customer_id || ''),
+    safeText(order.order_id),
+    safeText(order.created_at),
+    safeText(order.updated_at),
+    safeText(order.customer_name),
+    safeText(order.phone),
+    safeText(order.source),
+    safeText(category),
+itemsSummaryFromJson(order.items),
+safeNumber(order.item_count),
+
+safeNumber(order.subtotal),
+safeText(order.discount_code),
+safeNumber(order.discount),
+safeNumber(order.shipping_cost),
+
+itemsSkuList(order.items),
+itemsNameList(order.items),
+safeNumber(order.total),
+    safeText(order.status),
+    safeText(order.payment_status),
+    safeText(order.payment_id),
+    safeText(order.payment_method),
+    safeText(order.payment_link),
+    safeText(order.payment_link_expires),
+    safeText(order.shipping_name),
+    safeText(order.shipping_phone),
+    safeText(order.shipping_address),
+    safeText(order.shipping_city),
+    safeText(order.shipping_state),
+    safeText(order.shipping_pincode),
+    safeText(order.paid_at),
+    safeText(order.cancelled_at),
+    safeText(order.cancellation_reason),
+    safeText(order.customer_notes),
+safeText(order.internal_notes),
+'', '', '',
+safeText(order.shiprocket_order_id),
+safeText(order.shipment_id),
+safeText(order.courier),
+safeText(order.awb_number),
+safeText(order.awb_code),
+safeText(order.tracking_id),
+safeText(order.tracking_url),
+safeText(order.shipped_at),
+safeText(order.delivered_at),
+  ];
+
+  await upsertSheetRowSafe(env, 'Orders', 1, order.order_id, row);
+}
+
+async function appendCatalogueEventToGoogleSheetsSafe(env, data) {
+  try {
+
+    const row = [
+
+  safeText(data.created_at),
+
+  safeText(data.customer_id || ''),
+
+  safeText(data.phone),
+  safeText(data.customer_name || ''),
+
+  safeText(data.event_type),
+
+  safeText(data.sku),
+  safeText(data.product_name),
+  safeText(data.category),
+
+  safeNumber(data.price),
+  safeNumber(data.quantity),
+
+  safeNumber(data.cart_total),
+
+  safeText(data.checkout_items || ''),
+
+  safeText(data.source || 'website'),
+
+  safeText(data.utm_source || ''),
+  safeText(data.utm_medium || ''),
+  safeText(data.utm_campaign || '')
+];
+
+await appendSheetRow(
+  env,
+  'Catalogue Events',
+  row
+);
+
+  } catch (e) {
+    console.error(
+      'Catalogue Events Sheet Error:',
+      e
+    );
+  }
+}
+
+async function syncSalesToGoogleSheetsSafe(env, orderId) {
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+  if (!order) return;
+
+  const categoryMap = await getAllProductCategories(env);
+  const category = getCategoryFromItems(order.items, categoryMap);
+
+const customer = await env.DB.prepare(`
+  SELECT customer_id
+  FROM customers
+  WHERE phone = ? OR phone = ?
+  LIMIT 1
+`)
+.bind(
+  order.phone,
+  order.phone.startsWith('91')
+    ? order.phone.slice(2)
+    : '91' + order.phone
+)
+.first();
+
+const row = [
+  safeText(order.order_id),
+  safeText(customer?.customer_id || ''),
+  safeText(order.created_at),
+    safeText(order.source),
+    safeText(category),
+    safeText(order.customer_name),
+    safeText(order.phone),
+itemsSkuList(order.items),
+itemsNameList(order.items),
+
+safeText(order.discount_code),
+safeNumber(order.discount),
+safeNumber(order.total),
+
+safeText(order.payment_status),
+    safeText(order.status),
+    safeText(order.paid_at),
+    safeText(order.shipped_at),
+    safeText(order.delivered_at),
+    safeNumber(order.item_count),
+    itemsSummaryFromJson(order.items),
+deriveSalesStage(order),
+'',
+safeText(order.shiprocket_order_id),
+safeText(order.shipment_id),
+safeText(order.courier),
+safeText(order.awb_number),
+safeText(order.awb_code),
+safeText(order.tracking_id),
+safeText(order.tracking_url),
+  ];
+
+  await upsertSheetRowSafe(env, 'Sales', 0, order.order_id, row);
+}
+
+async function syncLeadToGoogleSheetsSafe(env, phone) {
+  const customer = await env.DB.prepare(
+    `SELECT * FROM customers WHERE phone = ?`
+  ).bind(phone).first();
+  if (!customer) return;
+
+  const categoryMap = await getAllProductCategories(env);
+
+  const orderStats = await env.DB.prepare(`
+    SELECT
+      COUNT(*) as order_count,
+      COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_spent
+    FROM orders WHERE phone = ? OR phone = ?
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  const firstOrder = await env.DB.prepare(`
+    SELECT source, items, created_at
+    FROM orders
+    WHERE phone = ? OR phone = ?
+    ORDER BY datetime(created_at) ASC
+    LIMIT 1
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  const category = firstOrder ? getCategoryFromItems(firstOrder.items, categoryMap) : '';
+  const orderCount = safeNumber(orderStats?.order_count || 0);
+  const totalSpent = safeNumber(orderStats?.total_spent || 0);
+  const messageCount = safeNumber(customer.message_count);
+
+  let leadStatus = 'new';
+  if (orderCount > 0 || totalSpent > 0) leadStatus = 'ordered';
+  else if (messageCount >= 5) leadStatus = 'interested';
+  else if (messageCount > 0) leadStatus = 'engaged';
+
+  const row = [
+    safeText(customer.customer_id),
+    safeText(customer.created_at || customer.first_seen),
+    safeText(customer.phone),
+    safeText(customer.name),
+    safeText(firstOrder?.source || ''),
+    safeText(category),
+    leadStatus,
+    messageCount,
+    orderCount,
+    totalSpent,
+    safeText(customer.segment),
+    safeText(customer.tier),
+    labelsSummary(customer.labels),
+    safeText(customer.last_seen),
+    safeText(firstOrder?.created_at || ''),
+    safeNumber(customer.clicked_website || 0),
+    safeNumber(customer.clicked_catalogue || 0),
+// Add To Cart
+safeNumber(customer.c_add_to_cart || 0),
+safeNumber(customer.w_add_to_cart || 0),
+safeNumber(customer.add_to_cart || 0),
+
+// View Content
+safeNumber(customer.c_view_content || 0),
+safeNumber(customer.w_view_content || 0),
+safeNumber(customer.view_content || 0),
+
+// Initiate Checkout
+safeNumber(customer.c_initiate_checkout || 0),
+safeNumber(customer.w_initiate_checkout || 0),
+safeNumber(customer.initiate_checkout || 0),
+
+// Wishlist
+safeNumber(customer.c_wishlist || 0),
+safeNumber(customer.w_wishlist || 0),
+safeNumber(customer.wishlist || 0),
+safeNumber(customer.last_checkout_total || 0),
+        '',
+    (
+      customer.c_add_to_cart > 0 ||
+      customer.c_initiate_checkout > 0 ||
+      customer.add_to_cart > 0 ||
+      customer.initiate_checkout > 0
+    ) ? 'YES' : 'NO',
+  ];
+
+  await upsertSheetRowSafe(env, 'Leads', 2, customer.phone, row);
+}
+
+async function syncCustomerToGoogleSheetsSafe(env, phone) {
+  const customer = await env.DB.prepare(
+    `SELECT * FROM customers WHERE phone = ?`
+  ).bind(phone).first();
+  if (!customer) return;
+
+   // Ensure customer_id exists before syncing
+  if (!customer.customer_id) {
+    await getOrCreateCustomerId(env, phone);
+    // Re-fetch with the ID
+    const updated = await env.DB.prepare(
+      `SELECT * FROM customers WHERE phone = ?`
+    ).bind(phone).first();
+
+    if (updated) Object.assign(customer, updated);
+  }
+
+  const orderStats = await env.DB.prepare(`
+    SELECT
+      COUNT(*) as order_count,
+      COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_spent
+    FROM orders WHERE phone = ? OR phone = ?
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  const unpaid = await env.DB.prepare(`
+    SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
+    FROM orders
+    WHERE (phone = ? OR phone = ?)
+      AND payment_status = 'unpaid'
+      AND status != 'cancelled'
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  const firstOrder = await env.DB.prepare(`
+    SELECT source, shipping_city, shipping_state, shipping_pincode
+    FROM orders
+    WHERE phone = ? OR phone = ?
+    ORDER BY datetime(created_at) ASC
+    LIMIT 1
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  let cartItems = [];
+  try {
+    cartItems = JSON.parse(customer.cart || '[]');
+    if (!Array.isArray(cartItems)) cartItems = [];
+  } catch (_) { cartItems = []; }
+
+  const cartItemCount = cartItems.reduce((s, i) => s + Number(i.qty || i.quantity || 1), 0);
+  const cartValue = cartItems.reduce((s, i) => {
+    return s + (Number(i.qty || i.quantity || 1) * Number(i.price || 0));
+  }, 0);
+
+  const row = [
+    safeText(customer.customer_id),
+    safeText(customer.phone),
+    safeText(customer.name),
+    safeText(customer.email),
+    safeText(customer.city || firstOrder?.shipping_city || ''),
+    safeText(customer.state || firstOrder?.shipping_state || ''),
+    safeText(customer.pincode || firstOrder?.shipping_pincode || ''),
+    safeText(firstOrder?.source || ''),
+    safeText(customer.segment),
+    safeText(customer.tier),
+    labelsSummary(customer.labels),
+    safeNumber(customer.message_count),
+    safeNumber(orderStats?.order_count || 0),
+    safeNumber(orderStats?.total_spent || 0),
+cartItemCount,
+cartValue,
+
+safeNumber(unpaid?.count || 0),
+safeNumber(unpaid?.value || 0),
+
+safeText(customer.first_seen),
+safeText(customer.last_seen),
+safeText(customer.last_order_at),
+
+// Add To Cart
+safeNumber(customer.c_add_to_cart || 0),
+safeNumber(customer.w_add_to_cart || 0),
+safeNumber(customer.add_to_cart || 0),
+
+// View Content
+safeNumber(customer.c_view_content || 0),
+safeNumber(customer.w_view_content || 0),
+safeNumber(customer.view_content || 0),
+
+// Initiate Checkout
+safeNumber(customer.c_initiate_checkout || 0),
+safeNumber(customer.w_initiate_checkout || 0),
+safeNumber(customer.initiate_checkout || 0),
+
+// Wishlist
+safeNumber(customer.c_wishlist || 0),
+safeNumber(customer.w_wishlist || 0),
+safeNumber(customer.wishlist || 0),
+
+safeNumber(customer.last_checkout_total || 0),
+    '',
+  ];
+
+  await upsertSheetRowSafe(env, 'Customers', 1, customer.phone, row);
+}
+
+async function syncProductToGoogleSheetsSafe(env, sku) {
+  const product = await env.DB.prepare(
+    `SELECT * FROM products WHERE sku = ?`
+  ).bind(sku).first();
+  if (!product) return;
+
+  const imgs = parseProductImages(product);
+
+  const row = [
+    safeText(product.sku),
+    safeText(product.name),
+    safeText(product.category),
+    safeText(product.subcategory),
+    safeNumber(product.price),
+    safeNumber(product.compare_price),
+    safeNumber(product.stock),
+    safeNumber(product.reserved_stock || 0),
+    product.is_active ? 'Enabled' : 'Disabled',
+    product.is_featured ? 'Yes' : 'No',
+    safeText(product.image_url),
+    safeText(product.website_link),
+    safeText(product.material),
+    tagsSummary(product.tags),
+    safeText(product.updated_at),
+    safeText(imgs.image_1),
+    safeText(imgs.image_2),
+    safeText(imgs.image_3),
+    '',
+  ];
+
+  await upsertSheetRowSafe(env, 'Inventory', 0, product.sku, row);
+}
+
+async function syncShipmentToGoogleSheetsSafe(env, orderId) {
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) throw new Error(`Order not found for shipment sync: ${orderId}`);
+
+  const row = mapShipmentToSheetRow(order);
+  await upsertSheetRowSafe(env, 'Shipments', 0, order.order_id, row);
+}
+
+async function syncCartToGoogleSheetsSafe(env, phone) {
+  const cart = await env.DB.prepare(
+    `SELECT * FROM carts WHERE phone = ?`
+  ).bind(phone).first();
+
+  if (!cart) return;
+
+  const customer = await env.DB.prepare(
+    `SELECT name FROM customers WHERE phone = ?`
+  ).bind(phone).first();
+
+  const row = mapCartToSheetRow(cart, customer?.name || '');
+  await upsertSheetRowSafe(env, 'Cart Activity', 0, cart.phone, row);
+}
+
+
+async function backfillOrdersToGoogleSheets(env) {
+  const { results: orders } = await env.DB.prepare(`
+    SELECT * FROM orders ORDER BY created_at DESC
+  `).all();
+
+  if (!orders || orders.length === 0) return { totalOrders: 0 };
+
+  const categoryMap = await getAllProductCategories(env);
+  const existing = await getSheetValues(env, 'Orders');
+  const manualIndexes = SHEET_MANUAL_COLUMNS['Orders'] || [];
+
+  const existingMap = {};
+  for (let i = 1; i < (existing || []).length; i++) {
+    const key = (existing[i] || [])[1];
+    if (key) existingMap[key] = existing[i];
+  }
+
+  const rows = [SHEET_HEADERS['Orders']];
+
+  for (const order of orders) {
+    const category = getCategoryFromItems(order.items, categoryMap);
+  const customer = await env.DB.prepare(`
+  SELECT customer_id
+  FROM customers
+  WHERE phone = ?
+  LIMIT 1
+`)
+.bind(order.phone)
+.first();
+    const newRow = [
+      safeText(customer?.customer_id || ''),
+      safeText(order.order_id),
+      safeText(order.created_at),
+      safeText(order.updated_at),
+      safeText(order.customer_name),
+      safeText(order.phone),
+      safeText(order.source),
+      safeText(category),
+itemsSummaryFromJson(order.items),
+safeNumber(order.item_count),
+
+safeNumber(order.subtotal),
+safeText(order.discount_code),
+safeNumber(order.discount),
+safeNumber(order.shipping_cost),
+
+itemsSkuList(order.items),
+itemsNameList(order.items),
+safeNumber(order.total),
+      safeText(order.status),
+      safeText(order.payment_status),
+      safeText(order.payment_id),
+      safeText(order.payment_method),
+      safeText(order.payment_link),
+      safeText(order.payment_link_expires),
+      safeText(order.shipping_name),
+      safeText(order.shipping_phone),
+      safeText(order.shipping_address),
+      safeText(order.shipping_city),
+      safeText(order.shipping_state),
+      safeText(order.shipping_pincode),
+      safeText(order.paid_at),
+      safeText(order.cancelled_at),
+      safeText(order.cancellation_reason),
+      safeText(order.customer_notes),
+safeText(order.internal_notes),
+'', '', '',
+safeText(order.shiprocket_order_id),
+safeText(order.shipment_id),
+safeText(order.courier),
+safeText(order.awb_number),
+safeText(order.awb_code),
+safeText(order.tracking_id),
+safeText(order.tracking_url),
+safeText(order.shipped_at),
+safeText(order.delivered_at),
+];
+
+
+    const existingRow = existingMap[order.order_id] || [];
+    const merged = mergeSheetRowPreservingManual(existingRow, newRow, manualIndexes);
+    rows.push(merged);
+  }
+
+  const encodedRange = encodeURIComponent('Orders!A:ZZ');
+  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values: rows });
+
+  return { totalOrders: orders.length };
+}
+
+async function backfillCustomersToGoogleSheets(env) {
+  const { results: customers } = await env.DB.prepare(`
+    WITH customer_base AS (
+      SELECT
+        c.*,
+        CASE
+          WHEN c.phone LIKE '91%' THEN substr(c.phone, 3)
+          ELSE c.phone
+        END AS phone10
+      FROM customers c
+    ),
+
+    order_norm AS (
+      SELECT
+        o.*,
+        CASE
+          WHEN o.phone LIKE '91%' THEN substr(o.phone, 3)
+          ELSE o.phone
+        END AS phone10,
+        ROW_NUMBER() OVER (
+          PARTITION BY
+            CASE
+              WHEN o.phone LIKE '91%' THEN substr(o.phone, 3)
+              ELSE o.phone
+            END
+          ORDER BY datetime(o.created_at) ASC, o.id ASC
+        ) AS rn
+      FROM orders o
+    ),
+
+    order_stats AS (
+      SELECT
+        phone10,
+        COUNT(*) AS calc_order_count,
+        COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) AS calc_total_spent,
+        SUM(
+          CASE
+            WHEN payment_status = 'unpaid'
+             AND COALESCE(status, '') != 'cancelled'
+            THEN 1 ELSE 0
+          END
+        ) AS unpaid_order_count,
+        COALESCE(SUM(
+          CASE
+            WHEN payment_status = 'unpaid'
+             AND COALESCE(status, '') != 'cancelled'
+            THEN total ELSE 0
+          END
+        ), 0) AS unpaid_order_value
+      FROM order_norm
+      GROUP BY phone10
+    ),
+
+    first_orders AS (
+      SELECT *
+      FROM order_norm
+      WHERE rn = 1
+    )
+
+    SELECT
+      cb.*,
+      COALESCE(os.calc_order_count, 0) AS calc_order_count,
+      COALESCE(os.calc_total_spent, 0) AS calc_total_spent,
+      COALESCE(os.unpaid_order_count, 0) AS unpaid_order_count,
+      COALESCE(os.unpaid_order_value, 0) AS unpaid_order_value,
+      fo.source AS first_source,
+      fo.shipping_city AS first_shipping_city,
+      fo.shipping_state AS first_shipping_state,
+      fo.shipping_pincode AS first_shipping_pincode
+    FROM customer_base cb
+    LEFT JOIN order_stats os ON os.phone10 = cb.phone10
+    LEFT JOIN first_orders fo ON fo.phone10 = cb.phone10
+    ORDER BY datetime(cb.last_seen) DESC, cb.id DESC
+  `).all();
+
+  if (!customers || customers.length === 0) {
+    return { totalCustomers: 0 };
+  }
+
+  const existing = await getSheetValues(env, 'Customers');
+  const manualIndexes = SHEET_MANUAL_COLUMNS['Customers'] || [];
+
+  const existingMap = {};
+  for (let i = 1; i < (existing || []).length; i++) {
+    const key = (existing[i] || [])[1]; // phone column
+    if (key) existingMap[key] = existing[i];
+  }
+
+  const rows = [SHEET_HEADERS['Customers']];
+
+  for (const customer of customers) {
+    let cartItems = [];
+    try {
+      cartItems = JSON.parse(customer.cart || '[]');
+      if (!Array.isArray(cartItems)) cartItems = [];
+    } catch (_) {
+      cartItems = [];
+    }
+
+    const cartItemCount = cartItems.reduce((s, i) => {
+      return s + Number(i.qty || i.quantity || 1);
+    }, 0);
+
+    const cartValue = cartItems.reduce((s, i) => {
+      return s + (
+        Number(i.qty || i.quantity || 1) *
+        Number(i.price || 0)
+      );
+    }, 0);
+
+    const newRow = [
+      safeText(customer.customer_id),
+      safeText(customer.phone),
+      safeText(customer.name),
+      safeText(customer.email),
+      safeText(customer.city || customer.first_shipping_city || ''),
+      safeText(customer.state || customer.first_shipping_state || ''),
+      safeText(customer.pincode || customer.first_shipping_pincode || ''),
+      safeText(customer.first_source || ''),
+      safeText(customer.segment),
+      safeText(customer.tier),
+      labelsSummary(customer.labels),
+
+      safeNumber(customer.message_count),
+      safeNumber(customer.calc_order_count || customer.order_count || 0),
+      safeNumber(customer.calc_total_spent || customer.total_spent || 0),
+
+      cartItemCount,
+      cartValue,
+
+      safeNumber(customer.unpaid_order_count || 0),
+      safeNumber(customer.unpaid_order_value || 0),
+
+      safeText(customer.first_seen),
+      safeText(customer.last_seen),
+      safeText(customer.last_order_at),
+
+      safeNumber(customer.c_add_to_cart || 0),
+      safeNumber(customer.w_add_to_cart || 0),
+      safeNumber(customer.add_to_cart || 0),
+
+      safeNumber(customer.c_view_content || 0),
+      safeNumber(customer.w_view_content || 0),
+      safeNumber(customer.view_content || 0),
+
+      safeNumber(customer.c_initiate_checkout || 0),
+      safeNumber(customer.w_initiate_checkout || 0),
+      safeNumber(customer.initiate_checkout || 0),
+
+      safeNumber(customer.c_wishlist || 0),
+      safeNumber(customer.w_wishlist || 0),
+      safeNumber(customer.wishlist || 0),
+
+      safeNumber(customer.last_checkout_total || 0),
+
+      '',
+      '',
+    ];
+
+    const existingRow = existingMap[customer.phone] || [];
+    const merged = mergeSheetRowPreservingManual(
+      existingRow,
+      newRow,
+      manualIndexes
+    );
+
+    rows.push(merged);
+  }
+
+  const encodedRange = encodeURIComponent('Customers!A:ZZ');
+  await googleSheetsRequest(
+    env,
+    'PUT',
+    `/values/${encodedRange}?valueInputOption=RAW`,
+    { values: rows }
+  );
+
+  return { totalCustomers: customers.length };
+}
+
+async function backfillLeadsToGoogleSheets(env) {
+  const categoryMap = await getAllProductCategories(env);
+
+  const { results: customers } = await env.DB.prepare(`
+    WITH customer_base AS (
+      SELECT
+        c.*,
+        CASE
+          WHEN c.phone LIKE '91%' THEN substr(c.phone, 3)
+          ELSE c.phone
+        END AS phone10
+      FROM customers c
+    ),
+
+    order_norm AS (
+      SELECT
+        o.*,
+        CASE
+          WHEN o.phone LIKE '91%' THEN substr(o.phone, 3)
+          ELSE o.phone
+        END AS phone10,
+        ROW_NUMBER() OVER (
+          PARTITION BY
+            CASE
+              WHEN o.phone LIKE '91%' THEN substr(o.phone, 3)
+              ELSE o.phone
+            END
+          ORDER BY datetime(o.created_at) ASC, o.id ASC
+        ) AS rn
+      FROM orders o
+    ),
+
+    order_stats AS (
+      SELECT
+        phone10,
+        COUNT(*) AS calc_order_count,
+        COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) AS calc_total_spent
+      FROM order_norm
+      GROUP BY phone10
+    ),
+
+    first_orders AS (
+      SELECT *
+      FROM order_norm
+      WHERE rn = 1
+    )
+
+    SELECT
+      cb.*,
+      COALESCE(os.calc_order_count, 0) AS calc_order_count,
+      COALESCE(os.calc_total_spent, 0) AS calc_total_spent,
+      fo.source AS first_source,
+      fo.items AS first_items,
+      fo.created_at AS first_order_created_at
+    FROM customer_base cb
+    LEFT JOIN order_stats os ON os.phone10 = cb.phone10
+    LEFT JOIN first_orders fo ON fo.phone10 = cb.phone10
+    ORDER BY datetime(cb.last_seen) DESC, cb.id DESC
+  `).all();
+
+  if (!customers || customers.length === 0) {
+    return { totalLeads: 0 };
+  }
+
+  const existing = await getSheetValues(env, 'Leads');
+  const manualIndexes = SHEET_MANUAL_COLUMNS['Leads'] || [];
+
+  const existingMap = {};
+  for (let i = 1; i < (existing || []).length; i++) {
+    const key = (existing[i] || [])[2]; // phone column
+    if (key) existingMap[key] = existing[i];
+  }
+
+  const rows = [SHEET_HEADERS['Leads']];
+
+  for (const customer of customers) {
+    const category = customer.first_items
+      ? getCategoryFromItems(customer.first_items, categoryMap)
+      : '';
+
+    const orderCount = safeNumber(
+      customer.calc_order_count || customer.order_count || 0
+    );
+
+    const totalSpent = safeNumber(
+      customer.calc_total_spent || customer.total_spent || 0
+    );
+
+    const messageCount = safeNumber(customer.message_count);
+
+    let leadStatus = 'new';
+    if (orderCount > 0 || totalSpent > 0) leadStatus = 'ordered';
+    else if (messageCount >= 5) leadStatus = 'interested';
+    else if (messageCount > 0) leadStatus = 'engaged';
+
+    const newRow = [
+      safeText(customer.customer_id),
+      safeText(customer.created_at || customer.first_seen),
+      safeText(customer.phone),
+      safeText(customer.name),
+
+      safeText(customer.first_source || ''),
+      safeText(category),
+      leadStatus,
+
+      messageCount,
+      orderCount,
+      totalSpent,
+
+      safeText(customer.segment),
+      safeText(customer.tier),
+      labelsSummary(customer.labels),
+
+      safeText(customer.last_seen),
+      safeText(customer.first_order_created_at || ''),
+
+      safeNumber(customer.clicked_website || 0),
+      safeNumber(customer.clicked_catalogue || 0),
+
+      safeNumber(customer.c_add_to_cart || 0),
+      safeNumber(customer.w_add_to_cart || 0),
+      safeNumber(customer.add_to_cart || 0),
+
+      safeNumber(customer.c_view_content || 0),
+      safeNumber(customer.w_view_content || 0),
+      safeNumber(customer.view_content || 0),
+
+      safeNumber(customer.c_initiate_checkout || 0),
+      safeNumber(customer.w_initiate_checkout || 0),
+      safeNumber(customer.initiate_checkout || 0),
+
+      safeNumber(customer.c_wishlist || 0),
+      safeNumber(customer.w_wishlist || 0),
+      safeNumber(customer.wishlist || 0),
+
+      safeNumber(customer.last_checkout_total || 0),
+
+      '',
+
+      (
+        customer.c_add_to_cart > 0 ||
+        customer.c_initiate_checkout > 0 ||
+        customer.add_to_cart > 0 ||
+        customer.initiate_checkout > 0
+      ) ? 'YES' : 'NO',
+    ];
+
+    const existingRow = existingMap[customer.phone] || [];
+    const merged = mergeSheetRowPreservingManual(
+      existingRow,
+      newRow,
+      manualIndexes
+    );
+
+    rows.push(merged);
+  }
+
+  const encodedRange = encodeURIComponent('Leads!A:ZZ');
+  await googleSheetsRequest(
+    env,
+    'PUT',
+    `/values/${encodedRange}?valueInputOption=RAW`,
+    { values: rows }
+  );
+
+  return { totalLeads: customers.length };
+}
+
+async function backfillSalesToGoogleSheets(env) {
+  const { results: orders } = await env.DB.prepare(`
+    SELECT * FROM orders ORDER BY created_at DESC
+  `).all();
+
+  if (!orders || orders.length === 0) return { totalSales: 0 };
+
+  const categoryMap = await getAllProductCategories(env);
+  const existing = await getSheetValues(env, 'Sales');
+  const manualIndexes = SHEET_MANUAL_COLUMNS['Sales'] || [];
+
+  const existingMap = {};
+  for (let i = 1; i < (existing || []).length; i++) {
+    const key = (existing[i] || [])[0];
+    if (key) existingMap[key] = existing[i];
+  }
+
+  const rows = [SHEET_HEADERS['Sales']];
+
+  for (const order of orders) {
+    const category = getCategoryFromItems(order.items, categoryMap);
+
+const customer = await env.DB.prepare(`
+  SELECT customer_id
+  FROM customers
+  WHERE phone = ?
+`)
+.bind(order.phone)
+.first();
+
+const newRow = [
+  safeText(order.order_id),
+  safeText(customer?.customer_id || ''),
+  safeText(order.created_at),
+  safeText(order.source),
+      safeText(category),
+      safeText(order.customer_name),
+      safeText(order.phone),
+itemsSkuList(order.items),
+itemsNameList(order.items),
+
+safeText(order.discount_code),
+safeNumber(order.discount),
+safeNumber(order.total),
+
+safeText(order.payment_status),
+      safeText(order.status),
+      safeText(order.paid_at),
+      safeText(order.shipped_at),
+      safeText(order.delivered_at),
+      safeNumber(order.item_count),
+      itemsSummaryFromJson(order.items),
+deriveSalesStage(order),
+'',
+safeText(order.shiprocket_order_id),
+safeText(order.shipment_id),
+safeText(order.courier),
+safeText(order.awb_number),
+safeText(order.awb_code),
+safeText(order.tracking_id),
+safeText(order.tracking_url),
+];
+
+
+    const existingRow = existingMap[order.order_id] || [];
+    const merged = mergeSheetRowPreservingManual(existingRow, newRow, manualIndexes);
+    rows.push(merged);
+  }
+
+  const encodedRange = encodeURIComponent('Sales!A:ZZ');
+  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values: rows });
+
+  return { totalSales: orders.length };
+}
+
+async function backfillProductsToGoogleSheets(env) {
+  const { results: products } = await env.DB.prepare(`
+    SELECT * FROM products ORDER BY name ASC
+  `).all();
+
+  if (!products || products.length === 0) return { totalProducts: 0 };
+
+  const existing = await getSheetValues(env, 'Inventory');
+  const manualIndexes = SHEET_MANUAL_COLUMNS['Inventory'] || [];
+
+  const existingMap = {};
+  for (let i = 1; i < (existing || []).length; i++) {
+    const key = (existing[i] || [])[0];
+    if (key) existingMap[key] = existing[i];
+  }
+
+  const rows = [SHEET_HEADERS['Inventory']];
+
+  for (const product of products) {
+    const imgs = parseProductImages(product);
+    const newRow = [
+      safeText(product.sku),
+      safeText(product.name),
+      safeText(product.category),
+      safeText(product.subcategory),
+      safeNumber(product.price),
+      safeNumber(product.compare_price),
+      safeNumber(product.stock),
+      safeNumber(product.reserved_stock || 0),
+      product.is_active ? 'Enabled' : 'Disabled',
+      product.is_featured ? 'Yes' : 'No',
+      safeText(product.image_url),
+      safeText(product.website_link),
+      safeText(product.material),
+      tagsSummary(product.tags),
+      safeText(product.updated_at),
+      safeText(imgs.image_1),
+      safeText(imgs.image_2),
+      safeText(imgs.image_3),
+      '',
+    ];
+
+    const existingRow = existingMap[product.sku] || [];
+    const merged = mergeSheetRowPreservingManual(existingRow, newRow, manualIndexes);
+    rows.push(merged);
+  }
+
+  const encodedRange = encodeURIComponent('Inventory!A:ZZ');
+  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values: rows });
+
+  return { totalProducts: products.length };
+}
+
+async function backfillShipmentsToGoogleSheets(env) {
+  const { results: orders } = await env.DB.prepare(`
+    SELECT * FROM orders
+    WHERE (shipment_id IS NOT NULL AND shipment_id != '')
+       OR (shiprocket_order_id IS NOT NULL AND shiprocket_order_id != '')
+       OR (awb_number IS NOT NULL AND awb_number != '')
+       OR (awb_code IS NOT NULL AND awb_code != '')
+    ORDER BY created_at DESC
+  `).all();
+
+  if (!orders || orders.length === 0) return { totalShipments: 0 };
+
+  const existing = await getSheetValues(env, 'Shipments');
+  const manualIndexes = SHEET_MANUAL_COLUMNS['Shipments'] || [];
+
+  const existingMap = {};
+  for (let i = 1; i < (existing || []).length; i++) {
+    const key = (existing[i] || [])[0];
+    if (key) existingMap[key] = existing[i];
+  }
+
+  const rows = [SHEET_HEADERS['Shipments']];
+
+  for (const order of orders) {
+    const newRow = mapShipmentToSheetRow(order);
+    const existingRow = existingMap[order.order_id] || [];
+    const merged = mergeSheetRowPreservingManual(existingRow, newRow, manualIndexes);
+    rows.push(merged);
+  }
+
+await clearSheetRange(env, 'Shipments');
+
+const encodedRange = encodeURIComponent('Shipments!A:ZZ');
+await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values: rows });
+
+  return { totalShipments: orders.length };
+}
+
+async function backfillCartsToGoogleSheets(env) {
+  const { results: carts } = await env.DB.prepare(`
+    SELECT * FROM carts ORDER BY updated_at DESC
+  `).all();
+
+  if (!carts || carts.length === 0) return { totalCarts: 0 };
+
+  const existing = await getSheetValues(env, 'Cart Activity');
+  const manualIndexes = SHEET_MANUAL_COLUMNS['Cart Activity'] || [];
+
+  const existingMap = {};
+  for (let i = 1; i < (existing || []).length; i++) {
+    const key = (existing[i] || [])[0];
+    if (key) existingMap[key] = existing[i];
+  }
+
+  const rows = [SHEET_HEADERS['Cart Activity']];
+
+  for (const cart of carts) {
+    const customer = await env.DB.prepare(
+      `SELECT name FROM customers WHERE phone = ?`
+    ).bind(cart.phone).first();
+
+    const newRow = mapCartToSheetRow(cart, customer?.name || '');
+    const existingRow = existingMap[cart.phone] || [];
+    const merged = mergeSheetRowPreservingManual(existingRow, newRow, manualIndexes);
+    rows.push(merged);
+  }
+
+  const encodedRange = encodeURIComponent('Cart Activity!A:ZZ');
+  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values: rows });
+
+  return { totalCarts: carts.length };
+}
+
+async function backfillOrderEventsToGoogleSheets(env) {
+const { results: events } = await env.DB.prepare(`
+    SELECT
+      oe.created_at,
+      oe.order_id,
+      oe.event_type,
+      oe.event_source,
+      oe.message,
+      oe.meta_json,
+      o.phone,
+      c.customer_id
+    FROM order_events oe
+    LEFT JOIN orders o ON o.order_id = oe.order_id
+    LEFT JOIN customers c ON (
+      c.phone = o.phone
+      OR c.phone = CASE
+        WHEN o.phone LIKE '91%' THEN substr(o.phone, 3)
+        ELSE '91' || o.phone
+      END
+    )
+    ORDER BY oe.created_at ASC
+  `).all().catch(() => ({ results: [] }));
+
+  if (!events || events.length === 0) return { totalOrderEvents: 0 };
+
+const values = [[
+    'created_at', 'order_id', 'event_type', 'event_source', 'message', 'meta_json', 'phone', 'customer_id'
+  ]];
+
+  for (const event of events) {
+    values.push([
+      safeText(event.created_at),
+      safeText(event.order_id),
+      safeText(event.event_type),
+      safeText(event.event_source),
+      safeText(event.message),
+      safeText(event.meta_json),
+      safeText(event.phone || ''),
+      safeText(event.customer_id || ''),
+    ]);
+  }
+
+  const encodedRange = encodeURIComponent('Order Events!A:H');
+  await googleSheetsRequest(env, 'PUT', `/values/${encodedRange}?valueInputOption=RAW`, { values });
+
+  return { totalOrderEvents: events.length };
+}
+
+async function backfillCatalogueEventsToGoogleSheets(env) {
+
+const { results: events } = await env.DB.prepare(`
+    SELECT
+      ce.created_at,
+      c.customer_id,
+      ce.phone,
+      COALESCE(c.name, '') as customer_name,
+      ce.event_type,
+      ce.sku,
+      ce.product_name,
+      ce.category,
+      ce.price,
+      ce.quantity,
+      ce.cart_total,
+      ce.checkout_items,
+      ce.source,
+      ce.utm_source,
+      ce.utm_medium,
+      ce.utm_campaign
+    FROM catalogue_events ce
+    LEFT JOIN customers c ON c.phone = ce.phone OR c.phone = CASE
+      WHEN ce.phone LIKE '91%' THEN substr(ce.phone, 3)
+      ELSE '91' || ce.phone
+    END
+    ORDER BY ce.created_at ASC
+  `).all().catch(() => ({ results: [] }));
+
+  if (!events || events.length === 0) {
+    return { totalCatalogueEvents: 0 };
+  }
+
+  const values = [[
+    'created_at',
+    'customer_id',
+    'phone',
+    'customer_name',
+    'event_type',
+    'sku',
+    'product_name',
+    'category',
+    'price',
+    'quantity',
+    'cart_total',
+    'checkout_items',
+    'source',
+    'utm_source',
+    'utm_medium',
+    'utm_campaign'
+  ]];
+
+  for (const event of events) {
+    values.push([
+      safeText(event.created_at),
+      safeText(event.customer_id || ''),
+      safeText(event.phone),
+      safeText(event.customer_name || ''),
+      safeText(event.event_type),
+      safeText(event.sku),
+      safeText(event.product_name),
+      safeText(event.category),
+      event.price || 0,
+      event.quantity || 0,
+      event.cart_total || 0,
+      safeText(event.checkout_items),
+      safeText(event.source),
+      safeText(event.utm_source),
+      safeText(event.utm_medium),
+      safeText(event.utm_campaign)
+    ]);
+  }
+
+  const encodedRange =
+    encodeURIComponent('Catalogue Events!A:P');
+
+  await googleSheetsRequest(
+    env,
+    'PUT',
+    `/values/${encodedRange}?valueInputOption=RAW`,
+    { values }
+  );
+
+  return {
+    totalCatalogueEvents: events.length
+  };
+}
+
+async function backfillAllGoogleSheets(env) {
+  let orders = { totalOrders: 0 };
+  let customers = { totalCustomers: 0 };
+  let leads = { totalLeads: 0 };
+  let sales = { totalSales: 0 };
+  let products = { totalProducts: 0 };
+  let shipments = { totalShipments: 0 };
+  let carts = { totalCarts: 0 };
+  let events = { totalOrderEvents: 0 };
+  let sourcePerf = false;
+  let catalogueEvents = { totalCatalogueEvents: 0 };
+
+
+try {
+  catalogueEvents = await backfillCatalogueEventsToGoogleSheets(env);
+} catch (e) {
+  console.error('Backfill catalogue events error:', e);
+}
+
+
+  try { orders = await backfillOrdersToGoogleSheets(env); } catch (e) {
+    console.error('Backfill orders error:', e);
+  }
+  try { customers = await backfillCustomersToGoogleSheets(env); } catch (e) {
+    console.error('Backfill customers error:', e);
+  }
+  try { leads = await backfillLeadsToGoogleSheets(env); } catch (e) {
+    console.error('Backfill leads error:', e);
+  }
+  try { sales = await backfillSalesToGoogleSheets(env); } catch (e) {
+    console.error('Backfill sales error:', e);
+  }
+  try { products = await backfillProductsToGoogleSheets(env); } catch (e) {
+    console.error('Backfill products error:', e);
+  }
+  try { shipments = await backfillShipmentsToGoogleSheets(env); } catch (e) {
+    console.error('Backfill shipments error:', e);
+  }
+  try { carts = await backfillCartsToGoogleSheets(env); } catch (e) {
+    console.error('Backfill carts error:', e);
+  }
+  try { events = await backfillOrderEventsToGoogleSheets(env); } catch (e) {
+    console.error('Backfill events error:', e);
+  }
+  try { await rebuildSourcePerformanceSheet(env); sourcePerf = true; } catch (e) {
+    console.error('Backfill source perf error:', e);
+  }
+
+return {
+  orders,
+  customers,
+  leads,
+  sales,
+  products,
+  shipments,
+  carts,
+  events,
+  catalogueEvents,
+  sourcePerformance: sourcePerf,
+  syncedAt: new Date().toISOString(),
+};
+
+}
+// ═══════════════════ SUPABASE ═══════════════════
+
+function isSupabaseReady(env) {
+  return !!(env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY);
+}
+
+async function supabaseRequest(env, method, table, body = null, query = '') {
+  if (!isSupabaseReady(env)) {
+    throw new Error('Supabase env vars missing');
+  }
+
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${table}${query}`, {
+    method,
+    headers: {
+      'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+      'apikey': env.SUPABASE_SERVICE_KEY,
+      'Content-Type': 'application/json',
+      'Prefer': body
+        ? 'resolution=merge-duplicates,return=representation'
+        : 'return=representation',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const text = await res.text();
+  let json = null;
+  try { json = text ? JSON.parse(text) : null; } catch (_) { json = text; }
+
+  if (!res.ok) {
+    throw new Error(`Supabase ${method} ${table}${query} failed: ${text}`);
+  }
+
+  return json;
+}
+
+async function upsertSupabaseRows(env, table, rows, onConflict) {
+  if (!rows || rows.length === 0) return [];
+  return await supabaseRequest(
+    env,
+    'POST',
+    table,
+    rows,
+    `?on_conflict=${encodeURIComponent(onConflict)}`
+  );
+}
+
+// ── MAPPERS: REAL TABLES ──────────────────────────────────────
+
+function mapOrderToSupabase(order, category = '') {
+  return {
+    order_id: safeText(order.order_id),
+    phone: safeText(order.phone),
+    customer_name: safeText(order.customer_name),
+    items: safeText(order.items),
+    item_count: safeNumber(order.item_count),
+    subtotal: safeNumber(order.subtotal),
+    discount: safeNumber(order.discount),
+    discount_code: safeText(order.discount_code),
+    shipping_cost: safeNumber(order.shipping_cost),
+    tax: safeNumber(order.tax),
+    total: safeNumber(order.total),
+    shipping_name: safeText(order.shipping_name),
+    shipping_phone: safeText(order.shipping_phone),
+    shipping_address: safeText(order.shipping_address),
+    shipping_city: safeText(order.shipping_city),
+    shipping_state: safeText(order.shipping_state),
+    shipping_pincode: safeText(order.shipping_pincode),
+    status: safeText(order.status),
+    payment_status: safeText(order.payment_status),
+    payment_method: safeText(order.payment_method),
+    payment_id: safeText(order.payment_id),
+    payment_link: safeText(order.payment_link),
+    payment_link_expires: safeText(order.payment_link_expires),
+    paid_at: safeText(order.paid_at),
+    courier: safeText(order.courier),
+    tracking_id: safeText(order.tracking_id),
+    tracking_url: safeText(order.tracking_url),
+    shipment_id: safeText(order.shipment_id),
+    awb_number: safeText(order.awb_number),
+    shiprocket_order_id: safeText(order.shiprocket_order_id),
+    awb_code: safeText(order.awb_code),
+    confirmed_at: safeText(order.confirmed_at),
+    shipped_at: safeText(order.shipped_at),
+    delivered_at: safeText(order.delivered_at),
+    cancelled_at: safeText(order.cancelled_at),
+    customer_notes: safeText(order.customer_notes),
+    internal_notes: safeText(order.internal_notes),
+    cancellation_reason: safeText(order.cancellation_reason),
+    source: safeText(order.source),
+    confirmation_sent: safeNumber(order.confirmation_sent),
+    shipping_sent: safeNumber(order.shipping_sent),
+    delivery_sent: safeNumber(order.delivery_sent),
+    review_sent: safeNumber(order.review_sent),
+    return_requested: safeNumber(order.return_requested),
+    return_reason: safeText(order.return_reason),
+    return_requested_at: safeText(order.return_requested_at),
+    created_at: safeText(order.created_at),
+    updated_at: safeText(order.updated_at),
+
+    // derived helper fields used in reporting
+    category: safeText(category),
+    items_summary: itemsSummaryFromJson(order.items),
+  };
+}
+
+function mapCustomerToSupabase(customer, orderStats = {}, unpaid = {}, firstOrder = {}) {
+  let cartItems = [];
+  try {
+    cartItems = JSON.parse(customer.cart || '[]');
+    if (!Array.isArray(cartItems)) cartItems = [];
+  } catch (_) { cartItems = []; }
+
+  const cartItemCount = cartItems.reduce((sum, item) => {
+    return sum + Number(item.qty || item.quantity || 1);
+  }, 0);
+
+  const cartValue = cartItems.reduce((sum, item) => {
+    const qty = Number(item.qty || item.quantity || 1);
+    const price = Number(item.price || 0);
+    return sum + (qty * price);
+  }, 0);
+
+  return {
+    phone: safeText(customer.phone),
+    name: safeText(customer.name),
+    email: safeText(customer.email),
+    address: safeText(customer.address),
+    city: safeText(customer.city || firstOrder?.shipping_city || ''),
+    state: safeText(customer.state || firstOrder?.shipping_state || ''),
+    pincode: safeText(customer.pincode || firstOrder?.shipping_pincode || ''),
+    segment: safeText(customer.segment),
+    tier: safeText(customer.tier),
+    labels: safeText(customer.labels),
+    message_count: safeNumber(customer.message_count),
+    order_count: safeNumber(orderStats?.order_count || customer.order_count || 0),
+    total_spent: safeNumber(orderStats?.total_spent || customer.total_spent || 0),
+    cart: safeText(customer.cart),
+    cart_updated_at: safeText(customer.cart_updated_at),
+    language: safeText(customer.language),
+    opted_in: safeNumber(customer.opted_in),
+    first_seen: safeText(customer.first_seen),
+    last_seen: safeText(customer.last_seen),
+    last_order_at: safeText(customer.last_order_at),
+    push_subscription: safeText(customer.push_subscription),
+    created_at: safeText(customer.created_at),
+    updated_at: safeText(customer.updated_at),
+
+    // derived helper fields
+    source: safeText(firstOrder?.source || ''),
+    labels_summary: labelsSummary(customer.labels),
+    cart_item_count: cartItemCount,
+    cart_value: cartValue,
+    unpaid_order_count: safeNumber(unpaid?.count || 0),
+    unpaid_order_value: safeNumber(unpaid?.value || 0),
+  };
+}
+
+function mapProductToSupabase(product) {
+  const imgs = parseProductImages(product);
+
+  return {
+    sku: safeText(product.sku),
+    name: safeText(product.name),
+    description: safeText(product.description),
+    price: safeNumber(product.price),
+    compare_price: safeNumber(product.compare_price),
+    cost_price: safeNumber(product.cost_price),
+    category: safeText(product.category),
+    subcategory: safeText(product.subcategory),
+    tags: safeText(product.tags),
+    stock: safeNumber(product.stock),
+    reserved_stock: safeNumber(product.reserved_stock),
+    track_inventory: safeNumber(product.track_inventory),
+    image_url: safeText(product.image_url),
+    images: safeText(product.images),
+    video_url: safeText(product.video_url),
+    has_variants: safeNumber(product.has_variants),
+    variants: safeText(product.variants),
+    wa_product_id: safeText(product.wa_product_id),
+    view_count: safeNumber(product.view_count),
+    order_count: safeNumber(product.order_count),
+    is_active: safeNumber(product.is_active),
+    is_featured: safeNumber(product.is_featured),
+    website_link: safeText(product.website_link),
+    material: safeText(product.material),
+    created_at: safeText(product.created_at),
+    updated_at: safeText(product.updated_at),
+
+    // derived helper fields
+    tags_summary: tagsSummary(product.tags),
+    image_1: safeText(imgs.image_1),
+    image_2: safeText(imgs.image_2),
+    image_3: safeText(imgs.image_3),
+  };
+}
+
+function mapInventoryToSupabase(product) {
+  const imgs = parseProductImages(product);
+
+  return {
+    sku: safeText(product.sku),
+    name: safeText(product.name),
+    category: safeText(product.category),
+    subcategory: safeText(product.subcategory),
+    price: safeNumber(product.price),
+    compare_price: safeNumber(product.compare_price),
+    stock: safeNumber(product.stock),
+    reserved_stock: safeNumber(product.reserved_stock || 0),
+    status: product.is_active ? 'Enabled' : 'Disabled',
+    is_featured: product.is_featured ? 'Yes' : 'No',
+    image_url: safeText(product.image_url),
+    website_link: safeText(product.website_link),
+    material: safeText(product.material),
+    tags_summary: tagsSummary(product.tags),
+    updated_at: safeText(product.updated_at),
+    image_1: safeText(imgs.image_1),
+    image_2: safeText(imgs.image_2),
+    image_3: safeText(imgs.image_3),
+    restock_note: '',
+  };
+}
+
+function mapCartToSupabase(cart, customerName = '') {
+  return {
+    phone: safeText(cart.phone),
+    items: safeText(cart.items),
+    item_count: safeNumber(cart.item_count),
+    total: safeNumber(cart.total),
+    status: safeText(cart.status),
+    reminder_count: safeNumber(cart.reminder_count),
+    last_reminder_at: safeText(cart.last_reminder_at),
+    created_at: safeText(cart.created_at),
+    updated_at: safeText(cart.updated_at),
+    converted_at: safeText(cart.converted_at),
+
+    // derived helper fields
+    customer_name: safeText(customerName),
+    items_summary: itemsSummaryFromJson(cart.items),
+  };
+}
+
+function mapOrderEventToSupabase(event) {
+  return {
+    order_id: safeText(event.order_id),
+    event_type: safeText(event.event_type),
+    event_source: safeText(event.event_source),
+    message: safeText(event.message),
+    meta_json: safeText(event.meta_json),
+    created_at: safeText(event.created_at),
+  };
+}
+
+// ── MAPPERS: DERIVED REPORTING TABLES ──────────────────────────
+
+function mapLeadToSupabase(customer, firstOrder = {}, category = '', orderStats = {}) {
+  const orderCount = safeNumber(orderStats?.order_count || customer.order_count || 0);
+  const totalSpent = safeNumber(orderStats?.total_spent || customer.total_spent || 0);
+  const messageCount = safeNumber(customer.message_count);
+
+  let lead_status = 'new';
+  if (orderCount > 0 || totalSpent > 0) lead_status = 'ordered';
+  else if (messageCount >= 5) lead_status = 'interested';
+  else if (messageCount > 0) lead_status = 'engaged';
+
+  return {
+    phone: safeText(customer.phone),
+    created_at: safeText(customer.created_at || customer.first_seen),
+    name: safeText(customer.name),
+    source: safeText(firstOrder?.source || ''),
+    category: safeText(category),
+    lead_status: safeText(lead_status),
+    message_count: messageCount,
+    order_count: orderCount,
+    total_spent: totalSpent,
+    segment: safeText(customer.segment),
+    tier: safeText(customer.tier),
+    labels: safeText(customer.labels),
+    labels_summary: labelsSummary(customer.labels),
+    last_seen: safeText(customer.last_seen),
+    first_order_at: safeText(firstOrder?.created_at || ''),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function mapSalesToSupabase(order, category = '') {
+  return {
+    order_id: safeText(order.order_id),
+    created_at: safeText(order.created_at),
+    updated_at: safeText(order.updated_at),
+    source: safeText(order.source),
+    category: safeText(category),
+    customer_name: safeText(order.customer_name),
+    phone: safeText(order.phone),
+    total: safeNumber(order.total),
+    payment_status: safeText(order.payment_status),
+    status: safeText(order.status),
+    paid_at: safeText(order.paid_at),
+    shipped_at: safeText(order.shipped_at),
+    delivered_at: safeText(order.delivered_at),
+    item_count: safeNumber(order.item_count),
+    items_summary: itemsSummaryFromJson(order.items),
+    sales_stage: deriveSalesStage(order),
+  };
+}
+
+function mapShipmentToSupabase(order) {
+  return {
+    order_id: safeText(order.order_id),
+    customer_name: safeText(order.customer_name),
+    phone: safeText(order.phone),
+    status: safeText(order.status),
+    payment_status: safeText(order.payment_status),
+    shiprocket_order_id: safeText(order.shiprocket_order_id),
+    shipment_id: safeText(order.shipment_id),
+    courier: safeText(order.courier),
+    awb_number: safeText(order.awb_number),
+    awb_code: safeText(order.awb_code),
+    tracking_id: safeText(order.tracking_id),
+    tracking_url: safeText(order.tracking_url),
+    shipping_city: safeText(order.shipping_city),
+    shipping_state: safeText(order.shipping_state),
+    shipping_pincode: safeText(order.shipping_pincode),
+    paid_at: safeText(order.paid_at),
+    shipped_at: safeText(order.shipped_at),
+    delivered_at: safeText(order.delivered_at),
+    updated_at: safeText(order.updated_at),
+  };
+}
+
+function mapCartActivityToSupabase(cart, customerName = '') {
+  return {
+    phone: safeText(cart.phone),
+    customer_name: safeText(customerName),
+    item_count: safeNumber(cart.item_count),
+    total: safeNumber(cart.total),
+    items_summary: itemsSummaryFromJson(cart.items),
+    status: safeText(cart.status),
+    reminder_count: safeNumber(cart.reminder_count),
+    last_reminder_at: safeText(cart.last_reminder_at),
+    created_at: safeText(cart.created_at),
+    updated_at: safeText(cart.updated_at),
+    converted_at: safeText(cart.converted_at),
+  };
+}
+
+// ── PER ENTITY SYNC ────────────────────────────────────────────
+
+async function syncOrderToSupabase(env, orderId) {
+  if (!isSupabaseReady(env)) return;
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) return;
+
+  const categoryMap = await getAllProductCategories(env);
+  const category = getCategoryFromItems(order.items, categoryMap);
+
+  await upsertSupabaseRows(env, 'orders', [mapOrderToSupabase(order, category)], 'order_id');
+}
+
+async function syncCustomerToSupabase(env, phone) {
+  if (!isSupabaseReady(env)) return;
+
+  const customer = await env.DB.prepare(
+    `SELECT * FROM customers WHERE phone = ?`
+  ).bind(phone).first();
+
+  if (!customer) return;
+
+  const orderStats = await env.DB.prepare(`
+    SELECT
+      COUNT(*) as order_count,
+      COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_spent
+    FROM orders WHERE phone = ? OR phone = ?
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  const unpaid = await env.DB.prepare(`
+    SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
+    FROM orders
+    WHERE (phone = ? OR phone = ?)
+      AND payment_status = 'unpaid'
+      AND status != 'cancelled'
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  const firstOrder = await env.DB.prepare(`
+    SELECT source, shipping_city, shipping_state, shipping_pincode
+    FROM orders
+    WHERE phone = ? OR phone = ?
+    ORDER BY datetime(created_at) ASC
+    LIMIT 1
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  await upsertSupabaseRows(
+    env,
+    'customers',
+    [mapCustomerToSupabase(customer, orderStats, unpaid, firstOrder)],
+    'phone'
+  );
+}
+
+async function syncProductToSupabase(env, sku) {
+  if (!isSupabaseReady(env)) return;
+
+  const product = await env.DB.prepare(
+    `SELECT * FROM products WHERE sku = ?`
+  ).bind(sku).first();
+
+  if (!product) return;
+
+  await upsertSupabaseRows(env, 'products', [mapProductToSupabase(product)], 'sku');
+}
+
+async function syncCartToSupabase(env, phone) {
+  if (!isSupabaseReady(env)) return;
+
+  const cart = await env.DB.prepare(
+    `SELECT * FROM carts WHERE phone = ?`
+  ).bind(phone).first();
+
+  if (!cart) return;
+
+  const customer = await env.DB.prepare(
+    `SELECT name FROM customers WHERE phone = ?`
+  ).bind(phone).first();
+
+  await upsertSupabaseRows(env, 'carts', [mapCartToSupabase(cart, customer?.name || '')], 'phone');
+  await upsertSupabaseRows(env, 'cart_activity', [mapCartActivityToSupabase(cart, customer?.name || '')], 'phone');
+}
+
+async function syncOrderEventToSupabase(env, eventRow) {
+  if (!isSupabaseReady(env)) return;
+
+  await upsertSupabaseRows(
+    env,
+    'order_events',
+    [mapOrderEventToSupabase(eventRow)],
+    'order_id,event_type,created_at'
+  );
+}
+
+async function syncLeadToSupabase(env, phone) {
+  if (!isSupabaseReady(env)) return;
+
+  const customer = await env.DB.prepare(
+    `SELECT * FROM customers WHERE phone = ?`
+  ).bind(phone).first();
+  if (!customer) return;
+
+  const categoryMap = await getAllProductCategories(env);
+
+  const orderStats = await env.DB.prepare(`
+    SELECT
+      COUNT(*) as order_count,
+      COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_spent
+    FROM orders WHERE phone = ? OR phone = ?
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  const firstOrder = await env.DB.prepare(`
+    SELECT source, items, created_at
+    FROM orders
+    WHERE phone = ? OR phone = ?
+    ORDER BY datetime(created_at) ASC
+    LIMIT 1
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  const category = firstOrder ? getCategoryFromItems(firstOrder.items, categoryMap) : '';
+
+  await upsertSupabaseRows(
+    env,
+    'leads',
+    [mapLeadToSupabase(customer, firstOrder, category, orderStats)],
+    'phone'
+  );
+}
+
+async function syncSalesToSupabase(env, orderId) {
+  if (!isSupabaseReady(env)) return;
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+  if (!order) return;
+
+  const categoryMap = await getAllProductCategories(env);
+  const category = getCategoryFromItems(order.items, categoryMap);
+
+  await upsertSupabaseRows(env, 'sales', [mapSalesToSupabase(order, category)], 'order_id');
+}
+
+async function syncInventoryToSupabase(env, sku) {
+  if (!isSupabaseReady(env)) return;
+
+  const product = await env.DB.prepare(
+    `SELECT * FROM products WHERE sku = ?`
+  ).bind(sku).first();
+
+  if (!product) return;
+
+  await upsertSupabaseRows(env, 'inventory', [mapInventoryToSupabase(product)], 'sku');
+}
+
+async function syncShipmentToSupabase(env, orderId) {
+  if (!isSupabaseReady(env)) return;
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+  if (!order) return;
+
+  await upsertSupabaseRows(env, 'shipments', [mapShipmentToSupabase(order)], 'order_id');
+}
+
+// ── WRAPPERS ───────────────────────────────────────────────────
+
+async function syncOrderEverywhere(env, orderId, phone = null) {
+  await syncOrderToGoogleSheetsSafe(env, orderId);
+  await syncSalesToGoogleSheetsSafe(env, orderId);
+
+  await syncOrderToSupabase(env, orderId);
+  await syncSalesToSupabase(env, orderId);
+
+  const resolvedPhone = phone || (await env.DB.prepare(
+    `SELECT phone FROM orders WHERE order_id = ?`
+  ).bind(orderId).first())?.phone;
+
+  if (resolvedPhone) {
+    await syncCustomerToGoogleSheetsSafe(env, resolvedPhone);
+    await syncLeadToGoogleSheetsSafe(env, resolvedPhone);
+
+    await syncCustomerToSupabase(env, resolvedPhone);
+    await syncLeadToSupabase(env, resolvedPhone);
+  }
+}
+
+async function syncShipmentEverywhere(env, orderId, phone = null) {
+  await syncShipmentToGoogleSheetsSafe(env, orderId);
+  await syncShipmentToSupabase(env, orderId);
+
+  await syncOrderToGoogleSheetsSafe(env, orderId);
+  await syncSalesToGoogleSheetsSafe(env, orderId);
+
+  await syncOrderToSupabase(env, orderId);
+  await syncSalesToSupabase(env, orderId);
+
+  const resolvedPhone = phone || (await env.DB.prepare(
+    `SELECT phone FROM orders WHERE order_id = ?`
+  ).bind(orderId).first())?.phone;
+
+  if (resolvedPhone) {
+    await syncCustomerToGoogleSheetsSafe(env, resolvedPhone);
+    await syncLeadToGoogleSheetsSafe(env, resolvedPhone);
+
+    await syncCustomerToSupabase(env, resolvedPhone);
+    await syncLeadToSupabase(env, resolvedPhone);
+  }
+}
+
+async function syncProductEverywhere(env, sku) {
+  await syncProductToGoogleSheetsSafe(env, sku);
+  await syncProductToSupabase(env, sku);
+  await syncInventoryToSupabase(env, sku);
+}
+
+async function syncCartEverywhere(env, phone) {
+  await syncCartToGoogleSheetsSafe(env, phone);
+  await syncCartToSupabase(env, phone);
+}
+
+// ── FULL BACKFILL ──────────────────────────────────────────────
+
+async function backfillAllSupabase(env) {
+  if (!isSupabaseReady(env)) {
+    throw new Error('Supabase env vars missing');
+  }
+
+  const categoryMap = await getAllProductCategories(env);
+
+  const [
+    ordersRes,
+    customersRes,
+    productsRes,
+    cartsRes,
+    eventsRes,
+  ] = await Promise.all([
+    env.DB.prepare(`SELECT * FROM orders ORDER BY created_at DESC`).all(),
+    env.DB.prepare(`SELECT * FROM customers ORDER BY last_seen DESC`).all(),
+    env.DB.prepare(`SELECT * FROM products ORDER BY name ASC`).all(),
+    env.DB.prepare(`SELECT * FROM carts ORDER BY updated_at DESC`).all(),
+    env.DB.prepare(`
+      SELECT created_at, order_id, event_type, event_source, message, meta_json
+      FROM order_events
+      ORDER BY created_at ASC
+    `).all().catch(() => ({ results: [] })),
+  ]);
+
+  const orders = ordersRes?.results || [];
+  const customers = customersRes?.results || [];
+  const products = productsRes?.results || [];
+  const carts = cartsRes?.results || [];
+  const events = eventsRes?.results || [];
+
+  const orderRows = orders.map(order => {
+    const category = getCategoryFromItems(order.items, categoryMap);
+    return mapOrderToSupabase(order, category);
+  });
+
+  const salesRows = orders.map(order => {
+    const category = getCategoryFromItems(order.items, categoryMap);
+    return mapSalesToSupabase(order, category);
+  });
+
+  const shipmentRows = orders
+    .filter(order =>
+      (order.shipment_id != null && order.shipment_id !== '') ||
+      (order.shiprocket_order_id != null && order.shiprocket_order_id !== '') ||
+      (order.awb_number != null && order.awb_number !== '') ||
+      (order.awb_code != null && order.awb_code !== '')
+    )
+    .map(order => mapShipmentToSupabase(order));
+
+  const customerRows = [];
+  const leadRows = [];
+
+  for (const customer of customers) {
+    const phone = customer.phone;
+
+    const orderStats = await env.DB.prepare(`
+      SELECT
+        COUNT(*) as order_count,
+        COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_spent
+      FROM orders WHERE phone = ? OR phone = ?
+    `).bind(phone, phone.replace(/^91/, '')).first();
+
+    const unpaid = await env.DB.prepare(`
+      SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
+      FROM orders
+      WHERE (phone = ? OR phone = ?)
+        AND payment_status = 'unpaid'
+        AND status != 'cancelled'
+    `).bind(phone, phone.replace(/^91/, '')).first();
+
+    const firstOrder = await env.DB.prepare(`
+      SELECT source, shipping_city, shipping_state, shipping_pincode, items, created_at
+      FROM orders
+      WHERE phone = ? OR phone = ?
+      ORDER BY datetime(created_at) ASC
+      LIMIT 1
+    `).bind(phone, phone.replace(/^91/, '')).first();
+
+    customerRows.push(
+      mapCustomerToSupabase(customer, orderStats, unpaid, firstOrder)
+    );
+
+    const category = firstOrder ? getCategoryFromItems(firstOrder.items, categoryMap) : '';
+    leadRows.push(
+      mapLeadToSupabase(customer, firstOrder, category, orderStats)
+    );
+  }
+
+  const productRows = products.map(product => mapProductToSupabase(product));
+  const inventoryRows = products.map(product => mapInventoryToSupabase(product));
+
+  const cartRows = [];
+  const cartActivityRows = [];
+
+  for (const cart of carts) {
+    const customer = await env.DB.prepare(
+      `SELECT name FROM customers WHERE phone = ?`
+    ).bind(cart.phone).first();
+
+    cartRows.push(mapCartToSupabase(cart, customer?.name || ''));
+    cartActivityRows.push(mapCartActivityToSupabase(cart, customer?.name || ''));
+  }
+
+  const eventRows = events.map(event => mapOrderEventToSupabase(event));
+
+  if (orderRows.length) {
+    await upsertSupabaseRows(env, 'orders', orderRows, 'order_id');
+  }
+
+  if (customerRows.length) {
+    await upsertSupabaseRows(env, 'customers', customerRows, 'phone');
+  }
+
+  if (productRows.length) {
+    await upsertSupabaseRows(env, 'products', productRows, 'sku');
+  }
+
+  if (inventoryRows.length) {
+    await upsertSupabaseRows(env, 'inventory', inventoryRows, 'sku');
+  }
+
+  if (cartRows.length) {
+    await upsertSupabaseRows(env, 'carts', cartRows, 'phone');
+  }
+
+  if (eventRows.length) {
+    await upsertSupabaseRows(env, 'order_events', eventRows, 'order_id,event_type,created_at');
+  }
+
+  if (leadRows.length) {
+    await upsertSupabaseRows(env, 'leads', leadRows, 'phone');
+  }
+
+  if (salesRows.length) {
+    await upsertSupabaseRows(env, 'sales', salesRows, 'order_id');
+  }
+
+  if (shipmentRows.length) {
+    await upsertSupabaseRows(env, 'shipments', shipmentRows, 'order_id');
+  }
+
+  if (cartActivityRows.length) {
+    await upsertSupabaseRows(env, 'cart_activity', cartActivityRows, 'phone');
+  }
+
+  return {
+    orders: orderRows.length,
+    customers: customerRows.length,
+    products: productRows.length,
+    inventory: inventoryRows.length,
+    carts: cartRows.length,
+    orderEvents: eventRows.length,
+    leads: leadRows.length,
+    sales: salesRows.length,
+    shipments: shipmentRows.length,
+    cartActivity: cartActivityRows.length,
+    syncedAt: new Date().toISOString(),
+  };
+}
+
+async function sendFCMNotification(env, phone, name, text, messageId) {
+  try {
+    if (messageId) {
+      const already = await env.KV.get(`fcm_notif:${messageId}`);
+      console.log('FCM dedup check:', already ? 'DUPLICATE' : 'NEW');
+      if (already) {
+        console.log('FCM: duplicate skipped', messageId);
+        return;
+      }
+      await env.KV.put(`fcm_notif:${messageId}`, '1', { expirationTtl: 300 });
+    }
+
+    const deviceToken = await env.KV.get('fcm_token:flutter');
+    if (!deviceToken) return;
+    console.log("FCM token from KV:", deviceToken.substring(0, 20));
+
+    const accessToken = await getAccessToken(env);
+    if (!accessToken) return;
+    const fcmRes = await fetch(`https://fcm.googleapis.com/v1/projects/${env.FCM_PROJECT_ID}/messages:send`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: {
+          token: deviceToken,
+          notification: {
+            title: name || phone,
+            body: text || 'New message',
+          },
+          android: {
+            priority: 'high',
+            notification: {
+              channel_id: 'kaapav_messages',
+              default_vibrate_timings: true,
+              default_sound: true,
+              visibility: 'PUBLIC',
+            },
+          },
+          data: {
+            phone: phone,
+            type: 'new_message',
+            title: name || phone,
+            body: text || 'New message',
+          },
+        },
+      }),
+    });
+    const fcmData = await fcmRes.json();
+    console.log('FCM result:', JSON.stringify(fcmData));
+    if (fcmData?.error?.details?.[0]?.errorCode === 'UNREGISTERED') {
+      await env.KV.delete('fcm_token:flutter');
+      await env.KV.delete('fcm_access_token');
+      console.log('FCM: Cleared stale token');
+    }
+  } catch (e) { console.error('FCM error:', e); }
+}
+
+function formatINR(amount) {
+  const n = Number(amount || 0);
+  return `₹${n.toLocaleString('en-IN', {
+    maximumFractionDigits: n % 1 === 0 ? 0 : 2,
+  })}`;
+}
+
+function formatISTDateTime(date = new Date()) {
+  return new Date(date).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }) + ' IST';
+}
+
+async function saveRazorpayInternalChatMessage(env, {
+  phone,
+  customerName,
+  orderId,
+  amount,
+  paymentId,
+  method,
+  source,
+  status = 'paid',
+}) {
+  const normalized = normalizePhone(phone || env.OWNER_PHONE || '');
+  const chatPhone = normalized.phone91 || String(phone || env.OWNER_PHONE || '').replace(/\D/g, '');
+  if (!chatPhone) return;
+
+  const paidAt = formatISTDateTime();
+  const amountText = formatINR(amount);
+  const safePaymentId = paymentId || orderId || Date.now();
+
+  const messageId = `rzp_${status}_${safePaymentId}`;
+  const title = status === 'failed'
+    ? '❌ *Razorpay Payment Failed*'
+    : '💰 *Razorpay Payment Received*';
+
+  const text =
+    `${title}\n\n` +
+    `Order: *${orderId || '-'}*\n` +
+    `Customer: ${customerName || 'Customer'} (${chatPhone})\n` +
+    `Amount: *${amountText}*\n` +
+    `Time: ${paidAt}\n` +
+    `Payment ID: ${paymentId || '-'}\n` +
+    `Method: ${method || 'Razorpay'}\n` +
+    `Source: ${source || 'razorpay'}\n\n` +
+    (status === 'failed'
+      ? `⚠️ Payment failed. Follow up if needed.`
+      : `✅ Payment marked paid in KAAPAV.`);
+
+  const preview = status === 'failed'
+    ? `❌ Razorpay failed • ${amountText} • ${orderId || ''}`
+    : `💰 Razorpay paid • ${amountText} • ${orderId || ''}`;
+
+  const timestamp = new Date().toISOString();
+
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO messages (
+      message_id,
+      phone,
+      text,
+      message_type,
+      direction,
+      status,
+      timestamp,
+      created_at
+    )
+    VALUES (?, ?, ?, 'razorpay_payment', 'incoming', 'delivered', ?, datetime('now'))
+  `).bind(
+    messageId,
+    chatPhone,
+    text,
+    timestamp
+  ).run();
+
+  await env.DB.prepare(`
+    INSERT INTO chats (
+      phone,
+      customer_name,
+      last_message,
+      last_message_type,
+      last_timestamp,
+      last_direction,
+      unread_count,
+      total_messages,
+      updated_at
+    )
+    VALUES (?, ?, ?, 'razorpay_payment', ?, 'incoming', 1, 1, datetime('now'))
+    ON CONFLICT(phone) DO UPDATE SET
+      customer_name = COALESCE(chats.customer_name, excluded.customer_name),
+      last_message = excluded.last_message,
+      last_message_type = excluded.last_message_type,
+      last_timestamp = excluded.last_timestamp,
+      last_direction = 'incoming',
+      unread_count = COALESCE(chats.unread_count, 0) + 1,
+      total_messages = COALESCE(chats.total_messages, 0) + 1,
+      updated_at = datetime('now')
+  `).bind(
+    chatPhone,
+    customerName || 'Razorpay',
+    preview,
+    timestamp
+  ).run();
+}
+
+function cleanPushText(value, max = 220) {
+  return String(value || '')
+    .replace(/\*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+}
+
+async function saveOwnerInboxAlert(env, ctx, {
+  type,
+  title,
+  body,
+  orderId = '',
+  phone = '',
+  customerName = '',
+  amount = 0,
+  source = '',
+  priority = 'normal',
+  actionType = '',
+  actionLabel = '',
+  actionUrl = '',
+  meta = {},
+  dedupeKey = '',
+  sendPush = true,
+}) {
+  const normalizedOwner = normalizePhone(env.OWNER_PHONE || '');
+  const ownerPhone = normalizedOwner.phone91 || String(env.OWNER_PHONE || '').replace(/\D/g, '');
+
+  const alertKey = String(
+    dedupeKey ||
+    `${type}:${orderId || '-'}:${meta.paymentId || meta.awb || meta.shipmentId || meta.shiprocketOrderId || Date.now()}`
+  );
+
+  const createdAt = new Date().toISOString();
+  const safeTitle = String(title || 'KAAPAV Alert').trim();
+  const safeBody = String(body || '').trim();
+  const safeAmount = Number(amount || 0);
+
+  const result = await env.DB.prepare(`
+    INSERT OR IGNORE INTO owner_alerts (
+      alert_key,
+      type,
+      priority,
+      title,
+      body,
+      order_id,
+      phone,
+      customer_name,
+      amount,
+      source,
+      action_type,
+      action_label,
+      action_url,
+      meta_json,
+      is_read,
+      created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+  `).bind(
+    alertKey,
+    type || 'system',
+    priority || 'normal',
+    safeTitle,
+    safeBody,
+    orderId || '',
+    phone || '',
+    customerName || '',
+    safeAmount,
+    source || '',
+    actionType || '',
+    actionLabel || '',
+    actionUrl || '',
+    JSON.stringify(meta || {}),
+    createdAt
+  ).run();
+
+  const inserted = Number(result?.meta?.changes || 0) > 0;
+
+if (inserted && sendPush && ctx && ownerPhone) {
+  ctx.waitUntil(sendFCMNotification(
+    env,
+    ownerPhone,
+    cleanPushText(title, 80),
+    cleanPushText(body, 220),
+    `owner_alert_${alertKey}`
+  ));
+}
+
+// Real jugaad: when payment/order/shipping alert arrives,
+// convert the latest pending unsupported vendor WhatsApp message.
+if (inserted && ctx && ['order', 'payment', 'shipping'].includes(String(type || '').toLowerCase())) {
+  ctx.waitUntil(reconcileRecentUnsupportedForAlert(env, {
+    alertKey,
+    type,
+    title,
+    body,
+    orderId,
+    phone,
+    customerName,
+    amount,
+    source,
+    meta,
+  }, 240));
+}
+
+return { success: true, inserted, alertKey };
+}
+
+function safeJsonParse(value, fallback = {}) {
+  try {
+    return JSON.parse(String(value || '{}'));
+  } catch (_) {
+    return fallback;
+  }
+}
+
+async function isKnownCustomerPhone(env, phone) {
+  const normalized = normalizePhone(phone || '');
+  const phone91 = normalized.phone91;
+  const phonePlain = normalized.phonePlain;
+
+  if (!phone91 && !phonePlain) return false;
+
+  const row = await env.DB.prepare(`
+    SELECT phone
+    FROM customers
+    WHERE phone = ? OR phone = ?
+    LIMIT 1
+  `).bind(phone91, phonePlain).first().catch(() => null);
+
+  return !!row;
+}
+
+async function isVendorUnsupportedPhone(env, phone) {
+  const raw = String(phone || '').replace(/\D/g, '');
+  if (!raw) return false;
+
+  const configured = String(env.VENDOR_UNSUPPORTED_PHONES || '447723442078')
+    .split(',')
+    .map(v => v.replace(/\D/g, '').trim())
+    .filter(Boolean);
+
+  if (configured.includes(raw)) return true;
+
+  // If it is not a known customer, treat unsupported as vendor/system.
+  return !(await isKnownCustomerPhone(env, raw));
+}
+
+function buildConvertedChatTextFromOwnerAlert(alert) {
+  const type = String(alert.type || '').toLowerCase();
+
+  const icon = type === 'payment'
+    ? '💰'
+    : type === 'shipping'
+      ? '📦'
+      : type === 'order'
+        ? '🛒'
+        : '🔔';
+
+  const label = type === 'payment'
+    ? 'Converted Razorpay Payment Alert'
+    : type === 'shipping'
+      ? 'Converted Shiprocket Alert'
+      : type === 'order'
+        ? 'Converted Order Alert'
+        : 'Converted KAAPAV Alert';
+
+  const body = alert.body || alert.title || 'Business event received';
+
+  return (
+    `${icon} *${label}*\n\n` +
+    `${body}\n\n` +
+    `✅ Converted from unsupported WhatsApp using KAAPAV business event data.`
+  );
+}
+
+async function reconcileRecentUnsupportedForAlert(env, alert, minutes = 240) {
+  const type = String(alert.type || '').toLowerCase();
+  if (!['order', 'payment', 'shipping'].includes(type)) {
+    return { converted: 0, reason: 'alert type not convertible' };
+  }
+
+  const rowsRes = await env.DB.prepare(`
+    SELECT *
+    FROM messages
+    WHERE direction = 'incoming'
+      AND datetime(created_at) >= datetime('now', ?)
+      AND (
+        message_type = 'unsupported'
+        OR media_caption LIKE '%kaapav_pending_vendor_message%'
+        OR media_caption LIKE '%"kaapav_converted":false%'
+      )
+    ORDER BY datetime(created_at) DESC, id DESC
+    LIMIT 10
+  `).bind(`-${Number(minutes || 240)} minutes`).all();
+
+  const rows = rowsRes.results || [];
+
+  for (const row of rows) {
+    const vendorLike = await isVendorUnsupportedPhone(env, row.phone);
+    if (!vendorLike) continue;
+
+    const oldMeta = safeJsonParse(row.media_caption, {});
+    if (oldMeta.kaapav_converted === true) continue;
+
+    const convertedText = buildConvertedChatTextFromOwnerAlert(alert);
+
+    const newMeta = {
+      ...oldMeta,
+      kaapav_converted: true,
+      kaapav_pending_vendor_message: false,
+      conversion_source: 'owner_alert_reconcile',
+      converted_at: new Date().toISOString(),
+      matched_alert_key: alert.alertKey || alert.alert_key || '',
+      matched_alert_type: alert.type || '',
+      matched_order_id: alert.orderId || alert.order_id || '',
+      matched_payment_id: alert.meta?.paymentId || '',
+    };
+
+    await env.DB.prepare(`
+      UPDATE messages
+      SET text = ?,
+          message_type = 'text',
+          media_caption = ?
+      WHERE message_id = ?
+    `).bind(
+      convertedText,
+      JSON.stringify(newMeta),
+      row.message_id
+    ).run();
+
+    await env.DB.prepare(`
+      UPDATE chats
+      SET last_message = ?,
+          last_message_type = 'text',
+          updated_at = datetime('now')
+      WHERE phone = ?
+    `).bind(
+      convertedText.slice(0, 240),
+      row.phone
+    ).run();
+
+    return {
+      converted: 1,
+      messageId: row.message_id,
+      phone: row.phone,
+      alertType: alert.type,
+    };
+  }
+
+  return { converted: 0, reason: 'no eligible unsupported vendor message found' };
+}
+
+async function markRecentUnsupportedVendorMessagesPending(env, minutes = 720) {
+  const vendorPhones = String(env.VENDOR_UNSUPPORTED_PHONES || '447723442078')
+    .split(',')
+    .map(v => v.replace(/\D/g, '').trim())
+    .filter(Boolean);
+
+  const phoneWhere = vendorPhones.length
+    ? vendorPhones.map(() => `phone LIKE ?`).join(' OR ')
+    : `phone != ''`;
+
+  const binds = vendorPhones.length
+    ? vendorPhones.map(p => `%${p}%`)
+    : [];
+
+  const rowsRes = await env.DB.prepare(`
+    SELECT *
+    FROM messages
+    WHERE direction = 'incoming'
+      AND (
+        message_type = 'unsupported'
+        OR text LIKE '%Unsupported%'
+        OR text LIKE '%Message type unknown%'
+        OR media_caption LIKE '%"type":"unsupported"%'
+        OR media_caption LIKE '%131051%'
+        OR media_caption LIKE '%kaapav_pending_vendor_message%'
+      )
+      AND (${phoneWhere}
+        OR media_caption LIKE '%447723442078%'
+        OR media_caption LIKE '%Message type unknown%'
+        OR media_caption LIKE '%131051%'
+      )
+    ORDER BY id DESC
+    LIMIT 50
+  `).bind(...binds).all();
+
+  const rows = rowsRes.results || [];
+  let updated = 0;
+
+  for (const row of rows) {
+    const oldMeta = safeJsonParse(row.media_caption, {});
+
+    if (oldMeta.kaapav_converted === true) continue;
+
+    const vendorLike =
+      vendorPhones.some(p => String(row.phone || '').includes(p)) ||
+      vendorPhones.some(p => String(row.media_caption || '').includes(p)) ||
+      String(row.media_caption || '').includes('131051') ||
+      String(row.text || '').toLowerCase().includes('message type unknown');
+
+    if (!vendorLike) continue;
+
+    const firstError = Array.isArray(oldMeta.errors)
+      ? oldMeta.errors[0]
+      : null;
+
+    const text =
+      `⏳ *Vendor/System WhatsApp Message Received*\n\n` +
+      `From: ${row.phone || oldMeta.from || 'Vendor/System'}\n` +
+      `Reason: ${firstError?.title || 'Message body hidden by Meta'}\n` +
+      `Meta code: ${firstError?.code || '131051'}\n` +
+      `Time: ${formatISTDateTime()}\n\n` +
+      `KAAPAV is waiting for the matching Razorpay / Shiprocket / order event to convert this into a readable business alert.`;
+
+    const newMeta = {
+      ...oldMeta,
+      kaapav_converted: false,
+      kaapav_pending_vendor_message: true,
+      vendor_sender: row.phone || oldMeta.from || '',
+      reason: 'Waiting for matching KAAPAV business event',
+      pending_marked_at: new Date().toISOString(),
+    };
+
+    await env.DB.prepare(`
+      UPDATE messages
+      SET text = ?,
+          message_type = 'text',
+          media_caption = ?
+      WHERE id = ?
+    `).bind(
+      text,
+      JSON.stringify(newMeta),
+      row.id
+    ).run();
+
+    await env.DB.prepare(`
+      UPDATE chats
+      SET last_message = ?,
+          last_message_type = 'text',
+          updated_at = datetime('now')
+      WHERE phone = ?
+    `).bind(
+      text.slice(0, 240),
+      row.phone
+    ).run();
+
+    updated++;
+  }
+
+  return {
+    updated,
+    scanned: rows.length,
+  };
+}
+
+async function handleReconcileUnsupported(request, env, ctx) {
+  const body = await request.json().catch(() => ({}));
+  const minutes = Math.min(Number(body.minutes || 720), 1440);
+
+  const alert = await env.DB.prepare(`
+    SELECT *
+    FROM owner_alerts
+    WHERE type IN ('payment', 'order', 'shipping')
+    ORDER BY datetime(created_at) DESC, id DESC
+    LIMIT 1
+  `).first().catch(() => null);
+
+  if (alert) {
+    const result = await reconcileRecentUnsupportedForAlert(env, alert, minutes);
+
+    return jsonResponse({
+      success: true,
+      mode: 'converted_with_owner_alert',
+      alert: {
+        id: alert.id,
+        type: alert.type,
+        title: alert.title,
+        orderId: alert.order_id,
+        createdAt: alert.created_at,
+      },
+      result,
+    });
+  }
+
+  const pending = await markRecentUnsupportedVendorMessagesPending(env, minutes);
+
+  return jsonResponse({
+    success: true,
+    mode: 'pending_vendor_message_only',
+    message:
+      'No order/payment/shipping owner alert exists yet. Unsupported vendor messages were converted to pending readable messages. They will auto-convert when the next matching business alert arrives.',
+    result: pending,
+  });
+}
+
+async function handleBackfillOwnerInbox(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const limit = Math.min(Number(body.limit || 100), 300);
+
+  const res = await env.DB.prepare(`
+    SELECT *
+    FROM orders
+    ORDER BY datetime(created_at) DESC, id DESC
+    LIMIT ?
+  `).bind(limit).all();
+
+  const orders = res.results || [];
+  let orderAlerts = 0;
+  let paymentAlerts = 0;
+  let shippingAlerts = 0;
+
+  for (const order of orders) {
+    let itemLines = '';
+    try {
+      const items = JSON.parse(order.items || '[]');
+      itemLines = Array.isArray(items)
+        ? items.map(i => `• ${i.name || i.sku || 'Item'} x${i.qty || i.quantity || 1}`).join('\n')
+        : '';
+    } catch (_) {}
+
+    await env.DB.prepare(`
+      INSERT OR IGNORE INTO owner_alerts (
+        alert_key, type, priority, title, body,
+        order_id, phone, customer_name, amount, source,
+        action_type, action_label, meta_json, is_read, created_at
+      )
+      VALUES (?, 'order', 'normal', ?, ?, ?, ?, ?, ?, ?, 'order_detail', 'Open Order', ?, 1, ?)
+    `).bind(
+      `order_created:${order.order_id}`,
+      'New Order',
+      `Order: ${order.order_id}\nCustomer: ${order.customer_name || 'Customer'} (${order.phone || ''})\nTotal: ${formatINR(order.total)}\nSource: ${order.source || ''}\n\nItems:\n${itemLines || '-'}`,
+      order.order_id || '',
+      order.phone || '',
+      order.customer_name || 'Customer',
+      Number(order.total || 0),
+      order.source || '',
+      JSON.stringify({ backfilled: true }),
+      order.created_at || new Date().toISOString()
+    ).run();
+
+    orderAlerts++;
+
+    if (String(order.payment_status || '').toLowerCase() === 'paid') {
+      await env.DB.prepare(`
+        INSERT OR IGNORE INTO owner_alerts (
+          alert_key, type, priority, title, body,
+          order_id, phone, customer_name, amount, source,
+          action_type, action_label, meta_json, is_read, created_at
+        )
+        VALUES (?, 'payment', 'high', ?, ?, ?, ?, ?, ?, ?, 'order_detail', 'Open Order', ?, 1, ?)
+      `).bind(
+        `payment_received:${order.payment_id || order.order_id}`,
+        'Razorpay Payment Received',
+        `${formatINR(order.total)} received\nOrder: ${order.order_id}\nCustomer: ${order.customer_name || 'Customer'} (${order.phone || ''})\nPayment ID: ${order.payment_id || '-'}\nSource: ${order.source || ''}`,
+        order.order_id || '',
+        order.phone || '',
+        order.customer_name || 'Customer',
+        Number(order.total || 0),
+        order.source || '',
+        JSON.stringify({
+          backfilled: true,
+          paymentId: order.payment_id || '',
+          paymentMethod: order.payment_method || '',
+        }),
+        order.paid_at || order.updated_at || order.created_at || new Date().toISOString()
+      ).run();
+
+      paymentAlerts++;
+    }
+
+    if (
+      order.shiprocket_order_id ||
+      order.shipment_id ||
+      order.awb_number ||
+      order.awb_code ||
+      ['shipped', 'delivered'].includes(String(order.status || '').toLowerCase())
+    ) {
+      await env.DB.prepare(`
+        INSERT OR IGNORE INTO owner_alerts (
+          alert_key, type, priority, title, body,
+          order_id, phone, customer_name, amount, source,
+          action_type, action_label, action_url, meta_json, is_read, created_at
+        )
+        VALUES (?, 'shipping', 'normal', ?, ?, ?, ?, ?, ?, ?, 'order_detail', 'Open Order', ?, ?, 1, ?)
+      `).bind(
+        `shipping_update:${order.order_id}:${order.awb_number || order.awb_code || order.shipment_id || order.shiprocket_order_id || order.status}`,
+        String(order.status || '').toLowerCase() === 'delivered'
+          ? 'Order Delivered'
+          : 'Shipping Update',
+        `Order: ${order.order_id}\nCustomer: ${order.customer_name || 'Customer'} (${order.phone || ''})\nStatus: ${order.status || '-'}\nAWB: ${order.awb_number || order.awb_code || '-'}\nCourier: ${order.courier || '-'}`,
+        order.order_id || '',
+        order.phone || '',
+        order.customer_name || 'Customer',
+        Number(order.total || 0),
+        order.source || '',
+        order.tracking_url || '',
+        JSON.stringify({
+          backfilled: true,
+          shiprocketOrderId: order.shiprocket_order_id || '',
+          shipmentId: order.shipment_id || '',
+          awb: order.awb_number || order.awb_code || '',
+          courier: order.courier || '',
+        }),
+        order.shipped_at || order.delivered_at || order.updated_at || order.created_at || new Date().toISOString()
+      ).run();
+
+      shippingAlerts++;
+    }
+  }
+
+  return jsonResponse({
+    success: true,
+    scanned: orders.length,
+    inserted: {
+      orderAlerts,
+      paymentAlerts,
+      shippingAlerts,
+    },
+  });
+}
+
+async function handleGetOwnerInbox(request, env) {
+  const url = new URL(request.url);
+  const limit = Math.min(Number(url.searchParams.get('limit') || 50), 100);
+  const type = String(url.searchParams.get('type') || 'all').trim();
+  const unreadOnly = url.searchParams.get('unread') === '1';
+
+  const where = [];
+  const binds = [];
+
+  if (type && type !== 'all') {
+    where.push('type = ?');
+    binds.push(type);
+  }
+
+  if (unreadOnly) {
+    where.push('is_read = 0');
+  }
+
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+  const alertsRes = await env.DB.prepare(`
+    SELECT *
+    FROM owner_alerts
+    ${whereSql}
+    ORDER BY datetime(created_at) DESC, id DESC
+    LIMIT ?
+  `).bind(...binds, limit).all();
+
+  const unread = await env.DB.prepare(`
+    SELECT COUNT(*) AS count
+    FROM owner_alerts
+    WHERE is_read = 0
+  `).first();
+
+  return jsonResponse({
+    success: true,
+    alerts: alertsRes.results || [],
+    unread: Number(unread?.count || 0),
+  });
+}
+
+async function handleMarkOwnerAlertRead(path, env) {
+  const match = path.match(/^\/api\/owner-inbox\/(\d+)\/read$/);
+  const id = Number(match?.[1] || 0);
+  if (!id) return errorResponse('Invalid alert id', 400);
+
+  await env.DB.prepare(`
+    UPDATE owner_alerts
+    SET is_read = 1,
+        read_at = datetime('now')
+    WHERE id = ?
+  `).bind(id).run();
+
+  return jsonResponse({ success: true });
+}
+
+async function handleMarkOwnerInboxReadAll(env) {
+  await env.DB.prepare(`
+    UPDATE owner_alerts
+    SET is_read = 1,
+        read_at = datetime('now')
+    WHERE is_read = 0
+  `).run();
+
+  return jsonResponse({ success: true });
+}
+
+// ═══════════════════ WHATSAPP ═══════════════════
+async function sendWhatsAppText(env, phone, text) {
+  const res = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${env.WA_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messaging_product: 'whatsapp', to: phone, type: 'text', text: { body: text } }),
+  });
+  return res.json();
+}
+
+async function sendWhatsAppTextOnce(env, dedupeKey, phone, text, ttl = 86400 * 30) {
+  const already = await env.KV.get(dedupeKey);
+  if (already) return { success: true, skipped: true };
+
+  const result = await sendWhatsAppText(env, phone, text);
+  if (!result?.error) {
+    await env.KV.put(dedupeKey, '1', { expirationTtl: ttl });
+  }
+  return result;
+}
+
+async function notifyOwnerFailure(env, title, lines = []) {
+  try {
+    await sendWhatsAppText(
+      env,
+      env.OWNER_PHONE,
+      `⚠️ *${title}*\n\n` + lines.join('\n')
+    );
+  } catch (e) {
+    console.error('notifyOwnerFailure error:', e);
+  }
+}
+async function sendWhatsAppButtons(env, phone, text, buttons, footer = null) {
+  const interactive = {
+    type: 'button',
+    body: { text },
+    action: { buttons: buttons.map(b => ({ type: 'reply', reply: { id: b.id, title: b.title } })) }
+  };
+  if (footer) interactive.footer = { text: footer };
+
+  const res = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${env.WA_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp', to: phone, type: 'interactive', interactive
+    }),
+  });
+  return res.json();
+}
+
+async function sendWhatsAppCtaUrl(env, phone, text, buttonText, url, footer = null) {
+  const interactive = {
+    type: 'cta_url',
+    body: { text },
+    action: {
+      name: 'cta_url',
+      parameters: {
+        display_text: buttonText,
+        url
+      }
+    }
+  };
+
+  if (footer) interactive.footer = { text: footer };
+
+  const res = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.WA_TOKEN}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'interactive',
+      interactive
+    }),
+  });
+
+  return res.json();
+}
+
+// ─────────────────────────────────────────────
+// KAAPAV Catalogue/Website Retargeting Helpers
+// ─────────────────────────────────────────────
+
+const RETARGETING_EVENT_SCORE = {
+  ViewContent: 1,
+  ViewProduct: 1,
+  AddToWishlist: 2,
+  AddToCart: 3,
+  InitiateCheckout: 4,
+};
+
+function cleanRetargetingProductName(name = '') {
+  return String(name || '')
+    .replace(/\s*[–-]\s*Artificial\s+(White|Yellow|Rose)?\s*Gold.*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .substring(0, 70);
+}
+
+function retargetingPhoneVariants(phone = '') {
+  const p = String(phone || '').replace(/[^\d]/g, '');
+  if (!p) return ['', ''];
+
+  return [
+    p,
+    p.startsWith('91') ? p.slice(2) : '91' + p,
+  ];
+}
+
+function parseISTDate(value) {
+  if (!value) return null;
+  return new Date(String(value).replace(' ', 'T') + '+05:30');
+}
+
+function parseUTCDate(value) {
+  if (!value) return null;
+  return new Date(String(value).replace(' ', 'T') + 'Z');
+}
+
+function isCatalogueSource(source = '') {
+  return String(source || '').toLowerCase().includes('catalog');
+}
+
+function isNegativeOptOutText(text = '') {
+  return /\b(stop|unsubscribe|not interested|no more|don't message|dont message|do not message|no thanks|no thank you|not now|nahi|mat bhejo|band karo)\b/i.test(
+    String(text || '').toLowerCase()
+  );
+}
+
+function isRetargetingSendWindowIST() {
+  const hour = Number(new Date().toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    hour12: false,
+  }));
+
+  // Send only from 9:00 AM to 8:59 PM IST
+  return hour >= 9 && hour < 21;
+}
+
+function getRetargetingButtonText(eventType, reminderNo, itemCount) {
+  if (eventType === 'InitiateCheckout') {
+    return reminderNo === 2 ? '✨ Finish Order' : '💳 Complete Order';
+  }
+
+  if (eventType === 'AddToCart') {
+    return reminderNo === 2 ? '🛒 Complete Order' : '🛒 Complete Cart';
+  }
+
+  if (eventType === 'AddToWishlist') {
+    return itemCount > 1 ? '🤍 View Saved Picks' : '🤍 View Saved Design';
+  }
+
+  return itemCount > 1 ? '💎 View Designs' : '💎 View Again';
+}
+
+function buildRetargetingMessage(eventType, reminderNo, items) {
+  const cleanItems = items
+    .map(i => cleanRetargetingProductName(i.product_name))
+    .filter(Boolean)
+    .slice(0, 2);
+
+  const itemCount = cleanItems.length;
+  const one = cleanItems[0];
+  const two = cleanItems[1];
+
+  if (itemCount > 1) {
+    if (eventType === 'InitiateCheckout') {
+      return reminderNo === 2
+        ? `✨ *Last gentle reminder for now*
+
+Your checkout was left incomplete for:
+
+• *${one}*
+• *${two}*
+
+No rush — finish it only if you still love your picks.`
+        : `💳 *Your checkout is almost complete*
+
+You were close to ordering:
+
+• *${one}*
+• *${two}*
+
+Payment is secure via UPI / Card / Net Banking.`;
+    }
+
+    if (eventType === 'AddToCart') {
+      return reminderNo === 2
+        ? `💎 *Cart reminder*
+
+Your KAAPAV picks are still waiting:
+
+• *${one}*
+• *${two}*
+
+Complete your order only if you still love them.`
+        : `🛒 *Your cart has beautiful picks*
+
+You added:
+
+• *${one}*
+• *${two}*
+
+Checkout is quick, simple and secure.
+
+🚚 Free shipping above ₹498/-`;
+    }
+
+    if (eventType === 'AddToWishlist') {
+      return reminderNo === 2
+        ? `✨ *Still thinking about your saved picks?*
+
+• *${one}*
+• *${two}*
+
+Simple luxury, saved for you.`
+        : `🤍 *Your saved KAAPAV picks are waiting*
+
+You liked:
+
+• *${one}*
+• *${two}*
+
+Elegant pieces for a polished everyday look.
+
+🚚 Free shipping above ₹498/-`;
+    }
+
+    return reminderNo === 2
+      ? `🤍 *Your KAAPAV picks are easy to find again*
+
+You explored:
+
+• *${one}*
+• *${two}*
+
+No rush — view them again whenever you’re ready.`
+      : `💎 *Still thinking about these?*
+
+You explored:
+
+• *${one}*
+• *${two}*
+
+Simple luxury pieces — elegant, wearable and easy to style.
+
+🚚 Free shipping above ₹498/-`;
+  }
+
+  if (eventType === 'InitiateCheckout') {
+    return reminderNo === 2
+      ? `✨ *Last gentle reminder for now*
+
+Your checkout for *${one}* was left incomplete.
+
+No rush — complete it only if you still love the design.`
+      : `💳 *Almost done*
+
+Your order for *${one}* was left incomplete.
+
+Payment is secure via UPI / Card / Net Banking.
+
+Tap below when you’re ready 👇`;
+  }
+
+  if (eventType === 'AddToCart') {
+    return reminderNo === 2
+      ? `💎 *Cart reminder*
+
+*${one}* is still in your selection.
+
+Complete your order only if you still love it.`
+      : `🛒 *Your cart is waiting*
+
+*${one}* is still in your cart.
+
+Checkout is quick, simple and secure.
+
+🚚 Free shipping above ₹498/-`;
+  }
+
+  if (eventType === 'AddToWishlist') {
+    return reminderNo === 2
+      ? `✨ *Still interested in your saved pick?*
+
+*${one}* is still here for you.
+
+Elegant, minimal and easy to pair with your look.`
+      : `🤍 *Your saved design is waiting*
+
+You liked *${one}* earlier.
+
+A graceful piece for simple, everyday luxury.
+
+🚚 Free shipping above ₹498/-`;
+  }
+
+  return reminderNo === 2
+    ? `🤍 *Just keeping this easy to find*
+
+*${one}* caught your eye earlier.
+
+No rush — take another look only if it still feels right.`
+    : `💎 *Still thinking about it?*
+
+You explored *${one}* earlier.
+
+A simple luxury piece — elegant, wearable and easy to style.
+
+🚚 Free shipping above ₹498/-`;
+}
+
+async function getRetargetingWebUrl(env, phone) {
+  const [p1, p2] = retargetingPhoneVariants(phone);
+
+  const customer = await env.DB.prepare(`
+    SELECT customer_id
+    FROM customers
+    WHERE phone = ? OR phone = ?
+    LIMIT 1
+  `).bind(p1, p2).first();
+
+  return `https://www.kaapav.com/${customer?.customer_id || p1}`;
+}
+
+async function getRetargetingCatUrl(env, phone) {
+  const [p1, p2] = retargetingPhoneVariants(phone);
+
+  const customer = await env.DB.prepare(`
+    SELECT customer_id
+    FROM customers
+    WHERE phone = ? OR phone = ?
+    LIMIT 1
+  `).bind(p1, p2).first();
+
+  return `https://catalogue.kaapav.com/${customer?.customer_id || p1}`;
+}
+
+async function customerHasNegativeOptOut(env, phone) {
+  const [p1, p2] = retargetingPhoneVariants(phone);
+
+  const { results } = await env.DB.prepare(`
+    SELECT text
+    FROM messages
+    WHERE (phone = ? OR phone = ?)
+      AND direction = 'incoming'
+    ORDER BY id DESC
+    LIMIT 10
+  `).bind(p1, p2).all();
+
+  return (results || []).some(m => isNegativeOptOutText(m.text));
+}
+
+async function hasOrderAfterRetargetingEvent(env, phone, eventCreatedAtIST) {
+  const [p1, p2] = retargetingPhoneVariants(phone);
+
+  const row = await env.DB.prepare(`
+    SELECT id
+    FROM orders
+    WHERE (phone = ? OR phone = ?)
+      AND status NOT IN ('cancelled', 'failed')
+      AND datetime(created_at) >= datetime(?, '-5 hours', '-30 minutes')
+    LIMIT 1
+  `).bind(p1, p2, eventCreatedAtIST).first();
+
+  return !!row;
+}
+
+async function customerRepliedAfterReminder(env, phone, reminderCreatedAtUTC) {
+  const [p1, p2] = retargetingPhoneVariants(phone);
+
+  const row = await env.DB.prepare(`
+    SELECT id
+    FROM messages
+    WHERE (phone = ? OR phone = ?)
+      AND direction = 'incoming'
+      AND datetime(created_at) > datetime(?)
+    LIMIT 1
+  `).bind(p1, p2, reminderCreatedAtUTC).first();
+
+  return !!row;
+}
+
+async function saveRetargetingOutgoing(env, phone, text, buttons) {
+  const msgId = `retarget_${Date.now()}_${phone}`;
+
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status,
+       is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
+    VALUES (?, ?, ?, 'buttons', 'outgoing', 'sent', 1, 1, ?, ?, datetime('now'), datetime('now'))
+  `).bind(
+    msgId,
+    phone,
+    text,
+    buttons.map(b => b.title).join('|'),
+    JSON.stringify(buttons)
+  ).run();
+
+  await env.DB.prepare(`
+    UPDATE chats
+    SET last_message = ?, last_message_type = 'buttons',
+        last_direction = 'outgoing',
+        last_timestamp = datetime('now'),
+        updated_at = datetime('now')
+    WHERE phone = ?
+  `).bind(text, phone).run();
+}
+
+async function sendRetargetingReminder(env, phone, winner, items, reminderNo) {
+  const source = winner.source || 'catalogue';
+  const targetUrl = isCatalogueSource(source)
+    ? await getRetargetingCatUrl(env, phone)
+    : await getRetargetingWebUrl(env, phone);
+
+  const messageText = buildRetargetingMessage(winner.event_type, reminderNo, items);
+  const buttonText = getRetargetingButtonText(
+    winner.event_type,
+    reminderNo,
+    items.length
+  );
+
+  await sendWhatsAppCtaUrl(
+    env,
+    phone,
+    messageText,
+    buttonText,
+    targetUrl,
+    '💎 KAAPAV Fashion Jewellery'
+  );
+
+  await saveRetargetingOutgoing(env, phone, `[CTA] ${messageText}\n${targetUrl}`, [
+    { id: 'retargeting_cta_url', title: buttonText, url: targetUrl }
+  ]);
+
+  await new Promise(r => setTimeout(r, 700));
+
+  await sendWhatsAppButtons(
+    env,
+    phone,
+    'Need anything else?',
+    [{ id: 'home', title: '🏠 Main Menu' }],
+    '💎 KAAPAV Fashion Jewellery'
+  );
+
+  await saveRetargetingOutgoing(env, phone, 'Need anything else?', [
+    { id: 'home', title: '🏠 Main Menu' }
+  ]);
+
+  await env.DB.prepare(`
+    INSERT INTO retargeting_reminders
+      (phone, event_id, event_type, event_score, source, sku,
+       product_names, categories, reminder_no, target_url, message_text, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', datetime('now'))
+  `).bind(
+    phone,
+    winner.id,
+    winner.event_type,
+    RETARGETING_EVENT_SCORE[winner.event_type] || 1,
+    source,
+    winner.sku || '',
+    JSON.stringify(items.map(i => cleanRetargetingProductName(i.product_name))),
+    JSON.stringify(items.map(i => i.category || '')),
+    reminderNo,
+    targetUrl,
+    messageText
+  ).run();
+}
+
+async function processCatalogueRetargetingReminders(env) {
+  if (!isRetargetingSendWindowIST()) {
+    console.log('Retargeting skipped: outside 9 AM - 9 PM IST');
+    return;
+  }
+
+  const { results } = await env.DB.prepare(`
+    SELECT
+      ce.id,
+      ce.phone,
+      ce.event_type,
+      ce.sku,
+      ce.product_name,
+      ce.category,
+      ce.source,
+      ce.created_at,
+      COALESCE(c.opted_in, 1) AS opted_in,
+      COALESCE(ch.is_blocked, 0) AS is_blocked
+    FROM catalogue_events ce
+    LEFT JOIN customers c ON c.phone = ce.phone
+    LEFT JOIN chats ch ON ch.phone = ce.phone
+    WHERE ce.event_type IN ('ViewContent', 'ViewProduct', 'AddToWishlist', 'AddToCart', 'InitiateCheckout')
+      AND ce.product_name IS NOT NULL
+      AND TRIM(ce.product_name) != ''
+      AND datetime(ce.created_at) >= datetime('now', '+5 hours', '+30 minutes', '-24 hours')
+      AND datetime(ce.created_at) <= datetime('now', '+5 hours', '+30 minutes', '-3 hours')
+      AND COALESCE(c.opted_in, 1) = 1
+      AND COALESCE(ch.is_blocked, 0) = 0
+    ORDER BY ce.created_at DESC
+    LIMIT 500
+  `).all();
+
+  const byPhone = new Map();
+
+  for (const row of results || []) {
+    if (!byPhone.has(row.phone)) byPhone.set(row.phone, []);
+    byPhone.get(row.phone).push(row);
+  }
+
+  for (const [phone, events] of byPhone.entries()) {
+    try {
+      if (await customerHasNegativeOptOut(env, phone)) continue;
+
+      const lock = await env.DB.prepare(`
+        SELECT COUNT(*) AS count
+        FROM retargeting_reminders
+        WHERE phone = ?
+          AND datetime(created_at) >= datetime('now', '-7 days')
+      `).bind(phone).first();
+
+      if ((lock?.count || 0) >= 2) continue;
+
+      const ranked = events
+        .map(e => ({
+          ...e,
+          score: RETARGETING_EVENT_SCORE[e.event_type] || 1,
+          channel_score: isCatalogueSource(e.source) ? 2 : 1,
+        }))
+        .sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          if (b.channel_score !== a.channel_score) return b.channel_score - a.channel_score;
+          return parseISTDate(b.created_at) - parseISTDate(a.created_at);
+        });
+
+      const winner = ranked[0];
+      if (!winner) continue;
+
+      const eventAt = parseISTDate(winner.created_at);
+      if (!eventAt) continue;
+
+      const ageHours = (Date.now() - eventAt.getTime()) / (1000 * 60 * 60);
+
+      // Reminder 1 after 3h, but not if too late to safely fit Reminder 2 inside 24h
+      if (ageHours > 18) continue;
+
+      if (await hasOrderAfterRetargetingEvent(env, phone, winner.created_at)) continue;
+
+      const sameScoreItems = ranked
+        .filter(e =>
+          e.score === winner.score &&
+          cleanRetargetingProductName(e.product_name)
+        )
+        .sort((a, b) => {
+          if (b.channel_score !== a.channel_score) return b.channel_score - a.channel_score;
+          return parseISTDate(b.created_at) - parseISTDate(a.created_at);
+        });
+
+      const picked = [];
+      const usedCategories = new Set();
+
+      for (const item of sameScoreItems) {
+        const cleanName = cleanRetargetingProductName(item.product_name);
+        const categoryKey = String(item.category || cleanName).toLowerCase();
+
+        if (picked.some(p => cleanRetargetingProductName(p.product_name) === cleanName)) continue;
+        if (usedCategories.has(categoryKey) && picked.length > 0) continue;
+
+        picked.push(item);
+        usedCategories.add(categoryKey);
+
+        if (picked.length === 2) break;
+      }
+
+      const items = picked.length ? picked : [winner];
+
+const { results: prior } = await env.DB.prepare(`
+  SELECT *
+  FROM retargeting_reminders
+  WHERE phone = ?
+    AND datetime(created_at) >= datetime('now', '-7 days')
+  ORDER BY created_at DESC
+  LIMIT 2
+`).bind(phone).all();
+
+const sentCount = prior?.length || 0;
+const lastReminder = prior?.[0];
+
+// ✅ Phone-level hard cap: max 2 reminders in 7 days
+if (sentCount >= 2) continue;
+
+// ✅ First reminder for this phone
+if (sentCount === 0) {
+  await sendRetargetingReminder(env, phone, winner, items, 1);
+  continue;
+}
+
+// ✅ Second reminder for this phone only after 6 hours
+if (!lastReminder?.created_at) continue;
+
+const lastReminderAt = parseUTCDate(lastReminder.created_at);
+if (!lastReminderAt) continue;
+
+const hoursSinceReminder = (Date.now() - lastReminderAt.getTime()) / (1000 * 60 * 60);
+
+if (hoursSinceReminder < 6) continue;
+if (ageHours >= 24) continue;
+
+// ✅ If customer replied after reminder 1, stop reminder 2
+// unless they created a newer stronger/different event after that reply
+const replyAfterReminder = await env.DB.prepare(`
+  SELECT created_at
+  FROM messages
+  WHERE phone = ?
+    AND direction = 'incoming'
+    AND datetime(created_at) > datetime(?)
+  ORDER BY created_at DESC
+  LIMIT 1
+`).bind(phone, lastReminder.created_at).first();
+
+if (replyAfterReminder?.created_at) {
+  const newerEventAfterReply = await env.DB.prepare(`
+    SELECT id
+    FROM catalogue_events
+    WHERE phone = ?
+      AND id != ?
+      AND event_type IN ('ViewContent', 'ViewProduct', 'AddToWishlist', 'AddToCart', 'InitiateCheckout')
+      AND product_name IS NOT NULL
+      AND TRIM(product_name) != ''
+      AND datetime(created_at) > datetime(?, '+5 hours', '+30 minutes')
+      AND (
+        CASE event_type
+          WHEN 'InitiateCheckout' THEN 4
+          WHEN 'AddToCart' THEN 3
+          WHEN 'AddToWishlist' THEN 2
+          WHEN 'ViewContent' THEN 1
+          WHEN 'ViewProduct' THEN 1
+          ELSE 1
+        END
+      ) >= ?
+    LIMIT 1
+  `).bind(
+    phone,
+    winner.id,
+    replyAfterReminder.created_at,
+    RETARGETING_EVENT_SCORE[winner.event_type] || 1
+  ).first();
+
+  if (!newerEventAfterReply) continue;
+}
+
+await sendRetargetingReminder(env, phone, winner, items, 2);
+    } catch (e) {
+      console.error('Retargeting reminder error for', phone, e);
+    }
+  }
+}
+
+async function sendWhatsAppList(env, phone, text, buttonLabel, sections, footer = null) {
+  const interactive = {
+    type: 'list',
+    body: { text },
+    action: { button: buttonLabel, sections },
+  };
+  if (footer) interactive.footer = { text: footer };
+  const res = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${env.WA_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messaging_product: 'whatsapp', to: phone, type: 'interactive', interactive }),
+  });
+  return res.json();
+}
+
+async function sendWhatsAppImage(env, phone, mediaUrl, caption) {
+  const res = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${env.WA_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'image',
+      image: {
+        link: mediaUrl,
+        ...(caption ? { caption } : {}),
+      },
+    }),
+  });
+  return res.json();
+}
+
+async function sendWhatsAppDocument(env, phone, mediaUrl, filename, caption) {
+  const res = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${env.WA_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'document',
+      document: {
+        link: mediaUrl,
+        ...(filename ? { filename } : {}),
+        ...(caption ? { caption } : {}),
+      },
+    }),
+  });
+  return res.json();
+}
+
+async function sendWhatsAppVideo(env, phone, mediaUrl, caption) {
+  const res = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${env.WA_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'video',
+      video: {
+        link: mediaUrl,
+        ...(caption ? { caption } : {}),
+      },
+    }),
+  });
+  return res.json();
+}
+
+// ── CONVERSATION STATE ─────────────────────────────────────────
+async function getConvState(phone, env) {
+  try {
+    const row = await env.DB.prepare(
+      `SELECT state, data FROM conversation_state WHERE phone = ?`
+    ).bind(phone).first();
+    if (!row) return null;
+    return { state: row.state, data: JSON.parse(row.data || '{}') };
+  } catch { return null; }
+}
+
+async function setConvState(phone, state, data, env) {
+  await env.DB.prepare(`
+    INSERT INTO conversation_state (phone, state, data, updated_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(phone) DO UPDATE SET
+      state = excluded.state,
+      data  = excluded.data,
+      updated_at = excluded.updated_at
+  `).bind(phone, state, JSON.stringify(data)).run();
+}
+
+async function clearConvState(phone, env) {
+  await env.DB.prepare(`DELETE FROM conversation_state WHERE phone = ?`).bind(phone).run();
+}
+
+// ── RAZORPAY — create payment link ────────────────────────────
+async function createRazorpayLink(env, { amount, name, phone, orderId, description }) {
+  const auth = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`);
+  const expiry = Math.floor(Date.now() / 1000) + 86400;
+
+  const cleanPhone = String(phone || '').replace(/\D/g, '').slice(-10);
+  const finalAmount = Math.round(Number(amount || 0) * 100);
+
+  console.log('RAZORPAY DEBUG', JSON.stringify({
+    orderId,
+    amount,
+    finalAmount,
+    name,
+    phone,
+    cleanPhone,
+    hasKeyId: !!env.RAZORPAY_KEY_ID,
+    hasKeySecret: !!env.RAZORPAY_KEY_SECRET,
+  }));
+
+  const res = await fetch('https://api.razorpay.com/v1/payment_links', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${auth}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      amount: finalAmount,
+      currency: 'INR',
+      description,
+      customer: {
+        name,
+        contact: `+91${cleanPhone}`
+      },
+      notify: { sms: true, whatsapp: false },
+      reminder_enable: true,
+      expire_by: expiry,
+      reference_id: orderId,
+      callback_url: `https://wa.kaapav.com/api/payment/callback`,
+      callback_method: 'get',
+    })
+  });
+
+  const data = await res.json();
+  console.log('RAZORPAY RESPONSE', JSON.stringify(data));
+
+  if (!res.ok) {
+    throw new Error(data.error?.description || data.error?.message || 'Razorpay error');
+  }
+
+  return data.short_url;
+}
+
+// ── SHIPROCKET — auth + create order ──────────────────────────
+async function shiprocketToken(env) {
+  const res = await fetch('https://apiv2.shiprocket.in/v1/external/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: env.SHIPROCKET_EMAIL, password: env.SHIPROCKET_PASSWORD })
+  });
+  const data = await res.json();
+  if (!data.token) throw new Error('Shiprocket auth failed');
+  return data.token;
+}
+
+async function createShiprocketOrder(env, { order, customer, items }) {
+  const token = await shiprocketToken(env);
+  const orderDate = new Date().toISOString().slice(0, 10);
+
+  const pickupLocation = String(env.SHIPROCKET_PICKUP_LOCATION || '').trim();
+
+  const fullName = String(customer.name || 'Customer').trim();
+  const nameParts = fullName.split(/\s+/).filter(Boolean);
+  const firstName = nameParts[0] || 'Customer';
+  const lastName = nameParts.slice(1).join(' ') || '.';
+
+  const email = String(customer.email || '').trim().toLowerCase();
+  const phone = String(customer.phone || '').replace(/\D/g, '').slice(-10);
+  const pincode = String(customer.pincode || '').replace(/\D/g, '').slice(-6);
+
+  if (!pickupLocation)
+    throw new Error('Missing Shiprocket pickup location');
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    throw new Error('Missing valid customer email');
+
+  if (!phone || phone.length !== 10)
+    throw new Error('Missing valid phone');
+
+  if (!customer.address)
+    throw new Error('Missing address');
+
+  if (!customer.city)
+    throw new Error('Missing city');
+
+  if (!customer.state)
+    throw new Error('Missing state');
+
+  if (!pincode || pincode.length !== 6)
+    throw new Error('Missing valid pincode');
+
+  if (!Array.isArray(items) || !items.length)
+    throw new Error('No order items found');
+
+  const orderItems = items.map(i => ({
+    name: String(i.name || i.sku || 'KAAPAV Jewellery').slice(0, 120),
+    sku: String(i.sku || `KP-${Date.now()}`).slice(0, 50),
+    units: Number(i.qty || i.quantity || 1),
+    selling_price: Number(i.price || 0),
+    discount: 0,
+    tax: 0,
+  }));
+
+  const res = await fetch('https://apiv2.shiprocket.in/v1/external/orders/create/adhoc', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      order_id: order.orderNumber,
+      order_date: orderDate,
+      pickup_location: pickupLocation,
+      channel_id: '',
+      comment: 'KAAPAV Order',
+
+      billing_customer_name: firstName,
+      billing_last_name: lastName,
+      billing_address: customer.address,
+      billing_address_2: '',
+      billing_city: customer.city,
+      billing_pincode: pincode,
+      billing_state: customer.state,
+      billing_country: 'India',
+      billing_email: email,
+      billing_phone: phone,
+
+      shipping_is_billing: true,
+
+      order_items: orderItems,
+      payment_method: 'Prepaid',
+      shipping_charges: Number(order.shipping || 0),
+      giftwrap_charges: 0,
+      transaction_charges: 0,
+      total_discount: 0,
+      sub_total: Number(order.total || 0),
+
+      length: 10,
+      breadth: 10,
+      height: 5,
+      weight: 0.3,
+    })
+  });
+
+  const text = await res.text();
+
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch (_) {
+    data = { raw: text };
+  }
+
+  console.log(
+    'SHIPROCKET_CREATE_ORDER',
+    JSON.stringify({
+      status: res.status,
+      ok: res.ok,
+      data
+    })
+  );
+
+  if (!res.ok) {
+    const msg =
+      data?.message ||
+      data?.error ||
+      (data?.errors ? JSON.stringify(data.errors) : '') ||
+      text ||
+      `Shiprocket HTTP ${res.status}`;
+
+    throw new Error(msg);
+  }
+
+  return data;
+}
+
+function getJpegDimensions(bytes) {
+  let i = 0;
+  while (i < bytes.length - 9) {
+    if (bytes[i] === 0xFF) {
+      const marker = bytes[i + 1];
+      if (
+        marker === 0xC0 || marker === 0xC1 || marker === 0xC2 || marker === 0xC3 ||
+        marker === 0xC5 || marker === 0xC6 || marker === 0xC7 ||
+        marker === 0xC9 || marker === 0xCA || marker === 0xCB ||
+        marker === 0xCD || marker === 0xCE || marker === 0xCF
+      ) {
+        const height = (bytes[i + 5] << 8) | bytes[i + 6];
+        const width  = (bytes[i + 7] << 8) | bytes[i + 8];
+        return { width, height };
+      }
+      if (
+        marker !== 0xD8 && marker !== 0xD9 &&
+        marker !== 0x01 && !(marker >= 0xD0 && marker <= 0xD7)
+      ) {
+        const length = (bytes[i + 2] << 8) | bytes[i + 3];
+        if (length < 2) break;
+        i += 2 + length;
+        continue;
+      }
+    }
+    i++;
+  }
+  return null;
+}
+
+// ═══════════════════ PNG DECODER ═══════════════════
+
+async function decodePngToRGB(png) {
+  if (png[0] !== 0x89 || png[1] !== 0x50 || png[2] !== 0x4E || png[3] !== 0x47) return null;
+
+  let pos = 8, w = 0, h = 0, bd = 0, ct = 0;
+  const idats = [];
+  let plte = null, trns = null;
+
+  while (pos + 8 <= png.length) {
+    const cl = (png[pos] << 24) | (png[pos + 1] << 16) | (png[pos + 2] << 8) | png[pos + 3];
+    const tp = String.fromCharCode(png[pos + 4], png[pos + 5], png[pos + 6], png[pos + 7]);
+    const dp = pos + 8;
+
+    if (tp === 'IHDR') {
+      w = (png[dp] << 24) | (png[dp + 1] << 16) | (png[dp + 2] << 8) | png[dp + 3];
+      h = (png[dp + 4] << 24) | (png[dp + 5] << 16) | (png[dp + 6] << 8) | png[dp + 7];
+      bd = png[dp + 8]; ct = png[dp + 9];
+    } else if (tp === 'PLTE') { plte = png.slice(dp, dp + cl); }
+    else if (tp === 'tRNS') { trns = png.slice(dp, dp + cl); }
+    else if (tp === 'IDAT') { idats.push(png.slice(dp, dp + cl)); }
+    else if (tp === 'IEND') { break; }
+
+    pos = dp + cl + 4;
+  }
+
+  if (!w || !h || bd !== 8) return null;
+
+  const tl = idats.reduce((s, c) => s + c.length, 0);
+  const comp = new Uint8Array(tl);
+  let o = 0;
+  for (const c of idats) { comp.set(c, o); o += c.length; }
+
+  let raw;
+  try {
+    const ds = new DecompressionStream('deflate');
+    const wr = ds.writable.getWriter();
+    const rd = ds.readable.getReader();
+    wr.write(comp); wr.close();
+    const ps = [];
+    while (true) { const { done, value } = await rd.read(); if (done) break; ps.push(value); }
+    const rl = ps.reduce((s, p) => s + p.length, 0);
+    raw = new Uint8Array(rl); o = 0;
+    for (const p of ps) { raw.set(p, o); o += p.length; }
+  } catch (e) {
+    console.error('PNG decompress error:', e);
+    return null;
+  }
+
+  let ch;
+  if (ct === 0) ch = 1;
+  else if (ct === 2) ch = 3;
+  else if (ct === 3) ch = 1;
+  else if (ct === 4) ch = 2;
+  else if (ct === 6) ch = 4;
+  else return null;
+
+  const bpp = ch, rowLen = w * bpp;
+  const pix = new Uint8Array(w * h * bpp);
+  const prev = new Uint8Array(rowLen);
+
+  for (let row = 0; row < h; row++) {
+    const ft = raw[row * (rowLen + 1)];
+    const rs = row * (rowLen + 1) + 1;
+    const cur = new Uint8Array(rowLen);
+
+    for (let i = 0; i < rowLen; i++) {
+      const x = raw[rs + i];
+      const a = i >= bpp ? cur[i - bpp] : 0;
+      const b = prev[i];
+      const c = i >= bpp ? prev[i - bpp] : 0;
+
+      if (ft === 0) cur[i] = x;
+      else if (ft === 1) cur[i] = (x + a) & 0xFF;
+      else if (ft === 2) cur[i] = (x + b) & 0xFF;
+      else if (ft === 3) cur[i] = (x + ((a + b) >> 1)) & 0xFF;
+      else if (ft === 4) {
+        const p2 = a + b - c;
+        const pa = Math.abs(p2 - a), pb = Math.abs(p2 - b), pc = Math.abs(p2 - c);
+        cur[i] = (x + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c)) & 0xFF;
+      } else cur[i] = x;
+    }
+
+    pix.set(cur, row * rowLen);
+    prev.set(cur);
+  }
+
+  const rgb = new Uint8Array(w * h * 3);
+  for (let i = 0; i < w * h; i++) {
+    let r, g, b2;
+    if (ct === 6) {
+      const al = pix[i * 4 + 3] / 255;
+      r = Math.round(pix[i * 4] * al + 255 * (1 - al));
+      g = Math.round(pix[i * 4 + 1] * al + 255 * (1 - al));
+      b2 = Math.round(pix[i * 4 + 2] * al + 255 * (1 - al));
+    } else if (ct === 2) {
+      r = pix[i * 3]; g = pix[i * 3 + 1]; b2 = pix[i * 3 + 2];
+    } else if (ct === 0) {
+      r = g = b2 = pix[i];
+    } else if (ct === 4) {
+      const al = pix[i * 2 + 1] / 255;
+      r = g = b2 = Math.round(pix[i * 2] * al + 255 * (1 - al));
+    } else if (ct === 3 && plte) {
+      const idx = pix[i];
+      r = plte[idx * 3]; g = plte[idx * 3 + 1]; b2 = plte[idx * 3 + 2];
+      if (trns && idx < trns.length) {
+        const al = trns[idx] / 255;
+        r = Math.round(r * al + 255 * (1 - al));
+        g = Math.round(g * al + 255 * (1 - al));
+        b2 = Math.round(b2 * al + 255 * (1 - al));
+      }
+    } else { r = g = b2 = 0; }
+
+    rgb[i * 3] = r; rgb[i * 3 + 1] = g; rgb[i * 3 + 2] = b2;
+  }
+
+  return { width: w, height: h, rgb };
+}
+
+function downsampleRGB(rgb, srcW, srcH, maxDim) {
+  if (srcW <= maxDim && srcH <= maxDim) return { rgb, width: srcW, height: srcH };
+  const scale = maxDim / Math.max(srcW, srcH);
+  const dstW = Math.max(1, Math.round(srcW * scale));
+  const dstH = Math.max(1, Math.round(srcH * scale));
+  const out = new Uint8Array(dstW * dstH * 3);
+  for (let dy = 0; dy < dstH; dy++) {
+    for (let dx = 0; dx < dstW; dx++) {
+      const sx = Math.min(Math.floor(dx / scale), srcW - 1);
+      const sy = Math.min(Math.floor(dy / scale), srcH - 1);
+      const si = (sy * srcW + sx) * 3;
+      const di = (dy * dstW + dx) * 3;
+      out[di] = rgb[si]; out[di + 1] = rgb[si + 1]; out[di + 2] = rgb[si + 2];
+    }
+  }
+  return { rgb: out, width: dstW, height: dstH };
+}
+
+
+
+// ═══════════════════ PDF INVOICE ═══════════════════
+
+function bytesToAsciiHex(u8) {
+  let out = '';
+  for (let i = 0; i < u8.length; i++) out += u8[i].toString(16).padStart(2, '0');
+  return out.toUpperCase() + '>';
+}
+
+function readJpegSize(u8) {
+  if (u8[0] !== 0xFF || u8[1] !== 0xD8) throw new Error('Not a JPEG');
+
+  let i = 2;
+  while (i < u8.length) {
+    if (u8[i] !== 0xFF) { i++; continue; }
+    const marker = u8[i + 1];
+    i += 2;
+
+    if (marker === 0xDA || marker === 0xD9) break; // SOS/EOI
+
+    const len = (u8[i] << 8) + u8[i + 1];
+    if (!len || len < 2) break;
+
+    const isSOF =
+      (marker >= 0xC0 && marker <= 0xC3) ||
+      (marker >= 0xC5 && marker <= 0xC7) ||
+      (marker >= 0xC9 && marker <= 0xCB) ||
+      (marker >= 0xCD && marker <= 0xCF);
+
+    if (isSOF) {
+      const height = (u8[i + 3] << 8) + u8[i + 4];
+      const width  = (u8[i + 5] << 8) + u8[i + 6];
+      return { width, height };
+    }
+
+    i += len;
+  }
+  throw new Error('JPEG size not found');
+}
+
+function getInvoiceLogoData() {
+  try {
+    const binary = atob(KAAPAV_LOGO_B64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const dims = readJpegSize(bytes);
+    return { type: 'jpeg', width: dims.width, height: dims.height, hex: bytesToAsciiHex(bytes) };
+  } catch (err) {
+    console.error('Logo decode failed:', err.message);
+    return null;
+  }
+}
+
+function formatPhoneDisplay(phone) {
+  const d = String(phone || '').replace(/\D/g, '');
+  if (d.startsWith('91') && d.length >= 12) return `+91 ${d.slice(2, 7)} ${d.slice(7, 12)}`;
+  if (d.length === 10) return `+91 ${d.slice(0, 5)} ${d.slice(5)}`;
+  return phone || '-';
+}
+
+function generateInvoicePDF(order, items, settings, logoData = null) {
+console.log("📍📍📍 FOUND IT: generateInvoicePDF was called! 📍📍📍");
+  const ops = [];
+  const W = 595, H = 842;
+  const M = 42, R = W - M;
+  let y = H - 40;
+
+  function esc(s) {
+    return String(s || '')
+      .replace(/\\/g, '\\\\')
+      .replace(/\(/g, '\\(')
+      .replace(/\)/g, '\\)')
+      .replace(/[^\x20-\x7E]/g, '');
+  }
+  function txt(s, x, yy, sz = 10, bold = false) {
+    ops.push(`BT /${bold ? 'F2' : 'F1'} ${sz} Tf ${x} ${yy} Td (${esc(s)}) Tj ET`);
+  }
+  function txtRight(s, xRight, yy, sz = 10, bold = false) {
+    const approx = String(s || '').length * sz * (bold ? 0.58 : 0.50);
+    txt(s, xRight - approx, yy, sz, bold);
+  }
+  function line(x1, y1, x2, y2, w = 0.5) {
+    ops.push(`${w} w ${x1} ${y1} m ${x2} ${y2} l S`);
+  }
+  function rect(x, yy, w, h, lw = 0.5) {
+    ops.push(`${lw} w ${x} ${yy} ${w} ${h} re S`);
+  }
+  function fill(x, yy, w, h) {
+    ops.push(`${x} ${yy} ${w} ${h} re f`);
+  }
+
+  function gold() { ops.push('0.74 0.58 0.18 rg'); }
+  function goldStroke() { ops.push('0.74 0.58 0.18 RG'); }
+  function darkGold() { ops.push('0.50 0.38 0.11 rg'); }
+  function cream() { ops.push('0.990 0.978 0.950 rg'); }
+  function warm() { ops.push('0.973 0.958 0.922 rg'); }
+  function white() { ops.push('1 1 1 rg'); }
+  function dark() { ops.push('0.11 0.11 0.11 rg'); }
+  function gray() { ops.push('0.42 0.44 0.48 rg'); }
+  function green() { ops.push('0.08 0.67 0.46 rg'); }
+  function amber() { ops.push('0.92 0.62 0.07 rg'); }
+  function reset() { ops.push('0 0 0 rg'); ops.push('0 0 0 RG'); }
+
+  function wrapText(text, maxChars) {
+    const words = String(text || '').split(/\s+/);
+    const lines = [];
+    let cur = '';
+    for (const w of words) {
+      const next = cur ? `${cur} ${w}` : w;
+      if (next.length > maxChars) {
+        if (cur) lines.push(cur);
+        cur = w;
+      } else {
+        cur = next;
+      }
+    }
+    if (cur) lines.push(cur);
+    return lines.length ? lines : ['-'];
+  }
+
+  const businessName = settings.business_name || 'KAAPAV Fashion Jewellery';
+  const supportLine = '+91 9148330016(WhatsApp Chat Only)';
+  const emailLine = settings.business_email || 'care.kaapav@gmail.com';
+
+  const customerName = order.customer_name || '-';
+  const customerPhone = formatPhoneDisplay(order.phone);
+  const shipName = order.shipping_name || order.customer_name || '-';
+  const shipPhone = formatPhoneDisplay(order.shipping_phone || order.phone);
+  const paymentStatus = String(order.payment_status || 'pending').toUpperCase();
+  const paymentMethod = order.payment_method || 'Online';
+
+  let invoiceDate = '-';
+  try {
+    const dt = new Date(order.created_at);
+    const mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    invoiceDate = `${dt.getDate()} ${mo[dt.getMonth()]} ${dt.getFullYear()}`;
+  } catch (_) {}
+
+  // outer frame
+  goldStroke();
+  rect(26, 24, 543, 794, 1.0);
+  rect(30, 28, 535, 786, 0.25);
+  reset();
+
+  // top accent
+  gold();
+  fill(30, H - 34, 535, 2);
+
+  // header area
+  cream();
+  fill(30, H - 118, 535, 84);
+  goldStroke();
+  line(30, H - 118, 565, H - 118, 0.6);
+  reset();
+
+  // ═══════════════════ LOGO ═══════════════════
+  const logoTileX = M + 2;
+  const logoTileY = H - 112;
+  const logoTileW = 90;
+  const logoTileH = 80;
+
+if (logoData && logoData.width > 0 && logoData.height > 0) {
+  const pad = 4;
+  const maxW = logoTileW - pad * 2;
+  const maxH = logoTileH - pad * 2;
+  const scale = Math.min(maxW / logoData.width, maxH / logoData.height);
+  const drawW = logoData.width * scale;
+  const drawH = logoData.height * scale;
+  const dx = logoTileX + (logoTileW - drawW) / 2;
+  const dy = logoTileY + (logoTileH - drawH) / 2;
+  ops.push(`q ${drawW} 0 0 ${drawH} ${dx} ${dy} cm /Logo Do Q`);
+} else {
+  darkGold();
+  txt('K', logoTileX + 28, logoTileY + 24, 32, true);
+}
+
+  // brand text
+  const brandX = logoTileX + logoTileW + 12;
+  darkGold();
+  txt(businessName, brandX, H - 60, 17, true);
+  gray();
+  txt('💎 Simple Luxury — Crafted for You', brandX, H - 76, 8, false);
+
+  // invoice title
+  darkGold();
+  txtRight('INVOICE', R - 4, H - 58, 22, true);
+  gray();
+  txtRight('Premium Order Receipt', R - 4, H - 75, 8, false);
+  dark();
+
+  y = H - 142;
+
+  goldStroke();
+  line(M, y, R, y, 0.45);
+  reset();
+  y -= 18;
+
+  // meta
+  darkGold(); txt('Invoice No', M, y, 8, true); dark();
+  txt(order.order_id || '-', M + 56, y, 9, true);
+  darkGold(); txt('Date', R - 128, y, 8, true); dark();
+  txt(invoiceDate, R - 92, y, 9);
+  y -= 15;
+
+  darkGold(); txt('Payment', M, y, 8, true);
+  if (paymentStatus === 'PAID') green(); else amber();
+  txt(paymentStatus, M + 54, y, 9, true);
+  dark();
+  darkGold(); txt('Method', R - 128, y, 8, true); dark();
+  txt(paymentMethod, R - 92, y, 9);
+  y -= 14;
+
+  if (order.payment_id) {
+    gray(); txt(`Payment ID: ${order.payment_id}`, M, y, 7); dark();
+    y -= 12;
+  }
+
+  y -= 2;
+  goldStroke();
+  line(M, y, R, y, 0.45);
+  reset();
+  y -= 22;
+
+  // address cards
+  const addrGap = 18;
+  const colW = (R - M - addrGap) / 2;
+  const cardH = 92;
+
+  warm(); fill(M, y - cardH, colW, cardH);
+  gold(); fill(M, y - 3, colW, 3);
+  goldStroke(); rect(M, y - cardH, colW, cardH, 0.35);
+
+  darkGold(); txt('BILLED TO', M + 12, y - 16, 7.5, true); dark();
+  txt(customerName, M + 12, y - 34, 10.5, true);
+  gray(); txt(customerPhone, M + 12, y - 48, 8); dark();
+
+  const billLines = wrapText(
+    [order.shipping_address, order.shipping_city, order.shipping_state, order.shipping_pincode]
+      .filter(Boolean).join(', '), 33
+  );
+  let billY = y - 62;
+  for (const l of billLines.slice(0, 3)) {
+    gray(); txt(l, M + 12, billY, 7.2); dark();
+    billY -= 10;
+  }
+
+  const sx = M + colW + addrGap;
+  warm(); fill(sx, y - cardH, colW, cardH);
+  gold(); fill(sx, y - 3, colW, 3);
+  goldStroke(); rect(sx, y - cardH, colW, cardH, 0.35);
+
+  darkGold(); txt('SHIPPED TO', sx + 12, y - 16, 7.5, true); dark();
+  txt(shipName, sx + 12, y - 34, 10.5, true);
+  gray(); txt(shipPhone, sx + 12, y - 48, 8); dark();
+
+  const shipLines = wrapText(
+    [order.shipping_address, order.shipping_city, order.shipping_state, order.shipping_pincode]
+      .filter(Boolean).join(', '), 33
+  );
+  let shipY = y - 62;
+  for (const l of shipLines.slice(0, 3)) {
+    gray(); txt(l, sx + 12, shipY, 7.2); dark();
+    shipY -= 10;
+  }
+
+  y -= cardH + 26;
+
+  // ORDER SUMMARY
+  darkGold(); txt('ORDER SUMMARY', M, y, 7.5, true); dark();
+  y -= 12;
+
+  // table header
+  gold();
+  fill(M, y - 18, R - M, 18);
+  white();
+  txt('#', M + 8, y - 13, 7, true);
+  txt('Description', M + 28, y - 13, 7, true);
+  txt('Qty', R - 145, y - 13, 7, true);
+  txt('Price', R - 105, y - 13, 7, true);
+  txt('Amount', R - 55, y - 13, 7, true);
+  dark();
+  y -= 28;
+
+  let itemSubtotal = 0;
+
+  for (let i = 0; i < items.length && i < 12; i++) {
+    const item = items[i] || {};
+    const qty = Number(item.qty || item.quantity || 1);
+    const price = Number(item.price || 0);
+    const total = qty * price;
+    itemSubtotal += total;
+
+    const nameLines = wrapText(item.name || item.sku || 'Product', 34);
+    const rowH = Math.max(17, nameLines.length * 10 + 4);
+
+    if (i % 2 === 0) {
+      cream();
+      fill(M, y - rowH + 6, R - M, rowH);
+      dark();
+    }
+
+    txt(String(i + 1), M + 10, y, 8);
+    txt(nameLines[0], M + 28, y, 8.4);
+    txt(String(qty), R - 140, y, 8);
+    txt(`Rs.${price}`, R - 110, y, 8);
+    txtRight(`Rs.${total}`, R - 5, y, 8.4, true);
+
+    for (let j = 1; j < nameLines.length; j++) {
+      y -= 10;
+      gray(); txt(nameLines[j], M + 28, y, 7); dark();
+    }
+
+    y -= 17;
+  }
+
+  goldStroke();
+  line(M, y + 5, R, y + 5, 0.55);
+  reset();
+
+  // ═══════════════════ TOTALS + PAID ═══════════════════
+  // Anchor totals — never float higher than y=310 from bottom
+  y -= 20;
+  if (y > 310) y = 310;
+
+  const subtotal = Number(order.subtotal || itemSubtotal || 0);
+  const discount = Number(order.discount || 0);
+  const shipping = Number(order.shipping_cost || 0);
+  const grandTotal = Number(order.total || (subtotal - discount + shipping) || 0);
+
+  const totalsW = 228;
+  const totalsX = R - totalsW;
+
+  // Calculate box height
+  let rowsH = 14; // subtotal
+  if (discount > 0) rowsH += 14;
+  if (order.discount_code) rowsH += 10;
+  rowsH += 14; // shipping
+
+  const boxPadTop = 14;
+  const barGap = 10;
+  const barH = 30;
+  const boxPadBot = 10;
+  const boxH = boxPadTop + rowsH + barGap + barH + boxPadBot;
+  const boxTop = y;
+  const boxBot = boxTop - boxH;
+
+  cream();
+  fill(totalsX, boxBot, totalsW, boxH);
+  goldStroke();
+  rect(totalsX, boxBot, totalsW, boxH, 0.35);
+
+  let ty = boxTop - boxPadTop;
+
+  gray(); txt('Subtotal', totalsX + 14, ty, 9); dark();
+  txtRight(`Rs.${subtotal.toFixed(0)}`, totalsX + totalsW - 14, ty, 9, true);
+  ty -= 14;
+
+  if (discount > 0) {
+    gray(); txt('Discount', totalsX + 14, ty, 9); green();
+    txtRight(`-Rs.${discount.toFixed(0)}`, totalsX + totalsW - 14, ty, 9, true);
+    dark(); ty -= 14;
+  }
+  if (order.discount_code) {
+    gray(); txt(`Code: ${order.discount_code}`, totalsX + 14, ty, 7);
+    ty -= 10;
+  }
+
+  gray(); txt('Shipping', totalsX + 14, ty, 9); dark();
+  txtRight(shipping > 0 ? `Rs.${shipping.toFixed(0)}` : 'FREE', totalsX + totalsW - 14, ty, 9, true);
+  ty -= (14 + barGap);
+
+  // TOTAL bar
+  const totalBarY = ty - 15;
+  gold();
+  fill(totalsX + 8, totalBarY, totalsW - 16, barH);
+  white();
+  txt('TOTAL', totalsX + 16, totalBarY + 10, 13, true);
+  txtRight(`Rs.${grandTotal.toFixed(0)}`, totalsX + totalsW - 16, totalBarY + 10, 13, true);
+  dark();
+
+  // PAID badge — same vertical line as TOTAL bar
+  if ((order.payment_status || '').toLowerCase() === 'paid') {
+    gold(); fill(M, totalBarY, 86, barH);
+    white(); txt('PAID', M + 16, totalBarY + 10, 13, true);
+    dark();
+    txt('Thank you for your payment.', M + 100, totalBarY + 10, 9);
+  }
+
+  y = boxBot - 20;
+
+  // TERMS
+  goldStroke();
+  line(M, y, R, y, 0.28);
+  reset();
+  y -= 13;
+
+  darkGold(); txt('TERMS & CONDITIONS', M, y, 6.8, true); dark();
+  y -= 11;
+
+  const terms = [
+    '7-day easy return policy on eligible orders.',
+    'Items must be unused, unworn and in original packaging.',
+    'Rs.60 reverse shipping may be deducted from refund.',
+    'Full policy: www.kaapav.com/return-policy'
+  ];
+
+  for (const t of terms) {
+    gold(); txt('-', M + 2, y, 7, true);
+    gray(); txt(t, M + 12, y, 6.7);
+    dark();
+    y -= 10;
+  }
+
+  y -= 8;
+
+  // contact
+  goldStroke();
+  line(M, y, R, y, 0.28);
+  reset();
+  y -= 14;
+
+  darkGold(); txt('VISIT', M, y, 7, true); dark();
+  txt('www.kaapav.com', M + 34, y, 7.3);
+  darkGold(); txt('SALES & SUPPORT', M + 178, y, 7, true); dark();
+  txt(supportLine, M + 286, y, 7.0);
+  y -= 14;
+  darkGold(); txt('EMAIL', M, y, 7, true); dark();
+  txt(emailLine, M + 34, y, 7.2);
+
+  // footer
+  gold();
+  fill(30, 28, 535, 34);
+  ops.push('0.60 0.45 0.12 rg');
+  fill(30, 60, 535, 2);
+  white();
+  txt('Thank you for shopping with KAAPAV!', W / 2 - 118, 44, 9.5, true);
+  txt('💎 Simple Luxury — Crafted for You   |  Visit:www.kaapav.com', W / 2 - 122, 32, 6.7);
+
+  // ═══════════════════ BUILD PDF ═══════════════════
+  const stream = ops.join('\n');
+  const objs = [];
+
+  objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>');
+
+  let logoObjNum = null;
+  if (logoData) {
+    logoObjNum = objs.length + 1;
+    if (logoData.type === 'jpeg') {
+      objs.push(
+        `<< /Type /XObject /Subtype /Image /Width ${logoData.width} /Height ${logoData.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter [/ASCIIHexDecode /DCTDecode] /Length ${logoData.hex.length} >>\nstream\n${logoData.hex}\nendstream`
+      );
+    } else {
+      objs.push(
+        `<< /Type /XObject /Subtype /Image /Width ${logoData.width} /Height ${logoData.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /ASCIIHexDecode /Length ${logoData.hex.length} >>\nstream\n${logoData.hex}\nendstream`
+      );
+    }
+  }
+
+  const contentObjNum = objs.length + 1;
+  objs.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+
+  const pageObjNum = objs.length + 1;
+  const pagesObjNum = objs.length + 2;
+
+  let resources = '<< /Font << /F1 1 0 R /F2 2 0 R >>';
+  if (logoObjNum) resources += ` /XObject << /Logo ${logoObjNum} 0 R >>`;
+  resources += ' >>';
+
+  objs.push(`<< /Type /Page /Parent ${pagesObjNum} 0 R /MediaBox [0 0 ${W} ${H}] /Contents ${contentObjNum} 0 R /Resources ${resources} >>`);
+  objs.push(`<< /Type /Pages /Kids [${pageObjNum} 0 R] /Count 1 >>`);
+
+  const catalogObjNum = objs.length + 1;
+  objs.push(`<< /Type /Catalog /Pages ${pagesObjNum} 0 R >>`);
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [];
+  for (let i = 0; i < objs.length; i++) {
+    offsets.push(pdf.length);
+    pdf += `${i + 1} 0 obj\n${objs[i]}\nendobj\n`;
+  }
+
+  const xrefPos = pdf.length;
+  pdf += `xref\n0 ${objs.length + 1}\n`;
+  pdf += `0000000000 65535 f \n`;
+  for (const off of offsets) {
+    pdf += `${String(off).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objs.length + 1} /Root ${catalogObjNum} 0 R >>\n`;
+  pdf += `startxref\n${xrefPos}\n%%EOF`;
+
+  return new TextEncoder().encode(pdf);
+}
+
+// ═══════════════════ SEND INVOICE (v7 - RATE LIMITED) ═══════════════════
+async function generateAndSendInvoice(env, orderId) {
+  try {
+    console.log(`✅ v7 generateAndSendInvoice ENTERED for Order ID: ${orderId}.`);
+
+    const order = await env.DB.prepare(
+      `SELECT * FROM orders WHERE order_id = ?`
+    ).bind(orderId).first();
+
+    if (!order) {
+      console.error("generateAndSendInvoice: order not found", orderId);
+      return false;
+    }
+
+    // ── Rate limit: block only if sent within last 15 seconds ──
+    const lastSent = await env.KV.get(`invoice_sent:${orderId}`);
+    if (lastSent) {
+      const secondsAgo = (Date.now() - parseInt(lastSent, 10)) / 1000;
+      if (secondsAgo < 15) {
+        console.log(
+          `Invoice for ${orderId} rate limited — sent ${Math.round(secondsAgo)}s ago, retry in ${Math.ceil(15 - secondsAgo)}s`
+        );
+        return true; // throttled, not an error
+      }
+    }
+
+    let items = [];
+    try { items = JSON.parse(order.items || "[]"); } catch { items = []; }
+
+    const { results: sr } = await env.DB.prepare(
+      `SELECT key, value FROM settings`
+    ).all();
+
+    const settings = {};
+    (sr || []).forEach(r => { settings[r.key] = r.value; });
+
+    // ── Load logo ──
+    const logoData = getInvoiceLogoData();
+    if (logoData) console.log(`✅ Logo ready: ${logoData.width}x${logoData.height}`);
+    else console.log(`⚠️ Logo not loaded — 'K' fallback`);
+
+    // ── Generate PDF ──
+    const pdfBytes = generateInvoicePDF(order, items, settings, logoData);
+
+    // ── Upload to R2 ──
+    const fileName = `invoices/Invoice_${orderId}_${Date.now()}.pdf`;
+    await env.MEDIA.put(fileName, pdfBytes, {
+      httpMetadata: { contentType: "application/pdf" },
+    });
+
+    const pdfUrl = `https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/${fileName}`;
+    console.log(`✅ PDF uploaded: ${pdfUrl}`);
+
+    // ── Send via WhatsApp ──
+    const name = order.customer_name || "Customer";
+
+    const waResult = await sendWhatsAppDocument(
+      env,
+      order.phone,
+      pdfUrl,
+      `KAAPAV_Invoice_${orderId}.pdf`,
+      `Your KAAPAV Invoice\n\n` +
+        `Hi ${String(name).split(" ")[0]}! Here's your invoice.\n\n` +
+        `Order: ${orderId}\n` +
+        `Amount: Rs.${order.total || 0}\n` +
+        `Status: ${(order.payment_status || "pending").toUpperCase()}\n\n` +
+        `KAAPAV Fashion Jewellery\n` +
+        `www.kaapav.com`
+    );
+
+    console.log("WA document result:", JSON.stringify(waResult));
+
+    if (waResult?.error) {
+      console.error("Invoice WA send error:", waResult.error);
+      return false;
+    }
+
+    const wamid = waResult?.messages?.[0]?.id;
+    if (!wamid) {
+      console.error("WA send: no message id returned", waResult);
+      return false;
+    }
+
+    await env.DB.prepare(
+      `UPDATE orders
+       SET last_invoice_wamid = ?, last_invoice_status = ?
+       WHERE order_id = ?`
+    ).bind(wamid, "queued", orderId).run();
+
+    console.log(`Invoice queued on WA for ${orderId}: ${wamid}`);
+
+    // ── Store timestamp ──
+    await env.KV.put(`invoice_sent:${orderId}`, Date.now().toString(), { expirationTtl: 60 });
+
+    await logOrderEvent(
+      env,
+      orderId,
+      "invoice_queued",
+      `Invoice queued to ${order.phone} via WhatsApp`,
+      { pdfUrl, wamid },
+      "system"
+    );
+
+    return true;
+  } catch (e) {
+    console.error(`❌ Uncaught error in generateAndSendInvoice for order ${orderId}:`, e?.stack || e);
+    return false;
+  }
+}
+
+// ═══════════════════ SOURCE CHECK ═══════════════════
+function isWhatsAppOrder(source) {
+  const s = (source || '').toLowerCase();
+  return s === 'whatsapp' || s === 'catalogue' || s === 'manual';
+}
+
+// ═══════════════════ STOCK DEDUCTION ═══════════════════
+async function deductStockForOrder(env, orderId) {
+  try {
+    const order = await env.DB.prepare(`SELECT * FROM orders WHERE order_id = ?`).bind(orderId).first();
+    if (!order) return;
+    const items = JSON.parse(order.items || '[]');
+    for (const item of items) {
+      if (!item.sku) continue;
+      await env.DB.prepare(`
+        UPDATE products SET stock = MAX(0, stock - ?), order_count = order_count + ?, updated_at = datetime('now') WHERE sku = ?
+      `).bind(item.qty || 1, item.qty || 1, item.sku).run();
+
+      const product = await env.DB.prepare(`SELECT name, stock FROM products WHERE sku = ?`).bind(item.sku).first();
+      if (product && product.stock <= 5) {
+        await sendWhatsAppText(env, env.OWNER_PHONE,
+          `⚠️ *Low Stock Alert!*\n\nProduct: *${product.name}*\nSKU: ${item.sku}\nRemaining: *${product.stock}*\n\n${product.stock === 0 ? '❌ OUT OF STOCK!' : '⚠️ Restock soon.'}`
+        );
+      }
+      try { await syncProductToGoogleSheetsSafe(env, item.sku); } catch (e) { console.error('Stock sync error:', e); }
+    }
+    console.log(`Stock deducted for order ${orderId}`);
+  } catch (e) { console.error('Stock deduction error:', e); }
+}
+
+// ═══════════════════ DUPLICATE ORDER CHECK ═══════════════════
+async function checkDuplicateOrder(env, phone, items) {
+  try {
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { results } = await env.DB.prepare(`
+      SELECT order_id, items FROM orders
+      WHERE phone = ? AND created_at > ? AND status IN ('pending', 'confirmed')
+      ORDER BY created_at DESC LIMIT 5
+    `).bind(phone, fiveMinAgo).all();
+
+    if (!results || results.length === 0) return null;
+
+    const newSkus = (items || []).map(i => i.sku).sort().join(',');
+    for (const existing of results) {
+      try {
+        const existingItems = JSON.parse(existing.items || '[]');
+        const existingSkus = existingItems.map(i => i.sku).sort().join(',');
+        if (newSkus === existingSkus) return existing.order_id;
+      } catch {}
+    }
+    return null;
+  } catch { return null; }
+}
+
+function cleanCheckoutSku(value) {
+  return String(value || '').trim();
+}
+
+function cleanCheckoutQty(value) {
+  const n = Math.floor(Number(value || 1));
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(n, 20);
+}
+
+async function priceCatalogueItems(env, rawItems) {
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
+    return {
+      success: false,
+      status: 400,
+      error: 'Cart is empty',
+    };
+  }
+
+  const requestedMap = new Map();
+
+  for (const item of rawItems) {
+    const sku = cleanCheckoutSku(item?.sku);
+    if (!sku) continue;
+
+    const key = sku.toUpperCase();
+    const qty = cleanCheckoutQty(item?.qty ?? item?.quantity ?? 1);
+
+    requestedMap.set(key, {
+      sku,
+      qty: (requestedMap.get(key)?.qty || 0) + qty,
+    });
+  }
+
+  const skuKeys = [...requestedMap.keys()];
+
+  if (skuKeys.length === 0) {
+    return {
+      success: false,
+      status: 400,
+      error: 'Valid product SKU required',
+    };
+  }
+
+  const placeholders = skuKeys.map(() => '?').join(',');
+
+  const productResult = await env.DB.prepare(`
+    SELECT
+      sku,
+      name,
+      price,
+      category,
+      stock,
+      track_inventory,
+      is_active,
+      image_url
+    FROM products
+    WHERE UPPER(sku) IN (${placeholders})
+  `).bind(...skuKeys).all();
+
+  const products = productResult.results || [];
+  const productMap = new Map(
+    products.map((p) => [String(p.sku || '').trim().toUpperCase(), p])
+  );
+
+  const pricedItems = [];
+  let subtotal = 0;
+  let itemCount = 0;
+
+  for (const key of skuKeys) {
+    const req = requestedMap.get(key);
+    const product = productMap.get(key);
+
+    if (!product) {
+      return {
+        success: false,
+        status: 404,
+        error: `Product not found: ${req.sku}`,
+      };
+    }
+
+    if (Number(product.is_active ?? 1) === 0) {
+      return {
+        success: false,
+        status: 409,
+        error: `${product.name || product.sku} is not available`,
+      };
+    }
+
+    const price = Math.round(Number(product.price || 0));
+
+    if (!Number.isFinite(price) || price <= 0) {
+      return {
+        success: false,
+        status: 409,
+        error: `${product.name || product.sku} price is not valid`,
+      };
+    }
+
+    const trackInventory = Number(product.track_inventory ?? 1);
+    const stock = Number(product.stock ?? 0);
+
+    if (trackInventory !== 0 && stock < req.qty) {
+      return {
+        success: false,
+        status: 409,
+        error: `Only ${Math.max(0, stock)} left for ${product.name || product.sku}`,
+      };
+    }
+
+    const lineTotal = price * req.qty;
+
+    pricedItems.push({
+      sku: product.sku,
+      name: product.name || product.sku,
+      category: product.category || '',
+      price,
+      qty: req.qty,
+      image_url: product.image_url || '',
+    });
+
+    subtotal += lineTotal;
+    itemCount += req.qty;
+  }
+
+  return {
+    success: true,
+    items: pricedItems,
+    subtotal,
+    itemCount,
+  };
+}
+
+// ═══════════════════ RAZORPAY REFUND ═══════════════════
+async function processRazorpayRefund(
+  env,
+  paymentId,
+  amount,
+  orderId,
+  options = {}
+) {
+  const amountPaise = Math.round(
+    Number(amount || 0) * 100
+  );
+
+  if (
+    !Number.isInteger(amountPaise) ||
+    amountPaise < 100
+  ) {
+    throw new Error(
+      'Refund amount must be at least ₹1'
+    );
+  }
+
+  const idempotencyKey = String(
+    options.idempotencyKey || ''
+  )
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, '_')
+    .slice(0, 100);
+
+  if (idempotencyKey.length < 10) {
+    throw new Error(
+      'Valid refund idempotency key is required'
+    );
+  }
+
+  const auth = btoa(
+    `${env.RAZORPAY_KEY_ID}:` +
+    `${env.RAZORPAY_KEY_SECRET}`
+  );
+
+  if (options.verifyPayment !== false) {
+    const paymentResponse = await fetch(
+      `https://api.razorpay.com/v1/payments/${paymentId}`,
+      {
+        headers: {
+          Authorization: `Basic ${auth}`,
+        },
+      }
+    );
+
+    const paymentData = await paymentResponse
+      .json()
+      .catch(() => ({}));
+
+    if (!paymentResponse.ok) {
+      throw new Error(
+        paymentData.error?.description ||
+        'Unable to verify Razorpay payment'
+      );
+    }
+
+    if (paymentData.status !== 'captured') {
+      throw new Error(
+        `Razorpay payment is not captured. ` +
+        `Current status: ${paymentData.status || 'unknown'}`
+      );
+    }
+
+    const remainingPaise = Math.max(
+      0,
+      Number(paymentData.amount || 0) -
+      Number(paymentData.amount_refunded || 0)
+    );
+
+    if (amountPaise > remainingPaise) {
+      throw new Error(
+        `Refund amount exceeds the remaining ` +
+        `captured amount of ₹${(
+          remainingPaise / 100
+        ).toFixed(2)}`
+      );
+    }
+  }
+
+  const response = await fetch(
+    `https://api.razorpay.com/v1/payments/${paymentId}/refund`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/json',
+        'X-Refund-Idempotency':
+          idempotencyKey,
+      },
+      body: JSON.stringify({
+        amount: amountPaise,
+        speed: 'normal',
+notes: {
+  order_id: String(orderId),
+
+  request_id: String(
+    options.requestId || ''
+  ),
+
+  refund_attempt_key:
+    idempotencyKey,
+
+  reverse_shipping_deducted:
+    options.reverseShippingDeducted === true
+      ? 'yes'
+      : 'no',
+},
+      }),
+    }
+  );
+
+  const data = await response
+    .json()
+    .catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      data.error?.description ||
+      data.error?.reason ||
+      'Razorpay refund failed'
+    );
+  }
+
+  return data;
+}
+
+// ═══════════════════ WEBHOOK HANDLERS ═══════════════════
+async function handleWebhookVerify(request, env) {
+  const url = new URL(request.url);
+  const mode = url.searchParams.get('hub.mode');
+  const token = url.searchParams.get('hub.verify_token');
+  const challenge = url.searchParams.get('hub.challenge');
+  if (mode === 'subscribe' && token === env.WEBHOOK_VERIFY_TOKEN) {
+    return new Response(challenge, { status: 200 });
+  }
+  return new Response('Forbidden', { status: 403 });
+}
+
+async function resolveMediaToR2(mediaId, env) {
+  // Step 1: Get download URL from Meta
+  const metaRes = await fetch(`https://graph.facebook.com/v18.0/${mediaId}`, {
+    headers: { Authorization: `Bearer ${env.WA_TOKEN}` }
+  });
+  const metaData = await metaRes.json();
+  if (!metaData.url) throw new Error('No URL from Meta');
+
+  // Step 2: Download the actual media (needs auth header)
+  const mediaRes = await fetch(metaData.url, {
+    headers: { Authorization: `Bearer ${env.WA_TOKEN}` }
+  });
+  if (!mediaRes.ok) throw new Error('Media download failed');
+
+  // Step 3: Upload to R2
+  const blob = await mediaRes.arrayBuffer();
+  const mime = metaData.mime_type || 'image/jpeg';
+  const ext = mime.split('/')[1]?.split(';')[0] || 'jpg';
+  const key = `media/wa_${mediaId}.${ext}`;
+  await env.MEDIA.put(key, blob, { httpMetadata: { contentType: mime } });
+
+  return `https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/${key}`;
+}
+
+async function generateOrderId(env) {
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const yy = String(now.getFullYear()).slice(2);
+
+  // FY starts April 1 — resets once a year
+  const fyYear = now.getMonth() >= 3 // April = month 3 (0-indexed)
+    ? now.getFullYear()
+    : now.getFullYear() - 1;
+  const fyKey = `order_seq:FY${fyYear}`;
+
+  const current = await env.KV.get(fyKey);
+  const next = current ? parseInt(current) + 1 : 1;
+  // No TTL — persists until next FY key is created
+  await env.KV.put(fyKey, String(next));
+
+  const seq = String(next).padStart(4, '0');
+  return `KFJW-${mm}${dd}${yy}${seq}`;
+}
+
+async function handleWebhookPost(request, env, ctx) {
+  try {
+    const body = await request.json();
+    const entry = body?.entry?.[0];
+    const changes = entry?.changes?.[0];
+    const value = changes?.value;
+   
+    // ✅ Handle delivery/status webhooks (they come in value.statuses, not value.messages)
+const statuses = value?.statuses;
+if (Array.isArray(statuses) && statuses.length) {
+  for (const s of statuses) {
+    console.log("WA STATUS:", JSON.stringify(s, null, 2));
+
+    await env.DB.prepare(
+      `UPDATE orders SET last_invoice_status = ? WHERE last_invoice_wamid = ?`
+    ).bind(s.status, s.id).run();
+
+    // Optional: store error details if failed
+    // const err = s.errors?.[0];
+    // await env.DB.prepare(
+    //   `UPDATE orders SET last_invoice_error_code=?, last_invoice_error_title=? WHERE last_invoice_wamid=?`
+    // ).bind(err?.code ?? null, err?.title ?? null, s.id).run();
+  }
+
+  return jsonResponse({ status: 'ok' }); // important: stop here for status-only webhooks
+}
+
+    if (!value?.messages?.[0]) return jsonResponse({ status: 'ok' });
+
+    const msg = value.messages[0];
+    const phone = msg.from;
+    const contact = value.contacts?.[0];
+    const name =
+  (contact?.profile?.name || '').trim()
+  || phone;
+
+    let text = '';
+    let messageType = msg.type;
+    let buttonId = null;
+    let buttonText = null;
+    let mediaUrl = null;
+    let mediaCaption = null;
+    let mediaId = null;
+
+    if (msg.type === 'text') {
+      text = msg.text?.body || '';
+    } else if (msg.type === 'image') {
+      mediaId = msg.image?.id;
+      mediaCaption = msg.image?.caption || '';
+      text = mediaCaption || '[Photo]';
+      if (mediaId) {
+        try { mediaUrl = await resolveMediaToR2(mediaId, env); } catch(e) { console.error('Media resolve error:', e); }
+      }
+    } else if (msg.type === 'video') {
+      mediaId = msg.video?.id;
+      text = '[Video]';
+      if (mediaId) {
+        try { mediaUrl = await resolveMediaToR2(mediaId, env); } catch(e) {}
+      }
+    } else if (msg.type === 'audio' || msg.type === 'voice') {
+      mediaId = msg.audio?.id || msg.voice?.id;
+      text = '[Audio]';
+      if (mediaId) {
+        try { mediaUrl = await resolveMediaToR2(mediaId, env); } catch(e) {}
+      }
+    } else if (msg.type === 'document') {
+      mediaId = msg.document?.id;
+      mediaCaption = msg.document?.filename || '';
+      text = mediaCaption || '[Document]';
+      if (mediaId) {
+        try { mediaUrl = await resolveMediaToR2(mediaId, env); } catch(e) {}
+      }
+    } else if (msg.type === 'interactive') {
+      if (msg.interactive?.type === 'button_reply') {
+        buttonId = msg.interactive.button_reply?.id;
+        buttonText = msg.interactive.button_reply?.title;
+        text = buttonText || '';
+      } else if (msg.interactive?.type === 'list_reply') {
+        buttonId = msg.interactive.list_reply?.id;
+        buttonText = msg.interactive.list_reply?.title;
+        text = buttonText || '';
+      }
+ } else if (msg.type === 'unsupported') {
+  const unsupportedErrors = Array.isArray(msg.errors)
+    ? msg.errors
+    : Array.isArray(value.errors)
+      ? value.errors
+      : [];
+
+  const firstError = unsupportedErrors[0] || null;
+
+  const unsupportedPayload = {
+    type: msg.type,
+    message_id: msg.id || null,
+    from: msg.from || phone || null,
+    timestamp: msg.timestamp || null,
+    errors: unsupportedErrors,
+    raw: msg,
+  };
+
+const vendorLike = await isVendorUnsupportedPhone(env, msg.from || phone);
+
+if (vendorLike) {
+  text =
+    `⏳ *Vendor/System WhatsApp Message Received*\n\n` +
+    `From: ${msg.from || phone}\n` +
+    `Reason: ${firstError?.title || firstError?.details || 'Message body hidden by Meta'}\n` +
+    `Meta code: ${firstError?.code || '-'}\n` +
+    `Time: ${formatISTDateTime()}\n\n` +
+    `KAAPAV is waiting for the matching Razorpay / Shiprocket / order event to convert this into a readable business alert.`;
+
+  mediaCaption = JSON.stringify({
+    ...unsupportedPayload,
+    kaapav_converted: false,
+    kaapav_pending_vendor_message: true,
+    vendor_sender: msg.from || phone,
+    reason: 'Waiting for matching KAAPAV business event',
+  });
+
+  messageType = 'text';
+
+  try {
+    await saveOwnerInboxAlert(env, ctx, {
+      type: 'unsupported',
+      priority: 'normal',
+      title: 'Vendor WhatsApp Waiting for Conversion',
+      body:
+        `From: ${msg.from || phone}\n` +
+        `Reason: ${firstError?.title || 'Unsupported WhatsApp message'}\n` +
+        `Meta code: ${firstError?.code || '-'}\n` +
+        `Time: ${formatISTDateTime()}`,
+      phone,
+      customerName: name || 'Vendor/System',
+      source: 'whatsapp_pending_conversion',
+      actionType: 'chat',
+      actionLabel: 'Open Chat',
+      meta: unsupportedPayload,
+      dedupeKey: `unsupported_pending:${msg.id}`,
+      sendPush: true,
+    });
+  } catch (e) {
+    console.error('UNSUPPORTED_PENDING_OWNER_ALERT_ERROR', e);
+  }
+} else {
+  text = firstError?.title
+    ? `Unsupported: ${firstError.title}`
+    : '[Unsupported WhatsApp message]';
+
+  mediaCaption = JSON.stringify({
+    ...unsupportedPayload,
+    kaapav_converted: false,
+    reason: 'Customer unsupported message; not auto-converted',
+  });
+
+  messageType = 'unsupported';
+}
+} else if (msg.type === 'reaction') {
+  text = msg.reaction?.emoji ? `Reacted: ${msg.reaction.emoji}` : '[Reaction]';
+  messageType = 'reaction';
+} else if (msg.type === 'location') {
+  text = '📍 Location shared';
+  messageType = 'location';
+} else if (msg.type === 'contacts') {
+  text = '👤 Contact shared';
+  messageType = 'contacts';
+} else if (msg.type === 'sticker') {
+  text = '🎭 Sticker';
+  messageType = 'sticker';
+} else if (msg.type === 'system') {
+  text = '[System message]';
+  messageType = 'system';
+}
+
+    const messageId = msg.id;
+    const timestamp = new Date(parseInt(msg.timestamp) * 1000).toISOString();
+
+    // Save incoming message to D1
+    await env.DB.prepare(`
+      INSERT OR IGNORE INTO messages (
+        message_id, phone, text, message_type, direction,
+        button_id, button_text, media_url, media_caption,
+        status, timestamp, created_at
+      ) VALUES (?, ?, ?, ?, 'incoming', ?, ?, ?, ?, 'delivered', ?, datetime('now'))
+    `).bind(
+      messageId, phone, text, messageType,
+      buttonId, buttonText, mediaUrl, mediaCaption, timestamp
+    ).run();
+
+
+    // Upsert chat
+    await env.DB.prepare(`
+      INSERT INTO chats (
+        phone, customer_name, last_message, last_message_type,
+        last_timestamp, last_direction, unread_count, total_messages, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 'incoming', 1, 1, datetime('now'))
+      ON CONFLICT(phone) DO UPDATE SET
+        customer_name   = excluded.customer_name,
+        last_message    = excluded.last_message,
+        last_message_type = excluded.last_message_type,
+        last_timestamp  = excluded.last_timestamp,
+        last_direction  = 'incoming',
+        unread_count    = unread_count + 1,
+        total_messages  = total_messages + 1,
+        updated_at      = datetime('now')
+    `).bind(phone, name, text || messageType, messageType, timestamp).run();
+
+    // Upsert customer
+// Get or create permanent customer ID
+const customerId = await getOrCreateCustomerId(env, phone);
+
+console.log('CUSTOMER UPSERT', {
+  phone,
+  customerId,
+  name
+});
+
+// Upsert customer
+await env.DB.prepare(`
+  INSERT INTO customers (
+    phone,
+    customer_id,
+    name,
+    message_count,
+    first_seen,
+    last_seen,
+    updated_at
+  )
+  VALUES (
+    ?, ?, ?, 1,
+    datetime('now'),
+    datetime('now'),
+    datetime('now')
+  )
+  ON CONFLICT(phone) DO UPDATE SET
+    customer_id = COALESCE(
+      customers.customer_id,
+      excluded.customer_id
+    ),
+    name          = excluded.name,
+    message_count = message_count + 1,
+    last_seen     = datetime('now'),
+    updated_at    = datetime('now')
+`).bind(
+  phone,
+  customerId,
+  name
+).run();
+
+// Owner Inbox alert for unsupported WhatsApp messages.
+// This does NOT decode hidden body. It alerts owner safely.
+if (messageType === 'unsupported') {
+  ctx.waitUntil((async () => {
+    try {
+      let unsupportedMeta = {};
+      try {
+        unsupportedMeta = JSON.parse(mediaCaption || '{}');
+      } catch (_) {}
+
+      const firstError = Array.isArray(unsupportedMeta.errors)
+        ? unsupportedMeta.errors[0]
+        : null;
+
+      await saveOwnerInboxAlert(env, ctx, {
+        type: 'unsupported',
+        priority: 'normal',
+        title: 'Unsupported WhatsApp Message',
+        body:
+          `From: ${name || 'Unknown'} (${phone})\n` +
+          `Time: ${formatISTDateTime()}\n` +
+          `Reason: ${firstError?.title || firstError?.details || 'Meta did not expose readable body'}\n\n` +
+          `Readable content is unavailable from WhatsApp Cloud API.`,
+        phone,
+        customerName: name || 'Unknown',
+        source: 'whatsapp',
+        actionType: 'chat',
+        actionLabel: 'Open Chat',
+        meta: unsupportedMeta,
+        dedupeKey: `unsupported:${messageId}`,
+      });
+    } catch (e) {
+      console.error('OWNER_INBOX_UNSUPPORTED_ALERT_ERROR', e);
+    }
+  })());
+}
+
+    // FCM push — fires in parallel, does not block autoresponder
+    ctx.waitUntil(sendFCMNotification(env, phone, name, text, messageId));
+
+    // AutoResponder
+    try {
+      const autoResponder = new AutoResponder(env);
+      await autoResponder.process({ phone, name, text, messageType, buttonId, messageId });
+    } catch(e) { console.error('Autoresponder error:', e); }
+
+    return jsonResponse({ status: 'ok' });
+
+  } catch(e) {
+    console.error('Webhook error:', e);
+    return jsonResponse({ status: 'ok' });
+  }
+}
+async function handleLogin(request, env) {
+  const body = await request
+    .json()
+    .catch(() => ({}));
+
+  const method = String(
+    body.method || ''
+  ).trim().toLowerCase();
+
+  const pin = String(
+    body.pin ?? ''
+  );
+
+  if (method === 'password') {
+    return errorResponse(
+      'Password login is disabled. Use PIN or biometric login.',
+      410
+    );
+  }
+
+  if (
+    method !== 'pin' &&
+    method !== 'biometric'
+  ) {
+    return errorResponse(
+      'Invalid method',
+      400
+    );
+  }
+
+  if (!env.APP_PIN) {
+    console.error(
+      'APP_PIN_MISSING'
+    );
+
+    return errorResponse(
+      'Login configuration unavailable',
+      503
+    );
+  }
+
+  if (
+    pin !== String(env.APP_PIN)
+  ) {
+    return errorResponse(
+      'Invalid PIN',
+      401
+    );
+  }
+
+  const payload = {
+    userId: 'admin',
+    role: 'admin',
+    exp:
+      Math.floor(Date.now() / 1000) +
+      7 * 24 * 3600,
+  };
+
+  const token =
+    await generateJWT(
+      payload,
+      env.JWT_SECRET
+    );
+
+  return jsonResponse({
+    success: true,
+    token,
+    user: {
+      id: 'admin',
+      email: '',
+      name: 'KAAPAV Admin',
+      role: 'admin',
+    },
+  });
+}
+
+async function handleGetChats(request, env) {
+  const url = new URL(request.url);
+  const limit = Math.min(
+    parseInt(url.searchParams.get('limit') || '1000000', 10),
+    1000000
+  );
+  const offset = parseInt(url.searchParams.get('offset') || '0', 10);
+
+  const { results } = await env.DB.prepare(`
+    SELECT
+      c.*,
+      COALESCE(c.last_message, lm.text) as last_message,
+      COALESCE(c.last_message_type, lm.message_type) as last_message_type,
+      COALESCE(c.last_timestamp, lm.timestamp, lm.created_at) as last_timestamp,
+      COALESCE(c.last_direction, lm.direction) as last_direction
+FROM chats c
+LEFT JOIN messages lm
+  ON lm.id = (
+    SELECT m2.id
+    FROM messages m2
+    WHERE m2.phone = c.phone
+    ORDER BY
+      datetime(
+        COALESCE(
+          m2.timestamp,
+          m2.created_at
+        )
+      ) DESC,
+      m2.id DESC
+    LIMIT 1
+  )
+ORDER BY datetime(COALESCE(c.last_timestamp, lm.timestamp, lm.created_at, c.updated_at, c.created_at)) DESC
+    LIMIT ? OFFSET ?
+  `).bind(limit, offset).all();
+
+  return jsonResponse({
+    success: true,
+    chats: results,
+    total: results.length
+  });
+}
+
+async function handleGetMessages(phone, request, env) {
+  const url = new URL(request.url);
+  const limit = Math.min(
+    parseInt(url.searchParams.get('limit') || '1000000', 10),
+    1000000
+  );
+  const before = url.searchParams.get('before');
+
+  const rawPhone = decodeURIComponent(String(phone || ''));
+  const digits = rawPhone.replace(/\D/g, '');
+  const phone10 = digits.slice(-10);
+
+  if (!phone10) {
+    return jsonResponse({
+      success: true,
+      messages: [],
+      total: 0
+    });
+  }
+
+  const cleanExpr = `
+    REPLACE(
+      REPLACE(
+        REPLACE(
+          REPLACE(
+            REPLACE(
+              REPLACE(phone, '+', ''),
+            ' ', ''),
+          '-', ''),
+        '(', ''),
+      ')', ''),
+    '@s.whatsapp.net', '')
+  `;
+
+  let query = `
+    SELECT *
+    FROM messages
+    WHERE ${cleanExpr} LIKE '%' || ?
+    ORDER BY datetime(COALESCE(timestamp, created_at)) DESC, id DESC
+    LIMIT ?
+  `;
+
+  let params = [phone10, limit];
+
+  if (before) {
+    query = `
+      SELECT *
+      FROM messages
+      WHERE ${cleanExpr} LIKE '%' || ?
+        AND datetime(COALESCE(timestamp, created_at)) < datetime(?)
+      ORDER BY datetime(COALESCE(timestamp, created_at)) DESC, id DESC
+      LIMIT ?
+    `;
+
+    params = [phone10, before, limit];
+  }
+
+  const { results } = await env.DB.prepare(query).bind(...params).all();
+
+  await env.DB.prepare(`
+    UPDATE chats
+    SET unread_count = 0
+    WHERE ${cleanExpr} LIKE '%' || ?
+  `).bind(phone10).run();
+
+  return jsonResponse({
+    success: true,
+    phone: rawPhone,
+    phone10,
+    total: results.length,
+    messages: results.reverse()
+  });
+}
+async function handleSendMessage(request, env) {
+  const body = await request.json();
+  const rawPhone = body.phone || body.to;
+const { phone91 } = normalizePhone(rawPhone);
+const phone = phone91;
+  const text = body.text || body.message;
+  const type = body.type || 'text';
+  const mediaUrl = body.mediaUrl;
+  const mediaCaption = body.mediaCaption;
+  const filename = body.filename;
+
+  if (!phone) {
+  return errorResponse(`valid phone required. Received: ${rawPhone || ''}`, 400);
+}
+
+  let waResult;
+  let savedText = text || '';
+
+  try {
+    switch (type) {
+      case 'image':
+        if (!mediaUrl) return errorResponse('mediaUrl required for image');
+        waResult = await sendWhatsAppImage(env, phone, mediaUrl, mediaCaption);
+        savedText = mediaCaption || '📷 Photo';
+        break;
+
+      case 'document':
+        if (!mediaUrl) return errorResponse('mediaUrl required for document');
+        waResult = await sendWhatsAppDocument(env, phone, mediaUrl, filename, mediaCaption);
+        savedText = filename || mediaCaption || '📄 Document';
+        break;
+
+      case 'video':
+        if (!mediaUrl) return errorResponse('mediaUrl required for video');
+        waResult = await sendWhatsAppVideo(env, phone, mediaUrl, mediaCaption);
+        savedText = mediaCaption || '🎬 Video';
+        break;
+
+      case 'buttons':
+        if (!text) return errorResponse('text required');
+        waResult = await sendWhatsAppButtons(env, phone, text, body.buttons);
+        break;
+
+      default:
+        if (!text) return errorResponse('text required');
+        waResult = await sendWhatsAppText(env, phone, text);
+        break;
+    }
+
+    if (waResult?.error) {
+  console.error('WhatsApp API error:', JSON.stringify({
+    phone,
+    rawPhone,
+    type,
+    error: waResult.error,
+  }));
+
+  return jsonResponse({
+    success: false,
+    error: `WhatsApp error: ${waResult.error.message || 'Unknown'}`,
+    whatsappError: waResult.error,
+    phone,
+    rawPhone,
+    type,
+  }, 502);
+}
+
+    const messageId = waResult?.messages?.[0]?.id || `local_${Date.now()}`;
+    const timestamp = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
+
+    await env.DB.prepare(`
+      INSERT OR IGNORE INTO messages (message_id, phone, text, message_type, direction, media_url, media_caption, status, timestamp, created_at)
+      VALUES (?, ?, ?, ?, 'outgoing', ?, ?, 'sent', ?, datetime('now'))
+    `).bind(messageId, phone, savedText, type, mediaUrl || null, mediaCaption || null, timestamp).run();
+
+await env.DB.prepare(`
+  INSERT INTO chats (
+    phone,
+    last_message,
+    last_message_type,
+    last_timestamp,
+    last_direction,
+    unread_count,
+    total_messages,
+    updated_at
+  )
+  VALUES (?, ?, ?, ?, 'outgoing', 0, 1, datetime('now'))
+  ON CONFLICT(phone) DO UPDATE SET
+    last_message = excluded.last_message,
+    last_message_type = excluded.last_message_type,
+    last_timestamp = excluded.last_timestamp,
+    last_direction = 'outgoing',
+    total_messages = COALESCE(chats.total_messages, 0) + 1,
+    updated_at = datetime('now')
+`).bind(phone, savedText, type, timestamp).run();
+
+    return jsonResponse({ success: true, messageId, timestamp });
+
+  } catch (e) {
+    console.error('Send message error:', e);
+    return errorResponse('Failed to send: ' + e.message, 500);
+  }
+}
+async function handleGetCatalogueOrders(request, env) {
+  const url = new URL(request.url);
+  const rawPhone = url.searchParams.get('phone') || url.searchParams.get('customer_phone') || '';
+  const { phone91, phonePlain } = normalizePhone(rawPhone);
+
+  if (!phone91) return errorResponse('phone required');
+
+  const { results } = await env.DB.prepare(`
+    SELECT
+      order_id,
+      customer_name,
+      phone,
+      items,
+      item_count,
+      subtotal,
+      shipping_cost,
+shipping_name,
+shipping_phone,
+shipping_address,
+shipping_city,
+shipping_state,
+shipping_pincode,
+      total,
+      status,
+      payment_status,
+      payment_link,
+      courier,
+      tracking_id,
+      tracking_url,
+      awb_number,
+      created_at,
+      updated_at,
+      paid_at,
+      shipped_at,
+      delivered_at,
+      cancelled_at
+    FROM orders
+    WHERE phone = ? OR phone = ?
+    ORDER BY datetime(created_at) DESC
+    LIMIT 50
+  `).bind(phone91, phonePlain).all();
+
+  const orders = (results || []).map(order => {
+    let items = [];
+    try {
+      const parsed = JSON.parse(order.items || '[]');
+      items = Array.isArray(parsed) ? parsed : [];
+    } catch (_) {}
+
+    return {
+      ...order,
+      items
+    };
+  });
+
+  return jsonResponse({
+    success: true,
+    orders,
+    total: orders.length
+  });
+}
+
+function parseOrderItemsForPacking(itemsRaw) {
+  try {
+    const items = typeof itemsRaw === 'string'
+      ? JSON.parse(itemsRaw || '[]')
+      : (itemsRaw || []);
+
+    return Array.isArray(items) ? items : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseProductImagesForPacking(product) {
+  let images = [];
+
+  try {
+    images = typeof product.images === 'string'
+      ? JSON.parse(product.images || '[]')
+      : (product.images || []);
+  } catch {
+    images = [];
+  }
+
+  if (!Array.isArray(images)) images = [];
+
+  if (product.image_url && !images.includes(product.image_url)) {
+    images.unshift(product.image_url);
+  }
+
+  return images.filter(Boolean);
+}
+
+async function enrichOrderForPacking(env, order) {
+  const items = parseOrderItemsForPacking(order.items);
+
+  const skus = [...new Set(
+    items
+      .map(i => String(i.sku || i.product_sku || i.id || '').trim())
+      .filter(Boolean)
+  )];
+
+  if (!skus.length) {
+    return { ...order, items };
+  }
+
+  const placeholders = skus.map(() => '?').join(',');
+
+  const { results } = await env.DB.prepare(`
+    SELECT sku, name, category, price, image_url, images, website_link
+    FROM products
+    WHERE sku IN (${placeholders})
+  `).bind(...skus).all();
+
+  const productMap = {};
+  for (const p of (results || [])) {
+    productMap[String(p.sku)] = p;
+  }
+
+  const packedItems = items.map(item => {
+    const sku = String(item.sku || item.product_sku || item.id || '').trim();
+    const product = productMap[sku] || null;
+    const productImages = product ? parseProductImagesForPacking(product) : [];
+
+    return {
+      ...item,
+      sku,
+      name: item.name || product?.name || sku || 'Jewellery',
+      category: item.category || product?.category || '',
+      price: Number(item.price || product?.price || 0),
+      qty: Number(item.qty || item.quantity || 1),
+
+      product_image_url:
+        item.product_image_url ||
+        item.image_url ||
+        item.image ||
+        productImages[0] ||
+        '',
+
+      product_images: productImages,
+      product_page_url: product?.website_link || ''
+    };
+  });
+
+  return {
+    ...order,
+    items: packedItems
+  };
+}
+
+function cleanReturnText(value, maxLength = 500) {
+  return String(value ?? '')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function parseReturnEvidence(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => cleanReturnText(item, 1000))
+    .filter((item) => /^https?:\/\//i.test(item))
+    .slice(0, 10);
+}
+
+function parseReturnJsonArray(value) {
+  try {
+    const parsed =
+      typeof value === 'string'
+        ? JSON.parse(value || '[]')
+        : value;
+
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+const CUSTOMER_RETURN_WINDOW_DAYS = 7;
+
+const CUSTOMER_RETURN_WINDOW_MS =
+  CUSTOMER_RETURN_WINDOW_DAYS *
+  24 *
+  60 *
+  60 *
+  1000;
+
+const CLOSED_RETURN_REQUEST_STATUSES =
+  new Set([
+    'rejected',
+    'refunded',
+    'completed',
+    'cancelled',
+  ]);
+
+function parseD1DateMilliseconds(value) {
+  const text = cleanReturnText(
+    value,
+    100
+  );
+
+  if (!text) {
+    return Number.NaN;
+  }
+
+  const normalized =
+    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(
+      text
+    )
+      ? `${text.replace(' ', 'T')}Z`
+      : text;
+
+  return Date.parse(normalized);
+}
+
+function isOpenReturnRequestStatus(value) {
+  const status = cleanReturnText(
+    value,
+    50
+  ).toLowerCase();
+
+  return Boolean(status) &&
+    !CLOSED_RETURN_REQUEST_STATUSES.has(
+      status
+    );
+}
+
+function getPurchaseReturnEligibility(order) {
+  const status = cleanReturnText(
+    order?.status,
+    50
+  ).toLowerCase();
+
+  const paymentStatus =
+    cleanReturnText(
+      order?.payment_status,
+      50
+    ).toLowerCase();
+
+  const deliveredTime =
+    parseD1DateMilliseconds(
+      order?.delivered_at
+    );
+
+  const expiresTime =
+    Number.isFinite(deliveredTime)
+      ? deliveredTime +
+        CUSTOMER_RETURN_WINDOW_MS
+      : Number.NaN;
+
+  const expiresAt =
+    Number.isFinite(expiresTime)
+      ? new Date(
+          expiresTime
+        ).toISOString()
+      : null;
+
+  const daysRemaining =
+    Number.isFinite(expiresTime)
+      ? Math.max(
+          0,
+          Math.ceil(
+            (
+              expiresTime -
+              Date.now()
+            ) /
+            (
+              24 *
+              60 *
+              60 *
+              1000
+            )
+          )
+        )
+      : 0;
+
+  if (paymentStatus !== 'paid') {
+    return {
+      eligible: false,
+      reason:
+        'Return or exchange is available only after payment',
+      code:
+        'payment_not_completed',
+      expiresAt,
+      daysRemaining,
+    };
+  }
+
+  if (
+    status === 'cancelled' ||
+    status === 'returned' ||
+    paymentStatus === 'refunded'
+  ) {
+    return {
+      eligible: false,
+      reason:
+        'This order is already closed',
+      code:
+        'order_closed',
+      expiresAt,
+      daysRemaining,
+    };
+  }
+
+  if (status !== 'delivered') {
+    return {
+      eligible: false,
+      reason:
+        'Return or exchange is available only after delivery',
+      code:
+        'order_not_delivered',
+      expiresAt,
+      daysRemaining,
+    };
+  }
+
+  if (!Number.isFinite(deliveredTime)) {
+    return {
+      eligible: false,
+      reason:
+        'Delivery date is unavailable',
+      code:
+        'delivery_date_missing',
+      expiresAt,
+      daysRemaining,
+    };
+  }
+
+  if (Date.now() > expiresTime) {
+    return {
+      eligible: false,
+      reason:
+        'Seven-day return or exchange window from the delivery date has expired',
+      code:
+        'return_window_expired',
+      expiresAt,
+      daysRemaining: 0,
+    };
+  }
+
+  return {
+    eligible: true,
+    reason: '',
+    code: 'eligible',
+    expiresAt,
+    daysRemaining,
+  };
+}
+
+function generateReturnRequestId() {
+  const date = new Date()
+    .toISOString()
+    .slice(0, 10)
+    .replace(/-/g, '');
+
+  const random = crypto.randomUUID()
+    .replace(/-/g, '')
+    .slice(0, 8)
+    .toUpperCase();
+
+  return `KRE-${date}-${random}`;
+}
+
+function buildReturnRequestItems(order, body) {
+  const orderItems = parseOrderItemsForPacking(order.items);
+
+  if (!Array.isArray(orderItems) || orderItems.length === 0) {
+    return {
+      success: false,
+      status: 409,
+      error: 'Order does not contain returnable items',
+    };
+  }
+
+  const requestScope =
+    body.request_scope === 'full_order'
+      ? 'full_order'
+      : 'items';
+
+  const rawRequestedItems =
+    requestScope === 'full_order'
+      ? orderItems.map((item, index) => ({
+          line_index: index,
+          quantity: Number(
+            item.qty ??
+            item.quantity ??
+            1
+          ),
+        }))
+      : Array.isArray(body.items)
+          ? body.items
+          : [];
+
+  if (rawRequestedItems.length === 0) {
+    return {
+      success: false,
+      status: 400,
+      error: 'At least one return item is required',
+    };
+  }
+
+  const selectedItems = [];
+  const usedIndexes = new Set();
+
+  for (const requestedItem of rawRequestedItems) {
+    let lineIndex = Number(
+      requestedItem?.line_index
+    );
+
+    if (
+      !Number.isInteger(lineIndex) ||
+      lineIndex < 0 ||
+      lineIndex >= orderItems.length
+    ) {
+      const requestedSku = cleanReturnText(
+        requestedItem?.sku,
+        100
+      ).toUpperCase();
+
+      lineIndex = orderItems.findIndex(
+        (orderItem, index) =>
+          !usedIndexes.has(index) &&
+          cleanReturnText(
+            orderItem?.sku ??
+            orderItem?.product_sku ??
+            orderItem?.id,
+            100
+          ).toUpperCase() === requestedSku
+      );
+    }
+
+    if (
+      lineIndex < 0 ||
+      lineIndex >= orderItems.length
+    ) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Selected item does not belong to this order',
+      };
+    }
+
+    if (usedIndexes.has(lineIndex)) {
+      return {
+        success: false,
+        status: 400,
+        error: `Order line ${lineIndex} was selected more than once`,
+      };
+    }
+
+    const orderItem = orderItems[lineIndex];
+
+    const orderedQuantity = Math.max(
+      1,
+      Math.floor(
+        Number(
+          orderItem.qty ??
+          orderItem.quantity ??
+          1
+        )
+      )
+    );
+
+    const requestedQuantity = Math.floor(
+      Number(
+        requestedItem?.quantity ??
+        requestedItem?.qty ??
+        orderedQuantity
+      )
+    );
+
+    if (
+      !Number.isFinite(requestedQuantity) ||
+      requestedQuantity <= 0 ||
+      requestedQuantity > orderedQuantity
+    ) {
+      return {
+        success: false,
+        status: 400,
+        error:
+          `Invalid quantity for order line ${lineIndex}. ` +
+          `Maximum allowed: ${orderedQuantity}`,
+      };
+    }
+
+    const sku = cleanReturnText(
+      orderItem.sku ??
+      orderItem.product_sku ??
+      orderItem.id,
+      100
+    );
+
+    if (!sku) {
+      return {
+        success: false,
+        status: 409,
+        error: `SKU missing for order line ${lineIndex}`,
+      };
+    }
+
+    usedIndexes.add(lineIndex);
+
+    selectedItems.push({
+      lineIndex,
+      sku,
+      productName: cleanReturnText(
+        orderItem.name ??
+        orderItem.product_name ??
+        sku,
+        300
+      ),
+      quantity: requestedQuantity,
+      unitPrice: Math.max(
+        0,
+        Number(orderItem.price ?? 0)
+      ),
+      replacementSku: cleanReturnText(
+        requestedItem?.replacement_sku,
+        100
+      ) || null,
+      replacementName: cleanReturnText(
+        requestedItem?.replacement_name,
+        300
+      ) || null,
+      replacementUnitPrice:
+        requestedItem?.replacement_unit_price == null
+          ? null
+          : Math.max(
+              0,
+              Number(
+                requestedItem.replacement_unit_price
+              )
+            ),
+      conditionNote: cleanReturnText(
+        requestedItem?.condition_note,
+        1000
+      ),
+      evidenceUrls: parseReturnEvidence(
+        requestedItem?.evidence_urls
+      ),
+    });
+  }
+
+  return {
+    success: true,
+    requestScope,
+    items: selectedItems,
+  };
+}
+
+async function handleCreateReturnRequest(
+  orderId,
+  request,
+  env,
+  options = {}
+) {
+  const body =
+    options.body ??
+    await request
+      .json()
+      .catch(() => ({}));
+
+  const order =
+    options.order ??
+    await env.DB.prepare(`
+      SELECT *
+      FROM orders
+      WHERE order_id = ?
+      LIMIT 1
+    `)
+      .bind(orderId)
+      .first();
+
+  if (!order) {
+    return errorResponse(
+      'Order not found',
+      404
+    );
+  }
+
+  const requestType =
+    cleanReturnText(
+      body.request_type,
+      20
+    ).toLowerCase();
+
+  if (
+    requestType !== 'return' &&
+    requestType !== 'exchange'
+  ) {
+    return errorResponse(
+      'request_type must be return or exchange',
+      400
+    );
+  }
+
+  const reasonCode =
+    cleanReturnText(
+      body.reason_code || 'other',
+      50
+    ).toLowerCase();
+
+  const reasonText =
+    cleanReturnText(
+      body.reason_text,
+      1000
+    );
+
+  const customerNote =
+    cleanReturnText(
+      body.customer_note,
+      2000
+    );
+
+  if (
+    !reasonText &&
+    reasonCode === 'other'
+  ) {
+    return errorResponse(
+      'Return or exchange reason is required',
+      400
+    );
+  }
+
+  const ownerOverride =
+    options.allowOwnerOverride !== false &&
+    body.owner_override === true;
+
+  const eligibility =
+    getPurchaseReturnEligibility(
+      order
+    );
+
+  if (
+    !ownerOverride &&
+    !eligibility.eligible
+  ) {
+    return errorResponse(
+      eligibility.reason,
+      409
+    );
+  }
+
+  const existingRequest =
+    await env.DB.prepare(`
+      SELECT
+        request_id,
+        status
+      FROM return_requests
+      WHERE order_id = ?
+        AND status NOT IN (
+          'rejected',
+          'refunded',
+          'completed',
+          'cancelled'
+        )
+      ORDER BY id DESC
+      LIMIT 1
+    `)
+      .bind(orderId)
+      .first();
+
+  if (existingRequest) {
+    return errorResponse(
+      `Open request already exists: ` +
+      `${existingRequest.request_id}`,
+      409
+    );
+  }
+
+  const itemResult =
+    buildReturnRequestItems(
+      order,
+      body
+    );
+
+  if (!itemResult.success) {
+    return errorResponse(
+      itemResult.error,
+      itemResult.status
+    );
+  }
+
+  const requestId =
+    generateReturnRequestId();
+
+  const evidenceUrls =
+    parseReturnEvidence(
+      body.evidence_urls
+    );
+
+  const reverseShippingFee =
+    Math.max(
+      0,
+      Number(
+        options.fixedReverseShippingFee ??
+        body.reverse_shipping_fee ??
+        60
+      )
+    );
+
+  const statements = [
+    env.DB.prepare(`
+      INSERT INTO return_requests (
+        request_id,
+        order_id,
+        phone,
+        customer_name,
+        request_type,
+        request_scope,
+        reason_code,
+        reason_text,
+        customer_note,
+        evidence_urls_json,
+        status,
+        reverse_shipping_fee,
+        payment_id,
+        refund_status,
+        refund_gateway,
+        refund_method,
+        refund_currency,
+        requested_at,
+        created_at,
+        updated_at
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        'requested',
+        ?,
+        ?,
+        'not_started',
+        '',
+        'original_payment',
+        'INR',
+        datetime('now'),
+        datetime('now'),
+        datetime('now')
+      )
+    `).bind(
+      requestId,
+      orderId,
+      cleanReturnText(
+        order.phone,
+        30
+      ),
+      cleanReturnText(
+        order.customer_name,
+        300
+      ),
+      requestType,
+      itemResult.requestScope,
+      reasonCode,
+      reasonText,
+      customerNote,
+      JSON.stringify(
+        evidenceUrls
+      ),
+      reverseShippingFee,
+      cleanReturnText(
+        order.payment_id,
+        200
+      ) || null
+    ),
+
+    env.DB.prepare(`
+      UPDATE orders
+      SET
+        return_requested = 1,
+        return_reason = ?,
+        return_requested_at =
+          datetime('now'),
+        updated_at =
+          datetime('now')
+      WHERE order_id = ?
+    `).bind(
+      reasonText || reasonCode,
+      orderId
+    ),
+  ];
+
+  for (
+    const item of itemResult.items
+  ) {
+    statements.push(
+      env.DB.prepare(`
+        INSERT INTO return_request_items (
+          request_id,
+          order_id,
+          line_index,
+          sku,
+          product_name,
+          quantity,
+          unit_price,
+          replacement_sku,
+          replacement_name,
+          replacement_unit_price,
+          condition_note,
+          evidence_urls_json,
+          created_at,
+          updated_at
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          datetime('now'),
+          datetime('now')
+        )
+      `).bind(
+        requestId,
+        orderId,
+        item.lineIndex,
+        item.sku,
+        item.productName,
+        item.quantity,
+        item.unitPrice,
+        item.replacementSku,
+        item.replacementName,
+        item.replacementUnitPrice,
+        item.conditionNote,
+        JSON.stringify(
+          item.evidenceUrls
+        )
+      )
+    );
+  }
+
+  await env.DB.batch(
+    statements
+  );
+
+  const eventSource =
+    cleanReturnText(
+      options.eventSource ||
+      'admin',
+      50
+    ) || 'admin';
+
+  await logOrderEvent(
+    env,
+    orderId,
+    requestType === 'return'
+      ? 'return_requested'
+      : 'exchange_requested',
+    `${requestType} request ` +
+    `${requestId} created`,
+    {
+      requestId,
+      requestType,
+      requestScope:
+        itemResult.requestScope,
+      itemCount:
+        itemResult.items.length,
+      reasonCode,
+      returnExpiresAt:
+        eligibility.expiresAt,
+    },
+    eventSource
+  );
+
+  if (
+    options.notifyCustomer === true
+  ) {
+    const typeLabel =
+      requestType === 'exchange'
+        ? 'Exchange'
+        : 'Return';
+
+    const customerName =
+      cleanReturnText(
+        order.customer_name ||
+        'Customer',
+        300
+      );
+
+    try {
+      await sendWhatsAppText(
+        env,
+        order.phone,
+        `*${typeLabel} Request Received*\n\n` +
+        `Hi ${customerName},\n\n` +
+        `Order: *${orderId}*\n` +
+        `Request ID: *${requestId}*\n` +
+        `Status: Requested\n\n` +
+        `Our team will review the request before pickup, exchange, or refund action.\n` +
+        `Reverse shipping fee: ₹${reverseShippingFee}\n\n` +
+        `KAAPAV Fashion Jewellery`
+      );
+    } catch (
+      notificationError
+    ) {
+      console.error(
+        'RETURN_CUSTOMER_NOTIFICATION_FAILED',
+        requestId,
+        notificationError?.message ||
+        notificationError
+      );
+    }
+
+    try {
+      await sendWhatsAppText(
+        env,
+        env.OWNER_PHONE,
+        `*New ${typeLabel} Request*\n\n` +
+        `Order: *${orderId}*\n` +
+        `Request ID: *${requestId}*\n` +
+        `Customer: ${customerName} (${order.phone || '-'})\n` +
+        `Reason: ${reasonText || reasonCode}\n\n` +
+        `Review required in the KAAPAV order workflow.`
+      );
+    } catch (
+      notificationError
+    ) {
+      console.error(
+        'RETURN_OWNER_NOTIFICATION_FAILED',
+        requestId,
+        notificationError?.message ||
+        notificationError
+      );
+    }
+  }
+
+  const createdRequest =
+    await env.DB.prepare(`
+      SELECT *
+      FROM return_requests
+      WHERE request_id = ?
+    `)
+      .bind(requestId)
+      .first();
+
+  const {
+    results: createdItems,
+  } =
+    await env.DB.prepare(`
+      SELECT *
+      FROM return_request_items
+      WHERE request_id = ?
+      ORDER BY line_index ASC
+    `)
+      .bind(requestId)
+      .all();
+
+  return jsonResponse(
+    {
+      success: true,
+      request: {
+        ...createdRequest,
+
+        evidence_urls:
+          parseReturnJsonArray(
+            createdRequest
+              ?.evidence_urls_json
+          ),
+
+        items:
+          createdItems || [],
+      },
+
+      returnWindow: {
+        days:
+          CUSTOMER_RETURN_WINDOW_DAYS,
+
+        expiresAt:
+          eligibility.expiresAt,
+      },
+    },
+    201
+  );
+}
+
+async function handleReviewReturnQc(
+  orderId,
+  requestId,
+  request,
+  env
+) {
+  const body = await request
+    .json()
+    .catch(() => ({}));
+
+  const decision = cleanReturnText(
+    body.decision,
+    20
+  ).toLowerCase();
+
+  if (
+    decision !== 'passed' &&
+    decision !== 'failed'
+  ) {
+    return errorResponse(
+      'decision must be passed or failed',
+      400
+    );
+  }
+
+  const ownerNote = cleanReturnText(
+    body.owner_note,
+    2000
+  );
+
+  if (
+    decision === 'failed' &&
+    !ownerNote
+  ) {
+    return errorResponse(
+      'QC failure reason is required',
+      400
+    );
+  }
+
+  const returnRequest =
+    await env.DB.prepare(`
+      SELECT
+        rr.*,
+        o.customer_name AS order_customer_name,
+        o.phone AS order_phone
+      FROM return_requests rr
+      INNER JOIN orders o
+        ON o.order_id = rr.order_id
+      WHERE rr.order_id = ?
+        AND rr.request_id = ?
+      LIMIT 1
+    `)
+      .bind(
+        orderId,
+        requestId
+      )
+      .first();
+
+  if (!returnRequest) {
+    return errorResponse(
+      'Return request not found',
+      404
+    );
+  }
+
+  const currentStatus = String(
+    returnRequest.status || ''
+  ).toLowerCase();
+
+  if (currentStatus !== 'received') {
+    return errorResponse(
+      `Only received requests can complete quality inspection. ` +
+      `Current status: ${currentStatus || 'unknown'}`,
+      409
+    );
+  }
+
+  const nextStatus =
+    decision === 'passed'
+      ? 'qc_passed'
+      : 'qc_failed';
+
+  const qcNote = ownerNote
+    ? `QC ${decision}: ${ownerNote}`
+    : `QC ${decision}`;
+
+  const updateResult =
+    await env.DB.prepare(`
+      UPDATE return_requests
+      SET
+        status = ?,
+        qc_completed_at = datetime('now'),
+
+        owner_note = CASE
+          WHEN ? != ''
+          THEN CASE
+            WHEN COALESCE(owner_note, '') = ''
+            THEN ?
+            ELSE owner_note || char(10) || ?
+          END
+          ELSE owner_note
+        END,
+
+        updated_at = datetime('now')
+      WHERE order_id = ?
+        AND request_id = ?
+        AND status = 'received'
+    `)
+      .bind(
+        nextStatus,
+        qcNote,
+        qcNote,
+        qcNote,
+        orderId,
+        requestId
+      )
+      .run();
+
+  if (
+    Number(
+      updateResult?.meta?.changes || 0
+    ) !== 1
+  ) {
+    return errorResponse(
+      'Return request changed before quality inspection completed. Refresh and retry.',
+      409
+    );
+  }
+
+  const requestType = String(
+    returnRequest.request_type ||
+    'return'
+  ).toLowerCase();
+
+  const typeLabel =
+    requestType === 'exchange'
+      ? 'Exchange'
+      : 'Return';
+
+  await logOrderEvent(
+    env,
+    orderId,
+    `${requestType}_${nextStatus}`,
+    `${typeLabel} request ${requestId} quality inspection ${decision}`,
+    {
+      requestId,
+      previousStatus: currentStatus,
+      status: nextStatus,
+      decision,
+      ownerNote,
+    },
+    'admin'
+  );
+
+  const customerPhone =
+    cleanReturnText(
+      returnRequest.order_phone ||
+      returnRequest.phone,
+      30
+    );
+
+  if (customerPhone) {
+    const customerName =
+      cleanReturnText(
+        returnRequest.order_customer_name ||
+        returnRequest.customer_name ||
+        'Customer',
+        300
+      );
+
+    const message =
+      decision === 'passed'
+        ? (
+            `*${typeLabel} Quality Check Passed*\n\n` +
+            `Hi ${customerName},\n\n` +
+            `Order: *${orderId}*\n` +
+            `Request ID: *${requestId}*\n` +
+            `Status: QC Passed\n\n` +
+            `Your returned package has passed inspection. ` +
+            `The next refund or exchange action requires separate owner confirmation.\n\n` +
+            `No refund or exchange shipment has been started automatically.\n\n` +
+            `KAAPAV Fashion Jewellery`
+          )
+        : (
+            `*${typeLabel} Quality Check Update*\n\n` +
+            `Hi ${customerName},\n\n` +
+            `Order: *${orderId}*\n` +
+            `Request ID: *${requestId}*\n` +
+            `Status: QC Needs Review\n\n` +
+            `The returned package could not be approved during inspection. ` +
+            `Our team will review the case and contact you.\n\n` +
+            `No refund or exchange shipment has been started automatically.\n\n` +
+            `KAAPAV Fashion Jewellery`
+          );
+
+    try {
+      await sendWhatsAppText(
+        env,
+        customerPhone,
+        message
+      );
+    } catch (notificationError) {
+      console.error(
+        'RETURN_QC_NOTIFICATION_FAILED',
+        requestId,
+        notificationError?.message ||
+        notificationError
+      );
+    }
+  }
+
+  const updatedRequest =
+    await env.DB.prepare(`
+      SELECT *
+      FROM return_requests
+      WHERE order_id = ?
+        AND request_id = ?
+      LIMIT 1
+    `)
+      .bind(
+        orderId,
+        requestId
+      )
+      .first();
+
+  return jsonResponse({
+    success: true,
+    decision,
+    status: nextStatus,
+    request: updatedRequest,
+  });
+}
+
+async function handleProcessReturnRefund(
+  orderId,
+  requestId,
+  request,
+  env
+) {
+  const body = await request
+    .json()
+    .catch(() => ({}));
+
+  const deductFee =
+    body.deduct_reverse_shipping_fee === true;
+
+  const previewOnly =
+    body.preview_only === true;
+
+  const ownerNote = cleanReturnText(
+    body.owner_note,
+    2000
+  );
+
+  const row = await env.DB.prepare(`
+    SELECT
+      rr.*,
+      o.total AS order_total,
+      o.subtotal AS order_subtotal,
+      o.discount AS order_discount,
+      o.payment_status AS order_payment_status,
+      o.payment_id AS order_payment_id,
+      o.customer_name AS order_customer_name,
+      o.phone AS order_phone
+    FROM return_requests rr
+    JOIN orders o
+      ON o.order_id = rr.order_id
+    WHERE rr.order_id = ?
+      AND rr.request_id = ?
+    LIMIT 1
+  `)
+    .bind(
+      orderId,
+      requestId
+    )
+    .first();
+
+  if (!row) {
+    return errorResponse(
+      'Return request not found',
+      404
+    );
+  }
+
+  if (
+    String(
+      row.request_type || ''
+    ).toLowerCase() !== 'return'
+  ) {
+    return errorResponse(
+      'Only return requests can be refunded. Use the exchange workflow for exchanges.',
+      409
+    );
+  }
+
+  const savedRefundStatus = String(
+    row.refund_status ||
+    'not_started'
+  ).toLowerCase();
+
+  if (
+    savedRefundStatus === 'processed' &&
+    row.refund_id
+  ) {
+    return jsonResponse({
+      success: true,
+      alreadyProcessed: true,
+      status: row.status,
+      refundStatus: savedRefundStatus,
+      refundId: row.refund_id,
+      amount: Number(
+        row.refund_amount || 0
+      ),
+    });
+  }
+
+  const currentStatus = String(
+    row.status || ''
+  ).toLowerCase();
+
+  if (currentStatus !== 'qc_passed') {
+    return errorResponse(
+      `Only QC-passed returns can be refunded. ` +
+      `Current status: ${currentStatus || 'unknown'}`,
+      409
+    );
+  }
+
+  if (
+    String(
+      row.order_payment_status || ''
+    ).toLowerCase() !== 'paid'
+  ) {
+    return errorResponse(
+      'Order payment is not eligible for refund',
+      409
+    );
+  }
+
+  const paymentId = cleanReturnText(
+    row.payment_id ||
+    row.order_payment_id,
+    200
+  );
+
+  if (!paymentId.startsWith('pay_')) {
+    return errorResponse(
+      'A Razorpay payment ID is required. COD or offline refunds must be handled manually.',
+      409
+    );
+  }
+
+  const totals = await env.DB.prepare(`
+    SELECT
+      COALESCE(
+        SUM(
+          quantity *
+          unit_price
+        ),
+        0
+      ) AS selected_gross
+    FROM return_request_items
+    WHERE order_id = ?
+      AND request_id = ?
+  `)
+    .bind(
+      orderId,
+      requestId
+    )
+    .first();
+
+  const selectedGross = Math.round(
+    Number(
+      totals?.selected_gross || 0
+    ) * 100
+  ) / 100;
+
+  if (
+    !Number.isFinite(selectedGross) ||
+    selectedGross <= 0
+  ) {
+    return errorResponse(
+      'Return item value is unavailable',
+      409
+    );
+  }
+
+  const orderSubtotal = Math.max(
+    selectedGross,
+    Number(
+      row.order_subtotal || 0
+    )
+  );
+
+  const orderDiscount = Math.max(
+    0,
+    Number(
+      row.order_discount || 0
+    )
+  );
+
+  const allocatedDiscount =
+    orderSubtotal > 0
+      ? Math.round(
+          Math.min(
+            orderDiscount,
+            orderDiscount *
+            (
+              selectedGross /
+              orderSubtotal
+            )
+          ) * 100
+        ) / 100
+      : 0;
+
+  const refundableItemValue = Math.max(
+    0,
+    Math.round(
+      (
+        selectedGross -
+        allocatedDiscount
+      ) * 100
+    ) / 100
+  );
+
+  const reverseFee = Math.max(
+    0,
+    Number(
+      row.reverse_shipping_fee ??
+      60
+    )
+  );
+
+  const deductionAmount =
+    deductFee
+      ? Math.round(
+          reverseFee * 100
+        ) / 100
+      : 0;
+
+  const refundAmount = Math.round(
+    (
+      refundableItemValue -
+      deductionAmount
+    ) * 100
+  ) / 100;
+
+  if (refundAmount < 1) {
+    return errorResponse(
+      'Final Razorpay refund must be at least ₹1 after deduction',
+      409
+    );
+  }
+
+  const orderTotal = Math.max(
+    0,
+    Number(
+      row.order_total || 0
+    )
+  );
+
+  if (
+    orderTotal > 0 &&
+    refundAmount > orderTotal
+  ) {
+    return errorResponse(
+      'Calculated refund exceeds the paid total',
+      409
+    );
+  }
+
+  if (previewOnly) {
+    return jsonResponse({
+      success: true,
+      preview: true,
+      requestId,
+      selectedGross,
+      allocatedDiscount,
+      refundableItemValue,
+      reverseShippingFee: reverseFee,
+      reverseShippingDeducted:
+        deductFee,
+      deductionAmount,
+      amount: refundAmount,
+      currency: 'INR',
+    });
+  }
+
+  const amountPaise = Math.round(
+  refundAmount * 100
+);
+
+const savedKey = cleanReturnText(
+  row.refund_idempotency_key,
+  100
+);
+
+if (
+  savedKey &&
+  Math.abs(
+    Number(
+      row.refund_amount || 0
+    ) -
+    refundAmount
+  ) > 0.001
+) {
+  return errorResponse(
+    'Refund amount cannot change while the existing Razorpay request is being retried',
+    409
+  );
+}
+
+const generatedKey = (
+  `KRF_${requestId}_` +
+  `${Date.now()}_` +
+  `${crypto.randomUUID()}`
+)
+  .replace(
+    /[^A-Za-z0-9_-]/g,
+    '_'
+  )
+  .slice(0, 100);
+
+const idempotencyKey =
+  savedKey || generatedKey;
+
+const retryingSameRefund =
+  savedKey.length > 0;
+
+  const note = ownerNote
+    ? `Refund initiated: ${ownerNote}`
+    : 'Refund initiated';
+
+  const claim = await env.DB.prepare(`
+    UPDATE return_requests
+    SET
+      refund_amount = ?,
+      refund_idempotency_key = ?,
+      refund_status = 'processing',
+      refund_gateway = 'razorpay',
+      refund_method = 'original_payment',
+      refund_currency = 'INR',
+      refund_speed_requested = 'normal',
+      refund_failure_reason = '',
+      refund_failed_at = NULL,
+
+      refund_initiated_at =
+        COALESCE(
+          refund_initiated_at,
+          datetime('now')
+        ),
+
+      approved_by = CASE
+        WHEN COALESCE(
+          approved_by,
+          ''
+        ) = ''
+        THEN 'owner'
+        ELSE approved_by
+      END,
+
+      owner_note = CASE
+        WHEN ? = ''
+        THEN owner_note
+
+        WHEN COALESCE(
+          owner_note,
+          ''
+        ) = ''
+        THEN ?
+
+        ELSE
+          owner_note ||
+          char(10) ||
+          ?
+      END,
+
+      updated_at = datetime('now')
+
+    WHERE order_id = ?
+      AND request_id = ?
+      AND status = 'qc_passed'
+      AND refund_id IS NULL
+
+      AND refund_status IN (
+        'not_started',
+        'failed',
+        'processing'
+      )
+
+      AND (
+        refund_idempotency_key IS NULL OR
+        refund_idempotency_key = ?
+      )
+  `)
+    .bind(
+      refundAmount,
+      idempotencyKey,
+      note,
+      note,
+      note,
+      orderId,
+      requestId,
+      idempotencyKey
+    )
+    .run();
+
+  if (
+    Number(
+      claim?.meta?.changes || 0
+    ) !== 1
+  ) {
+    return errorResponse(
+      'Return refund state changed. Refresh and retry.',
+      409
+    );
+  }
+
+  try {
+    const refund =
+      await processRazorpayRefund(
+        env,
+        paymentId,
+        refundAmount,
+        orderId,
+        {
+          requestId,
+          idempotencyKey,
+          reverseShippingDeducted:
+            deductFee,
+          verifyPayment:
+            !retryingSameRefund,
+        }
+      );
+
+    const refundStatus = String(
+      refund.status || 'pending'
+    ).toLowerCase();
+
+    if (refundStatus === 'failed') {
+      throw new Error(
+        'Razorpay returned a failed refund status'
+      );
+    }
+
+    const processed =
+      refundStatus === 'processed';
+
+    const requestStatus =
+      processed
+        ? 'refunded'
+        : 'refund_pending';
+
+    const acquirer =
+      refund.acquirer_data || {};
+
+    const referenceType =
+      acquirer.arn
+        ? 'arn'
+        : acquirer.rrn
+          ? 'rrn'
+          : acquirer.utr
+            ? 'utr'
+            : null;
+
+    const reference =
+      acquirer.arn ||
+      acquirer.rrn ||
+      acquirer.utr ||
+      null;
+
+    await env.DB.prepare(`
+      UPDATE return_requests
+      SET
+        status = ?,
+        refund_id = ?,
+        refund_status = ?,
+        refund_speed_requested = ?,
+        refund_speed_processed = ?,
+        refund_acquirer_reference = ?,
+        refund_acquirer_reference_type = ?,
+
+        refund_processed_at = CASE
+          WHEN ? = 'processed'
+          THEN datetime('now')
+          ELSE refund_processed_at
+        END,
+
+        completed_at = CASE
+          WHEN ? = 'processed'
+          THEN datetime('now')
+          ELSE completed_at
+        END,
+
+        updated_at = datetime('now')
+
+      WHERE order_id = ?
+        AND request_id = ?
+        AND refund_idempotency_key = ?
+    `)
+      .bind(
+        requestStatus,
+        cleanReturnText(
+          refund.id,
+          200
+        ) || null,
+        refundStatus,
+        cleanReturnText(
+          refund.speed_requested ||
+          'normal',
+          50
+        ),
+        cleanReturnText(
+          refund.speed_processed,
+          50
+        ) || null,
+        reference,
+        referenceType,
+        refundStatus,
+        refundStatus,
+        orderId,
+        requestId,
+        idempotencyKey
+      )
+      .run();
+
+    await env.DB.prepare(`
+      INSERT OR IGNORE INTO return_refund_events (
+        event_id,
+        request_id,
+        order_id,
+        payment_id,
+        refund_id,
+        event_type,
+        refund_status,
+        amount,
+        currency,
+        acquirer_reference,
+        acquirer_reference_type,
+        payload_json,
+        processing_status,
+        error_message,
+        received_at,
+        processed_at
+      ) VALUES (
+        ?, ?, ?, ?, ?,
+        'refund.api_response',
+        ?, ?, 'INR',
+        ?, ?, ?,
+        'processed',
+        '',
+        datetime('now'),
+        datetime('now')
+      )
+    `)
+      .bind(
+        `refund_api_${refund.id || idempotencyKey}`,
+        requestId,
+        orderId,
+        paymentId,
+        cleanReturnText(
+          refund.id,
+          200
+        ) || null,
+        refundStatus,
+        refundAmount,
+        reference,
+        referenceType,
+        JSON.stringify(refund)
+      )
+      .run();
+
+    if (processed) {
+      const refundTotals =
+        await env.DB.prepare(`
+          SELECT
+            COALESCE(
+              SUM(refund_amount),
+              0
+            ) AS refunded_total
+          FROM return_requests
+          WHERE order_id = ?
+            AND refund_status = 'processed'
+        `)
+          .bind(orderId)
+          .first();
+
+      const fullyRefunded =
+        orderTotal > 0 &&
+        Number(
+          refundTotals?.refunded_total ||
+          0
+        ) + 0.001 >= orderTotal;
+
+      if (fullyRefunded) {
+        await env.DB.prepare(`
+          UPDATE orders
+          SET
+            payment_status = 'refunded',
+            updated_at = datetime('now')
+          WHERE order_id = ?
+        `)
+          .bind(orderId)
+          .run();
+      }
+    }
+
+    await logOrderEvent(
+      env,
+      orderId,
+      processed
+        ? 'return_refund_processed'
+        : 'return_refund_pending',
+      `Return request ${requestId} ` +
+      `refund ${refundStatus}: ` +
+      `₹${refundAmount.toFixed(2)}`,
+      {
+        requestId,
+        refundId:
+          refund.id || '',
+        selectedGross,
+        allocatedDiscount,
+        refundableItemValue,
+        reverseShippingDeducted:
+          deductFee,
+        deductionAmount,
+        refundAmount,
+      },
+      'admin'
+    );
+
+    try {
+      await sendWhatsAppText(
+        env,
+        row.order_phone ||
+        row.phone,
+        `*Return Refund ${processed ? 'Processed' : 'Initiated'}*\n\n` +
+        `Order: *${orderId}*\n` +
+        `Request ID: *${requestId}*\n` +
+        `Refund amount: *₹${refundAmount.toFixed(2)}*\n` +
+        `Reverse shipping deduction: *₹${deductionAmount.toFixed(2)}*\n` +
+        `Refund ID: *${refund.id || 'Pending'}*\n\n` +
+        `Refund is being returned to the original payment method.\n\n` +
+        `KAAPAV Fashion Jewellery`
+      );
+    } catch (
+      notificationError
+    ) {
+      console.error(
+        'RETURN_REFUND_NOTIFICATION_FAILED',
+        requestId,
+        notificationError?.message ||
+        notificationError
+      );
+    }
+
+    return jsonResponse({
+      success: true,
+      status: requestStatus,
+      refundStatus,
+      refundId:
+        refund.id || null,
+      selectedGross,
+      allocatedDiscount,
+      refundableItemValue,
+      reverseShippingDeducted:
+        deductFee,
+      deductionAmount,
+      amount: refundAmount,
+    });
+  } catch (error) {
+    const reason = cleanReturnText(
+      error?.message || error,
+      2000
+    );
+
+    await env.DB.prepare(`
+      UPDATE return_requests
+      SET
+        refund_status = 'failed',
+        refund_failure_reason = ?,
+        refund_failed_at = datetime('now'),
+        updated_at = datetime('now')
+      WHERE order_id = ?
+        AND request_id = ?
+        AND refund_idempotency_key = ?
+        AND refund_id IS NULL
+    `)
+      .bind(
+        reason,
+        orderId,
+        requestId,
+        idempotencyKey
+      )
+      .run();
+
+    await logOrderEvent(
+      env,
+      orderId,
+      'return_refund_failed',
+      `Return request ${requestId} refund failed`,
+      {
+        requestId,
+        refundAmount,
+        reverseShippingDeducted:
+          deductFee,
+        deductionAmount,
+        error: reason,
+      },
+      'admin'
+    );
+
+    return errorResponse(
+      `Refund failed: ${reason}`,
+      502
+    );
+  }
+}
+
+async function handleMarkReturnReceived(
+  orderId,
+  requestId,
+  request,
+  env
+) {
+  const body = await request
+    .json()
+    .catch(() => ({}));
+
+  const ownerNote = cleanReturnText(
+    body.owner_note,
+    2000
+  );
+
+  const returnRequest =
+    await env.DB.prepare(`
+      SELECT
+        rr.*,
+        o.customer_name AS order_customer_name,
+        o.phone AS order_phone
+      FROM return_requests rr
+      INNER JOIN orders o
+        ON o.order_id = rr.order_id
+      WHERE rr.order_id = ?
+        AND rr.request_id = ?
+      LIMIT 1
+    `)
+      .bind(
+        orderId,
+        requestId
+      )
+      .first();
+
+  if (!returnRequest) {
+    return errorResponse(
+      'Return request not found',
+      404
+    );
+  }
+
+  const currentStatus = String(
+    returnRequest.status || ''
+  ).toLowerCase();
+
+  if (currentStatus !== 'picked_up') {
+    return errorResponse(
+      `Only picked-up requests can be marked received. ` +
+      `Current status: ${currentStatus || 'unknown'}`,
+      409
+    );
+  }
+
+  const updateResult =
+    await env.DB.prepare(`
+      UPDATE return_requests
+      SET
+        status = 'received',
+        received_at = datetime('now'),
+
+        owner_note = CASE
+          WHEN ? != ''
+          THEN ?
+          ELSE owner_note
+        END,
+
+        updated_at = datetime('now')
+      WHERE order_id = ?
+        AND request_id = ?
+        AND status = 'picked_up'
+    `)
+      .bind(
+        ownerNote,
+        ownerNote,
+        orderId,
+        requestId
+      )
+      .run();
+
+  if (
+    Number(
+      updateResult?.meta?.changes || 0
+    ) !== 1
+  ) {
+    return errorResponse(
+      'Return request changed before receipt confirmation completed. Refresh and retry.',
+      409
+    );
+  }
+
+  const requestType = String(
+    returnRequest.request_type ||
+    'return'
+  ).toLowerCase();
+
+  const typeLabel =
+    requestType === 'exchange'
+      ? 'Exchange'
+      : 'Return';
+
+  await logOrderEvent(
+    env,
+    orderId,
+    `${requestType}_received`,
+    `${typeLabel} request ${requestId} received at return facility`,
+    {
+      requestId,
+      previousStatus: currentStatus,
+      status: 'received',
+      ownerNote,
+    },
+    'admin'
+  );
+
+  const customerPhone =
+    cleanReturnText(
+      returnRequest.order_phone ||
+      returnRequest.phone,
+      30
+    );
+
+  if (customerPhone) {
+    const customerName =
+      cleanReturnText(
+        returnRequest.order_customer_name ||
+        returnRequest.customer_name ||
+        'Customer',
+        300
+      );
+
+    const message =
+      `*${typeLabel} Package Received*\n\n` +
+      `Hi ${customerName},\n\n` +
+      `Order: *${orderId}*\n` +
+      `Request ID: *${requestId}*\n` +
+      `Status: Received\n\n` +
+      `Your package has reached our return facility. ` +
+      `It will now be inspected before the next action.\n\n` +
+      `No refund or exchange shipment has been started yet.\n\n` +
+      `KAAPAV Fashion Jewellery`;
+
+    try {
+      await sendWhatsAppText(
+        env,
+        customerPhone,
+        message
+      );
+    } catch (notificationError) {
+      console.error(
+        'RETURN_RECEIVED_NOTIFICATION_FAILED',
+        requestId,
+        notificationError?.message ||
+        notificationError
+      );
+    }
+  }
+
+  const updatedRequest =
+    await env.DB.prepare(`
+      SELECT *
+      FROM return_requests
+      WHERE order_id = ?
+        AND request_id = ?
+      LIMIT 1
+    `)
+      .bind(
+        orderId,
+        requestId
+      )
+      .first();
+
+  return jsonResponse({
+    success: true,
+    status: 'received',
+    request: updatedRequest,
+  });
+}
+
+async function handleMarkReturnPickedUp(
+  orderId,
+  requestId,
+  request,
+  env
+) {
+  const body = await request
+    .json()
+    .catch(() => ({}));
+
+  const ownerNote = cleanReturnText(
+    body.owner_note,
+    2000
+  );
+
+  const returnRequest =
+    await env.DB.prepare(`
+      SELECT
+        rr.*,
+        o.customer_name AS order_customer_name,
+        o.phone AS order_phone
+      FROM return_requests rr
+      INNER JOIN orders o
+        ON o.order_id = rr.order_id
+      WHERE rr.order_id = ?
+        AND rr.request_id = ?
+      LIMIT 1
+    `)
+      .bind(
+        orderId,
+        requestId
+      )
+      .first();
+
+  if (!returnRequest) {
+    return errorResponse(
+      'Return request not found',
+      404
+    );
+  }
+
+  const currentStatus = String(
+    returnRequest.status || ''
+  ).toLowerCase();
+
+  if (currentStatus !== 'pickup_scheduled') {
+    return errorResponse(
+      `Only pickup-scheduled requests can be marked picked up. ` +
+      `Current status: ${currentStatus || 'unknown'}`,
+      409
+    );
+  }
+
+  const updateResult =
+    await env.DB.prepare(`
+      UPDATE return_requests
+      SET
+        status = 'picked_up',
+        picked_up_at = datetime('now'),
+
+        owner_note = CASE
+          WHEN ? != ''
+          THEN ?
+          ELSE owner_note
+        END,
+
+        updated_at = datetime('now')
+      WHERE order_id = ?
+        AND request_id = ?
+        AND status = 'pickup_scheduled'
+    `)
+      .bind(
+        ownerNote,
+        ownerNote,
+        orderId,
+        requestId
+      )
+      .run();
+
+  if (
+    Number(
+      updateResult?.meta?.changes || 0
+    ) !== 1
+  ) {
+    return errorResponse(
+      'Return request changed before pickup confirmation completed. Refresh and retry.',
+      409
+    );
+  }
+
+  const requestType = String(
+    returnRequest.request_type ||
+    'return'
+  ).toLowerCase();
+
+  const typeLabel =
+    requestType === 'exchange'
+      ? 'Exchange'
+      : 'Return';
+
+  await logOrderEvent(
+    env,
+    orderId,
+    `${requestType}_picked_up`,
+    `${typeLabel} request ${requestId} marked picked up`,
+    {
+      requestId,
+      previousStatus: currentStatus,
+      status: 'picked_up',
+      ownerNote,
+    },
+    'admin'
+  );
+
+  const customerPhone =
+    cleanReturnText(
+      returnRequest.order_phone ||
+      returnRequest.phone,
+      30
+    );
+
+  if (customerPhone) {
+    const customerName =
+      cleanReturnText(
+        returnRequest.order_customer_name ||
+        returnRequest.customer_name ||
+        'Customer',
+        300
+      );
+
+    const message =
+      `*${typeLabel} Package Picked Up*\n\n` +
+      `Hi ${customerName},\n\n` +
+      `Order: *${orderId}*\n` +
+      `Request ID: *${requestId}*\n` +
+      `Status: Picked Up\n\n` +
+      `The package is now in transit to our return facility. ` +
+      `We will update you after it is received and inspected.\n\n` +
+      `No refund or exchange shipment has been started yet.\n\n` +
+      `KAAPAV Fashion Jewellery`;
+
+    try {
+      await sendWhatsAppText(
+        env,
+        customerPhone,
+        message
+      );
+    } catch (notificationError) {
+      console.error(
+        'RETURN_PICKED_UP_NOTIFICATION_FAILED',
+        requestId,
+        notificationError?.message ||
+        notificationError
+      );
+    }
+  }
+
+  const updatedRequest =
+    await env.DB.prepare(`
+      SELECT *
+      FROM return_requests
+      WHERE order_id = ?
+        AND request_id = ?
+      LIMIT 1
+    `)
+      .bind(
+        orderId,
+        requestId
+      )
+      .first();
+
+  return jsonResponse({
+    success: true,
+    status: 'picked_up',
+    request: updatedRequest,
+  });
+}
+
+async function handleScheduleReturnPickup(
+  orderId,
+  requestId,
+  request,
+  env
+) {
+  const body = await request
+    .json()
+    .catch(() => ({}));
+
+  const ownerNote = cleanReturnText(
+    body.owner_note,
+    2000
+  );
+
+  const returnRequest =
+    await env.DB.prepare(`
+      SELECT
+        rr.*,
+        o.customer_name AS order_customer_name,
+        o.phone AS order_phone
+      FROM return_requests rr
+      INNER JOIN orders o
+        ON o.order_id = rr.order_id
+      WHERE rr.order_id = ?
+        AND rr.request_id = ?
+      LIMIT 1
+    `)
+      .bind(
+        orderId,
+        requestId
+      )
+      .first();
+
+  if (!returnRequest) {
+    return errorResponse(
+      'Return request not found',
+      404
+    );
+  }
+
+  const currentStatus = String(
+    returnRequest.status || ''
+  ).toLowerCase();
+
+  if (currentStatus !== 'approved') {
+    return errorResponse(
+      `Only approved requests can move to pickup scheduled. ` +
+      `Current status: ${currentStatus || 'unknown'}`,
+      409
+    );
+  }
+
+  const updateResult =
+    await env.DB.prepare(`
+      UPDATE return_requests
+      SET
+        status = 'pickup_scheduled',
+        pickup_scheduled_at =
+          datetime('now'),
+
+        owner_note = CASE
+          WHEN ? != ''
+          THEN ?
+          ELSE owner_note
+        END,
+
+        updated_at =
+          datetime('now')
+      WHERE order_id = ?
+        AND request_id = ?
+        AND status = 'approved'
+    `)
+      .bind(
+        ownerNote,
+        ownerNote,
+        orderId,
+        requestId
+      )
+      .run();
+
+  if (
+    Number(
+      updateResult?.meta?.changes || 0
+    ) !== 1
+  ) {
+    return errorResponse(
+      'Return request changed before pickup scheduling completed. Refresh and retry.',
+      409
+    );
+  }
+
+  const requestType = String(
+    returnRequest.request_type ||
+    'return'
+  ).toLowerCase();
+
+  const typeLabel =
+    requestType === 'exchange'
+      ? 'Exchange'
+      : 'Return';
+
+  await logOrderEvent(
+    env,
+    orderId,
+    `${requestType}_pickup_scheduled`,
+    `${typeLabel} request ${requestId} marked pickup scheduled`,
+    {
+      requestId,
+      previousStatus: currentStatus,
+      status: 'pickup_scheduled',
+      ownerNote,
+    },
+    'admin'
+  );
+
+  const customerPhone =
+    cleanReturnText(
+      returnRequest.order_phone ||
+      returnRequest.phone,
+      30
+    );
+
+  if (customerPhone) {
+    const customerName =
+      cleanReturnText(
+        returnRequest
+              .order_customer_name ||
+        returnRequest.customer_name ||
+        'Customer',
+        300
+      );
+
+    const message =
+      `*${typeLabel} Pickup Scheduled*\n\n` +
+      `Hi ${customerName},\n\n` +
+      `Order: *${orderId}*\n` +
+      `Request ID: *${requestId}*\n` +
+      `Status: Pickup Scheduled\n\n` +
+      `Our courier or team will contact you with the pickup details.\n\n` +
+      `No refund or exchange shipment has been started yet.\n\n` +
+      `KAAPAV Fashion Jewellery`;
+
+    try {
+      await sendWhatsAppText(
+        env,
+        customerPhone,
+        message
+      );
+    } catch (notificationError) {
+      console.error(
+        'RETURN_PICKUP_NOTIFICATION_FAILED',
+        requestId,
+        notificationError?.message ||
+        notificationError
+      );
+    }
+  }
+
+  const updatedRequest =
+    await env.DB.prepare(`
+      SELECT *
+      FROM return_requests
+      WHERE order_id = ?
+        AND request_id = ?
+      LIMIT 1
+    `)
+      .bind(
+        orderId,
+        requestId
+      )
+      .first();
+
+  return jsonResponse({
+    success: true,
+    status: 'pickup_scheduled',
+    request: updatedRequest,
+  });
+}
+
+async function handleReviewReturnRequest(
+  orderId,
+  requestId,
+  request,
+  env
+) {
+  const body = await request
+    .json()
+    .catch(() => ({}));
+
+  const decision = cleanReturnText(
+    body.decision,
+    20
+  ).toLowerCase();
+
+  const ownerNote = cleanReturnText(
+    body.owner_note,
+    2000
+  );
+
+  if (
+    decision !== 'approved' &&
+    decision !== 'rejected'
+  ) {
+    return errorResponse(
+      'decision must be approved or rejected',
+      400
+    );
+  }
+
+  if (
+    decision === 'rejected' &&
+    !ownerNote
+  ) {
+    return errorResponse(
+      'owner_note is required when rejecting a request',
+      400
+    );
+  }
+
+  const returnRequest =
+    await env.DB.prepare(`
+      SELECT
+        rr.*,
+        o.customer_name AS order_customer_name,
+        o.phone AS order_phone
+      FROM return_requests rr
+      INNER JOIN orders o
+        ON o.order_id = rr.order_id
+      WHERE rr.order_id = ?
+        AND rr.request_id = ?
+      LIMIT 1
+    `)
+      .bind(
+        orderId,
+        requestId
+      )
+      .first();
+
+  if (!returnRequest) {
+    return errorResponse(
+      'Return request not found',
+      404
+    );
+  }
+
+  if (
+    String(
+      returnRequest.status || ''
+    ).toLowerCase() !== 'requested'
+  ) {
+    return errorResponse(
+      `Only requested returns can be reviewed. ` +
+      `Current status: ${returnRequest.status || 'unknown'}`,
+      409
+    );
+  }
+
+  const updateResult =
+    await env.DB.prepare(`
+      UPDATE return_requests
+      SET
+        status = ?,
+        owner_note = ?,
+
+        approved_by = CASE
+          WHEN ? = 'approved'
+          THEN 'owner'
+          ELSE ''
+        END,
+
+        approved_at = CASE
+          WHEN ? = 'approved'
+          THEN datetime('now')
+          ELSE NULL
+        END,
+
+        rejected_at = CASE
+          WHEN ? = 'rejected'
+          THEN datetime('now')
+          ELSE NULL
+        END,
+
+        updated_at = datetime('now')
+      WHERE order_id = ?
+        AND request_id = ?
+        AND status = 'requested'
+    `)
+      .bind(
+        decision,
+        ownerNote,
+        decision,
+        decision,
+        decision,
+        orderId,
+        requestId
+      )
+      .run();
+
+  if (
+    Number(
+      updateResult?.meta?.changes || 0
+    ) !== 1
+  ) {
+    return errorResponse(
+      'Return request changed before this review completed. Refresh and retry.',
+      409
+    );
+  }
+
+  const requestType =
+    String(
+      returnRequest.request_type ||
+      'return'
+    ).toLowerCase();
+
+  const typeLabel =
+    requestType === 'exchange'
+      ? 'Exchange'
+      : 'Return';
+
+  await logOrderEvent(
+    env,
+    orderId,
+    `${requestType}_${decision}`,
+    `${typeLabel} request ${requestId} ${decision}`,
+    {
+      requestId,
+      decision,
+      ownerNote,
+    },
+    'admin'
+  );
+
+  const customerPhone = cleanReturnText(
+    returnRequest.order_phone ||
+    returnRequest.phone,
+    30
+  );
+
+  if (customerPhone) {
+    const customerName = cleanReturnText(
+      returnRequest.order_customer_name ||
+      returnRequest.customer_name ||
+      'Customer',
+      300
+    );
+
+    const message =
+      decision === 'approved'
+        ? `*${typeLabel} Request Approved*\n\n` +
+          `Hi ${customerName},\n\n` +
+          `Order: *${orderId}*\n` +
+          `Request ID: *${requestId}*\n` +
+          `Status: Approved\n\n` +
+          `No pickup, exchange shipment, or refund has been started yet. ` +
+          `Our team will contact you with the next step.\n\n` +
+          `KAAPAV Fashion Jewellery`
+        : `*${typeLabel} Request Not Approved*\n\n` +
+          `Hi ${customerName},\n\n` +
+          `Order: *${orderId}*\n` +
+          `Request ID: *${requestId}*\n` +
+          `Reason: ${ownerNote}\n\n` +
+          `Contact us on WhatsApp if you need clarification.\n\n` +
+          `KAAPAV Fashion Jewellery`;
+
+    try {
+      await sendWhatsAppText(
+        env,
+        customerPhone,
+        message
+      );
+    } catch (notificationError) {
+      console.error(
+        'RETURN_DECISION_CUSTOMER_NOTIFICATION_FAILED',
+        requestId,
+        notificationError?.message ||
+        notificationError
+      );
+    }
+  }
+
+  const updatedRequest =
+    await env.DB.prepare(`
+      SELECT *
+      FROM return_requests
+      WHERE order_id = ?
+        AND request_id = ?
+      LIMIT 1
+    `)
+      .bind(
+        orderId,
+        requestId
+      )
+      .first();
+
+  return jsonResponse({
+    success: true,
+    decision,
+    request: updatedRequest,
+  });
+}
+
+async function handleGetOrderReturnRequests(
+  orderId,
+  env
+) {
+  const order = await env.DB.prepare(`
+    SELECT order_id
+    FROM orders
+    WHERE order_id = ?
+    LIMIT 1
+  `).bind(orderId).first();
+
+  if (!order) {
+    return errorResponse(
+      'Order not found',
+      404
+    );
+  }
+
+  const { results: requests } =
+    await env.DB.prepare(`
+      SELECT *
+      FROM return_requests
+      WHERE order_id = ?
+      ORDER BY id DESC
+    `).bind(orderId).all();
+
+  const { results: items } =
+    await env.DB.prepare(`
+      SELECT *
+      FROM return_request_items
+      WHERE order_id = ?
+      ORDER BY request_id, line_index
+    `).bind(orderId).all();
+
+  const itemsByRequest = new Map();
+
+  for (const item of items || []) {
+    const current =
+      itemsByRequest.get(
+        item.request_id
+      ) || [];
+
+    current.push({
+      ...item,
+      evidence_urls:
+        parseReturnJsonArray(
+          item.evidence_urls_json
+        ),
+    });
+
+    itemsByRequest.set(
+      item.request_id,
+      current
+    );
+  }
+
+  const packedRequests =
+    (requests || []).map(
+      (returnRequest) => ({
+        ...returnRequest,
+        evidence_urls:
+          parseReturnJsonArray(
+            returnRequest
+              .evidence_urls_json
+          ),
+        items:
+          itemsByRequest.get(
+            returnRequest.request_id
+          ) || [],
+      })
+    );
+
+  return jsonResponse({
+    success: true,
+    requests: packedRequests,
+    total: packedRequests.length,
+  });
+}
+
+async function handleGetOrders(request, env) {
+  const url = new URL(request.url);
+  const limit = parseInt(url.searchParams.get('limit') || '1000000');
+  const status = url.searchParams.get('status');
+  let query = `SELECT * FROM orders ORDER BY created_at DESC LIMIT ?`;
+  const params = [limit];
+  if (status) { query = `SELECT * FROM orders WHERE status = ? ORDER BY created_at DESC LIMIT ?`; params.unshift(status); }
+  const { results } = await env.DB.prepare(query).bind(...params).all();
+  return jsonResponse({ success: true, orders: results, total: results.length });
+}
+
+async function handleGetProducts(request, env) {
+  const url = new URL(request.url);
+  const limit = parseInt(url.searchParams.get('limit') || '100000');
+  const category = url.searchParams.get('category');
+  // Admin app gets ALL products (no is_active filter)
+  let query = `SELECT * FROM products ORDER BY name ASC LIMIT ?`;
+  const params = [limit];
+  if (category) { query = `SELECT * FROM products WHERE category = ? ORDER BY name ASC LIMIT ?`; params.unshift(category); }
+  const { results } = await env.DB.prepare(query).bind(...params).all();
+  return jsonResponse({ success: true, products: results, total: results.length });
+}
+
+async function handleSendProduct(request, env) {
+  const body = await request.json();
+  const { sku, phone } = body;
+  if (!sku || !phone) return errorResponse('sku and phone required');
+  const product = await env.DB.prepare(`SELECT * FROM products WHERE sku = ?`).bind(sku).first();
+  if (!product) return errorResponse('product not found', 404);
+
+  const discount = product.compare_price > product.price
+    ? Math.round((product.compare_price - product.price) / product.compare_price * 100) : 0;
+  const priceStr = discount > 0
+    ? `₹${product.price}/₹${product.compare_price} (${discount}% Off)`
+    : `₹${product.price}`;
+  const caption =
+    `💎 *${product.name}*\n` +
+    `💰 ${priceStr}\n` +
+    (product.website_link ? `🛍️ ${product.website_link}` : '');
+
+  let waResult;
+  if (product.image_url) {
+    waResult = await sendWhatsAppImage(env, phone, product.image_url, caption);
+  } else {
+    waResult = await sendWhatsAppText(env, phone, caption);
+  }
+
+  if (waResult?.error) return errorResponse(waResult.error.message, 502);
+
+  const msgId = waResult?.messages?.[0]?.id || `local_${Date.now()}`;
+  const timestamp = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO messages (message_id, phone, text, message_type, direction, media_url, media_caption, status, timestamp, created_at)
+    VALUES (?, ?, ?, ?, 'outgoing', ?, ?, 'sent', ?, datetime('now'))
+  `).bind(msgId, phone, product.name, 'image', product.image_url, caption, timestamp).run();
+  await env.DB.prepare(`
+    UPDATE chats SET last_message = ?, last_message_type = 'image', last_timestamp = ?, last_direction = 'outgoing', updated_at = datetime('now') WHERE phone = ?
+  `).bind(product.name, timestamp, phone).run();
+
+  return jsonResponse({ success: true });
+}
+
+function normalizeCouponDate(value) {
+  const text = safeText(value).trim();
+
+  if (!text) return null;
+
+  const parsed = new Date(text);
+
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error('Invalid offer date');
+  }
+
+  return parsed.toISOString();
+}
+
+function buildCouponRecord(body, existing = {}) {
+  const has = (key) =>
+    Object.prototype.hasOwnProperty.call(body, key);
+
+  const code = safeText(
+    has('code') ? body.code : existing.code
+  )
+    .trim()
+    .toUpperCase();
+
+  const type = safeText(
+    has('type') ? body.type : existing.type
+  ).trim();
+
+  const value = Number(
+    has('value') ? body.value : existing.value
+  );
+
+  const minOrder = Math.max(
+    0,
+    Number(
+      has('min_order')
+        ? body.min_order
+        : existing.min_order || 0
+    )
+  );
+
+  const maxDiscount = Math.max(
+    0,
+    Number(
+      has('max_discount')
+        ? body.max_discount
+        : existing.max_discount || 0
+    )
+  );
+
+  const usageLimit = Math.max(
+    0,
+    Math.trunc(
+      Number(
+        has('usage_limit')
+          ? body.usage_limit
+          : existing.usage_limit || 0
+      )
+    )
+  );
+
+  const startsAt = has('starts_at')
+    ? normalizeCouponDate(body.starts_at)
+    : existing.starts_at || null;
+
+  const expiresAt = has('expires_at')
+    ? normalizeCouponDate(body.expires_at)
+    : existing.expires_at || null;
+
+  const isActive = has('is_active')
+    ? Number(body.is_active) === 1 ||
+      body.is_active === true
+      ? 1
+      : 0
+    : Number(existing.is_active ?? 1);
+
+  if (!/^[A-Z0-9_-]{3,30}$/.test(code)) {
+    throw new Error(
+      'Offer code must be 3-30 letters, numbers, - or _'
+    );
+  }
+
+  if (!['percent', 'fixed'].includes(type)) {
+    throw new Error('Invalid discount type');
+  }
+
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error('Discount value must be above 0');
+  }
+
+  if (type === 'percent' && value > 100) {
+    throw new Error('Percentage cannot exceed 100');
+  }
+
+  if (
+    startsAt &&
+    expiresAt &&
+    new Date(expiresAt) < new Date(startsAt)
+  ) {
+    throw new Error(
+      'Offer end date cannot be before start date'
+    );
+  }
+
+  return {
+    code,
+    type,
+    value,
+    minOrder,
+    maxDiscount,
+    usageLimit,
+    startsAt,
+    expiresAt,
+    isActive,
+  };
+}
+
+async function handleGetCoupons(env) {
+  const { results } = await env.DB.prepare(`
+    SELECT *
+    FROM coupons
+    ORDER BY
+      is_active DESC,
+      datetime(COALESCE(starts_at, created_at)) DESC,
+      id DESC
+  `).all();
+
+  return jsonResponse({
+    success: true,
+    coupons: results || [],
+  });
+}
+
+async function handleCreateCoupon(request, env) {
+  const body = await request.json().catch(() => ({}));
+
+  let record;
+
+  try {
+    record = buildCouponRecord(body);
+  } catch (error) {
+    return errorResponse(error.message, 400);
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT id
+    FROM coupons
+    WHERE UPPER(code) = ?
+    LIMIT 1
+  `).bind(record.code).first();
+
+  if (existing) {
+    return errorResponse(
+      'Offer code already exists',
+      409
+    );
+  }
+
+  const result = await env.DB.prepare(`
+    INSERT INTO coupons (
+      code,
+      type,
+      value,
+      min_order,
+      max_discount,
+      usage_limit,
+      used_count,
+      starts_at,
+      expires_at,
+      is_active,
+      created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, datetime('now'))
+  `).bind(
+    record.code,
+    record.type,
+    record.value,
+    record.minOrder,
+    record.maxDiscount,
+    record.usageLimit,
+    record.startsAt,
+    record.expiresAt,
+    record.isActive
+  ).run();
+
+  const coupon = await env.DB.prepare(`
+    SELECT *
+    FROM coupons
+    WHERE id = ?
+  `).bind(result.meta.last_row_id).first();
+
+  return jsonResponse({
+    success: true,
+    coupon,
+  });
+}
+
+async function handleUpdateCoupon(
+  id,
+  request,
+  env
+) {
+  const existing = await env.DB.prepare(`
+    SELECT *
+    FROM coupons
+    WHERE id = ?
+  `).bind(id).first();
+
+  if (!existing) {
+    return errorResponse('Offer not found', 404);
+  }
+
+  const body = await request.json().catch(() => ({}));
+
+  let record;
+
+  try {
+    record = buildCouponRecord(body, existing);
+  } catch (error) {
+    return errorResponse(error.message, 400);
+  }
+
+  const duplicate = await env.DB.prepare(`
+    SELECT id
+    FROM coupons
+    WHERE UPPER(code) = ?
+      AND id != ?
+    LIMIT 1
+  `).bind(record.code, id).first();
+
+  if (duplicate) {
+    return errorResponse(
+      'Offer code already exists',
+      409
+    );
+  }
+
+  await env.DB.prepare(`
+    UPDATE coupons
+    SET
+      code = ?,
+      type = ?,
+      value = ?,
+      min_order = ?,
+      max_discount = ?,
+      usage_limit = ?,
+      starts_at = ?,
+      expires_at = ?,
+      is_active = ?
+    WHERE id = ?
+  `).bind(
+    record.code,
+    record.type,
+    record.value,
+    record.minOrder,
+    record.maxDiscount,
+    record.usageLimit,
+    record.startsAt,
+    record.expiresAt,
+    record.isActive,
+    id
+  ).run();
+
+  const coupon = await env.DB.prepare(`
+    SELECT *
+    FROM coupons
+    WHERE id = ?
+  `).bind(id).first();
+
+  return jsonResponse({
+    success: true,
+    coupon,
+  });
+}
+
+async function handleRemoveCoupon(id, env) {
+  const existing = await env.DB.prepare(`
+    SELECT id
+    FROM coupons
+    WHERE id = ?
+  `).bind(id).first();
+
+  if (!existing) {
+    return errorResponse('Offer not found', 404);
+  }
+
+  await env.DB.prepare(`
+    UPDATE coupons
+    SET is_active = 0
+    WHERE id = ?
+  `).bind(id).run();
+
+  return jsonResponse({
+    success: true,
+    removed: true,
+  });
+}
+
+function appendBulkNumericUpdate(
+  sets,
+  values,
+  column,
+  spec,
+  options = {}
+) {
+  if (!spec || typeof spec !== 'object') return;
+
+  const mode = safeText(spec.mode || 'set').trim();
+  const allowClear = options.allowClear === true;
+  const integer = options.integer === true;
+
+  if (mode === 'clear') {
+    if (!allowClear) {
+      throw new Error(`${column} cannot be cleared`);
+    }
+
+    sets.push(`${column} = NULL`);
+    return;
+  }
+
+  const value = Number(spec.value);
+
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(
+      `${column} requires a non-negative value`
+    );
+  }
+
+  const castStart = integer ? 'CAST(' : '';
+  const castEnd = integer ? ' AS INTEGER)' : '';
+
+  switch (mode) {
+    case 'set':
+      sets.push(
+        `${column} = ${castStart}MAX(0, ?)${castEnd}`
+      );
+      values.push(value);
+      break;
+
+    case 'add':
+    case 'increase_amount':
+      sets.push(
+        `${column} = ${castStart}MAX(0, COALESCE(${column}, 0) + ?)${castEnd}`
+      );
+      values.push(value);
+      break;
+
+    case 'subtract':
+    case 'decrease_amount':
+      sets.push(
+        `${column} = ${castStart}MAX(0, COALESCE(${column}, 0) - ?)${castEnd}`
+      );
+      values.push(value);
+      break;
+
+    case 'increase_percent':
+      sets.push(
+        `${column} = ROUND(MAX(0, COALESCE(${column}, 0) * (1 + ? / 100.0)), 2)`
+      );
+      values.push(value);
+      break;
+
+    case 'decrease_percent':
+      if (value > 100) {
+        throw new Error(
+          `${column} percentage cannot exceed 100`
+        );
+      }
+
+      sets.push(
+        `${column} = ROUND(MAX(0, COALESCE(${column}, 0) * (1 - ? / 100.0)), 2)`
+      );
+      values.push(value);
+      break;
+
+    default:
+      throw new Error(
+        `Unsupported ${column} operation`
+      );
+  }
+}
+
+async function handleBulkUpdateProducts(
+  request,
+  env
+) {
+  const body = await request.json().catch(() => ({}));
+
+  const skus = Array.from(
+    new Set(
+      Array.isArray(body.skus)
+        ? body.skus
+            .map((sku) => safeText(sku).trim())
+            .filter(Boolean)
+        : []
+    )
+  );
+
+  const changes =
+    body.changes &&
+    typeof body.changes === 'object'
+      ? body.changes
+      : {};
+
+  if (skus.length === 0) {
+    return errorResponse('Select at least one product');
+  }
+
+  if (skus.length > 500) {
+    return errorResponse(
+      'Maximum 500 products per bulk update'
+    );
+  }
+
+  const sets = [];
+  const values = [];
+
+  try {
+    appendBulkNumericUpdate(
+      sets,
+      values,
+      'price',
+      changes.price
+    );
+
+    appendBulkNumericUpdate(
+      sets,
+      values,
+      'compare_price',
+      changes.compare_price,
+      { allowClear: true }
+    );
+
+    appendBulkNumericUpdate(
+      sets,
+      values,
+      'stock',
+      changes.stock,
+      { integer: true }
+    );
+
+const textFields = [
+  'category',
+  'subcategory',
+  'material',
+  'finish',
+];
+
+    for (const field of textFields) {
+      if (
+        Object.prototype.hasOwnProperty.call(
+          changes,
+          field
+        )
+      ) {
+        sets.push(`${field} = ?`);
+        values.push(safeText(changes[field]).trim());
+      }
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        changes,
+        'tags'
+      )
+    ) {
+      const tags = Array.isArray(changes.tags)
+        ? changes.tags
+            .map((tag) => safeText(tag).trim())
+            .filter(Boolean)
+        : [];
+
+      sets.push('tags = ?');
+      values.push(JSON.stringify(tags));
+    }
+
+    for (const field of [
+      'is_active',
+      'is_featured',
+    ]) {
+      if (
+        Object.prototype.hasOwnProperty.call(
+          changes,
+          field
+        )
+      ) {
+        sets.push(`${field} = ?`);
+        values.push(
+          Number(changes[field]) === 1 ||
+          changes[field] === true
+            ? 1
+            : 0
+        );
+      }
+    }
+  } catch (error) {
+    return errorResponse(error.message, 400);
+  }
+
+  if (sets.length === 0) {
+    return errorResponse('No valid bulk changes supplied');
+  }
+
+  sets.push(`updated_at = datetime('now')`);
+
+  const placeholders = skus.map(() => '?').join(',');
+
+  const updateStatement = env.DB.prepare(`
+    UPDATE products
+    SET ${sets.join(', ')}
+    WHERE sku IN (${placeholders})
+  `).bind(...values, ...skus);
+
+  const normalizeMrpStatement = env.DB.prepare(`
+    UPDATE products
+    SET
+      compare_price = price,
+      updated_at = datetime('now')
+    WHERE sku IN (${placeholders})
+      AND compare_price IS NOT NULL
+      AND compare_price > 0
+      AND compare_price < price
+  `).bind(...skus);
+
+  const batchResults = await env.DB.batch([
+    updateStatement,
+    normalizeMrpStatement,
+  ]);
+
+  const updated = Number(
+    batchResults?.[0]?.meta?.changes || 0
+  );
+
+  try {
+    await backfillProductsToGoogleSheets(env);
+  } catch (error) {
+    console.error(
+      'Google Sheets bulk product sync error:',
+      error
+    );
+
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'product',
+      entity_id: `bulk:${skus.length}`,
+      action: 'bulk_product_update',
+      error_message: error.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
+
+  const { results } = await env.DB.prepare(`
+    SELECT *
+    FROM products
+    WHERE sku IN (${placeholders})
+    ORDER BY name ASC
+  `).bind(...skus).all();
+
+  return jsonResponse({
+    success: true,
+    requested: skus.length,
+    updated,
+    products: results || [],
+  });
+}
+
+async function handleUpdateProduct(sku, request, env) {
+  const body = await request.json();
+  const fields = [];
+  const values = [];
+
+const allowed = [
+  'name',
+  'description',
+  'price',
+  'compare_price',
+  'cost_price',
+  'category',
+  'subcategory',
+  'stock',
+  'track_inventory',
+  'image_url',
+  'images',
+  'video_url',
+  'has_variants',
+  'variants',
+  'wa_product_id',
+  'is_active',
+  'is_featured',
+  'tags',
+  'website_link',
+  'material',
+  'finish'
+];
+
+  for (const key of allowed) {
+    if (body[key] !== undefined) {
+      fields.push(`${key} = ?`);
+
+      if (
+  key === 'tags' ||
+  key === 'images' ||
+  key === 'variants'
+) {
+        values.push(JSON.stringify(body[key] || []));
+      } else {
+        values.push(body[key]);
+      }
+    }
+  }
+
+  if (fields.length === 0) return errorResponse('nothing to update');
+
+  fields.push(`updated_at = datetime('now')`);
+  values.push(sku);
+
+  await env.DB.prepare(
+    `UPDATE products SET ${fields.join(', ')} WHERE sku = ?`
+  ).bind(...values).run();
+  try {
+    await syncProductToGoogleSheetsSafe(env, sku);
+   } catch (e) {
+    console.error('Google Sheets sync error (product update):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'product',
+      entity_id: sku,
+      action: 'product_updated',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
+
+  return jsonResponse({ success: true });
+}
+
+async function handleCreateProduct(request, env) {
+  const body = await request.json();
+
+  const sku = safeText(body.sku).trim();
+  if (!sku) return errorResponse('sku required');
+
+  const name = safeText(body.name).trim();
+  if (!name) return errorResponse('name required');
+
+  await env.DB.prepare(`
+    INSERT INTO products (
+      sku, name, description, price, compare_price, cost_price,
+      category, subcategory, tags, stock, track_inventory,
+      image_url, images, video_url, has_variants, variants,
+      wa_product_id, is_active, is_featured, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+  `).bind(
+    sku,
+    name,
+    safeText(body.description),
+    safeNumber(body.price),
+    safeNumber(body.compare_price),
+    safeNumber(body.cost_price),
+    safeText(body.category),
+    safeText(body.subcategory),
+    JSON.stringify(body.tags || []),
+    safeNumber(body.stock),
+    body.track_inventory === undefined ? 1 : safeNumber(body.track_inventory),
+    safeText(body.image_url),
+    JSON.stringify(body.images || []),
+    safeText(body.video_url),
+    body.has_variants === undefined ? 0 : safeNumber(body.has_variants),
+    JSON.stringify(body.variants || []),
+    safeText(body.wa_product_id),
+    body.is_active === undefined ? 1 : safeNumber(body.is_active),
+    body.is_featured === undefined ? 0 : safeNumber(body.is_featured),
+  ).run();
+
+// Extended product columns verified in remote D1.
+await env.DB.prepare(`
+  UPDATE products
+  SET
+    website_link = ?,
+    material = ?,
+    finish = ?,
+    updated_at = datetime('now')
+  WHERE sku = ?
+`).bind(
+  safeText(body.website_link),
+  safeText(body.material),
+  safeText(body.finish),
+  sku
+).run();
+
+  try {
+    await syncProductToGoogleSheetsSafe(env, sku);
+  } catch (e) {
+    console.error('Google Sheets sync error (product create):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'product',
+      entity_id: sku,
+      action: 'product_created',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
+
+  return jsonResponse({ success: true, sku });
+}
+
+async function handleDeleteProduct(sku, env) {
+  await env.DB.prepare(`DELETE FROM products WHERE sku = ?`).bind(sku).run();
+  return jsonResponse({ success: true });
+}
+
+async function handleUpdateStock(sku, request, env) {
+  const body = await request.json();
+  const stock = parseInt(body.stock);
+  if (isNaN(stock)) return errorResponse('stock required');
+  await env.DB.prepare(`UPDATE products SET stock = ?, updated_at = datetime('now') WHERE sku = ?`).bind(stock, sku).run();
+  try {
+    await syncProductToGoogleSheetsSafe(env, sku);
+   } catch (e) {
+    console.error('Google Sheets sync error (stock update):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'product',
+      entity_id: sku,
+      action: 'stock_updated',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
+
+  return jsonResponse({ success: true });
+}
+
+async function handleGetCustomers(request, env) {
+  const url = new URL(request.url);
+  const limit = parseInt(url.searchParams.get('limit') || '1000000');
+  const { results } = await env.DB.prepare(`SELECT * FROM customers ORDER BY last_seen DESC LIMIT ?`).bind(limit).all();
+  return jsonResponse({ success: true, customers: results, total: results.length });
+}
+
+async function handleGetStats(env) {
+  const [chats, orders, customers, products, revenue] = await Promise.all([
+    env.DB.prepare(`SELECT COUNT(*) as count, SUM(unread_count) as unread FROM chats`).first(),
+    env.DB.prepare(`SELECT COUNT(*) as count, COUNT(CASE WHEN status='pending' THEN 1 END) as pending FROM orders`).first(),
+    env.DB.prepare(`SELECT COUNT(*) as count FROM customers`).first(),
+    env.DB.prepare(`SELECT COUNT(*) as count FROM products WHERE is_active=1`).first(),
+    env.DB.prepare(`SELECT SUM(total) as total FROM orders WHERE payment_status='paid'`).first(),
+  ]);
+  return jsonResponse({
+    success: true,
+    stats: {
+      totalChats: chats?.count || 0,
+      unreadMessages: chats?.unread || 0,
+      totalOrders: orders?.count || 0,
+      pendingOrders: orders?.pending || 0,
+      totalCustomers: customers?.count || 0,
+      totalProducts: products?.count || 0,
+      totalRevenue: revenue?.total || 0,
+    }
+  });
+}
+
+async function handleGetSettings(env) {
+  const { results } = await env.DB.prepare(`SELECT key, value FROM settings`).all();
+  const settings = {};
+  results.forEach(r => { settings[r.key] = r.value; });
+  return jsonResponse({ success: true, settings });
+}
+
+async function handleGetAnalytics(env) {
+  const { results } = await env.DB.prepare(`SELECT * FROM analytics ORDER BY created_at DESC LIMIT 100`).all();
+  return jsonResponse({ success: true, analytics: results });
+}
+
+async function handleGetActivities(env) {
+  const messages = await env.DB.prepare(`SELECT phone, text, direction, timestamp FROM messages ORDER BY created_at DESC LIMIT 20`).all();
+  return jsonResponse({ success: true, activities: messages.results });
+}
+
+async function handleSyncCheck(env) {
+  const [chats, messages] = await Promise.all([
+    env.DB.prepare(`SELECT COUNT(*) as count FROM chats`).first(),
+    env.DB.prepare(`SELECT COUNT(*) as count FROM messages`).first(),
+  ]);
+  return jsonResponse({ success: true, sync: { chats: chats?.count || 0, messages: messages?.count || 0, timestamp: new Date().toLocaleString('en-IN', {timeZone: 'Asia/Kolkata'}) } });
+}
+
+async function handleRegisterFCM(request, env) {
+  const body = await request.json();
+  const { token } = body;
+  if (!token) return errorResponse('token required');
+  await env.KV.put('fcm_token:flutter', token);
+  return jsonResponse({ success: true });
+}
+
+async function getSettingValue(env, key, fallback = null) {
+  try {
+    const row = await env.DB.prepare(
+      `SELECT value FROM settings WHERE key = ?`
+    ).bind(key).first();
+    return row?.value ?? fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function toBool(value, fallback = false) {
+  if (typeof value === 'boolean') return value;
+  const raw = String(value ?? '').toLowerCase().trim();
+  if (raw === 'true' || raw === '1' || raw === 'yes') return true;
+  if (raw === 'false' || raw === '0' || raw === 'no') return false;
+  return fallback;
+}
+
+async function checkGoogleSheetsHealth(env) {
+  try {
+    if (
+      !env.GOOGLE_SHEETS_SPREADSHEET_ID ||
+      !env.GOOGLE_SERVICE_ACCOUNT_EMAIL ||
+      !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+    ) {
+      return false;
+    }
+
+    const encodedRange = encodeURIComponent('Orders!A1:A2');
+    await googleSheetsRequest(env, 'GET', `/values/${encodedRange}`, null);
+    return true;
+  } catch (e) {
+    console.error('Google Sheets health check failed:', e);
+    return false;
+  }
+}
+
+async function checkSupabaseHealth(env) {
+  try {
+    if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) return false;
+
+    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/orders?select=order_id&limit=1`, {
+      headers: {
+        'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+        'apikey': env.SUPABASE_SERVICE_KEY,
+      },
+    });
+
+    return res.ok;
+  } catch (e) {
+    console.error('Supabase health check failed:', e);
+    return false;
+  }
+}
+
+
+async function handleGetDashboardOps(env) {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+
+    const [
+  paidSummary,
+  unpaidSummary,
+  todayPaidSummary,
+  todayUnpaidSummary,
+  readyForShiprocketRow,
+  shiprocketBookedRow,
+  awbAddedRow,
+  lowStockRow,
+  outOfStockRow,
+  totalProductsRow,
+  sourceRows,
+  todayOrdersRow,
+  todayPaidOrdersRow,
+  todayUnpaidOrdersRow,
+  todayReadyToShipRow,
+  todayShippedRow,
+  syncMode,
+  sheetsEnabledRaw,
+  supabaseEnabledRaw,
+  pendingQueueRow,
+  failedQueueRow,
+  lastSyncSuccessRow,
+  lastSyncFailureRow,
+  googleSheetsLive,
+  supabaseLive,
+    ] = await Promise.all([
+      env.DB.prepare(`
+        SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
+        FROM orders
+        WHERE payment_status = 'paid'
+      `).first(),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
+        FROM orders
+        WHERE payment_status = 'unpaid'
+      `).first(),
+
+      env.DB.prepare(`
+        SELECT COALESCE(SUM(total), 0) as value
+        FROM orders
+        WHERE payment_status = 'paid'
+          AND substr(created_at, 1, 10) = ?
+      `).bind(today).first(),
+
+      env.DB.prepare(`
+        SELECT COALESCE(SUM(total), 0) as value
+        FROM orders
+        WHERE payment_status = 'unpaid'
+          AND substr(created_at, 1, 10) = ?
+      `).bind(today).first(),
+
+      env.DB.prepare(`
+  SELECT COUNT(*) as count
+  FROM orders
+  WHERE (
+    (shipment_id IS NOT NULL AND shipment_id != '')
+    OR (shiprocket_order_id IS NOT NULL AND shiprocket_order_id != '')
+  )
+  AND (
+    (awb_number IS NULL OR awb_number = '')
+    AND (awb_code IS NULL OR awb_code = '')
+  )
+  AND status NOT IN ('delivered', 'cancelled')
+`).first(),    
+
+       env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM orders
+        WHERE (
+          (shipment_id IS NOT NULL AND shipment_id != '')
+          OR (shiprocket_order_id IS NOT NULL AND shiprocket_order_id != '')
+        )
+        AND (
+          (awb_number IS NULL OR awb_number = '')
+          AND (awb_code IS NULL OR awb_code = '')
+        )
+        AND status NOT IN ('delivered', 'cancelled')
+      `).first(),
+
+       env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM orders
+        WHERE (
+          (awb_number IS NOT NULL AND awb_number != '')
+          OR (awb_code IS NOT NULL AND awb_code != '')
+        )
+        AND status NOT IN ('delivered', 'cancelled')
+      `).first(),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM products
+        WHERE is_active = 1
+          AND stock > 0
+          AND stock <= 5
+      `).first(),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM products
+        WHERE is_active = 1
+          AND stock <= 0
+      `).first(),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM products
+        WHERE is_active = 1
+      `).first(),
+
+      env.DB.prepare(`
+        SELECT LOWER(COALESCE(source, 'unknown')) as source, COUNT(*) as count
+        FROM orders
+        GROUP BY LOWER(COALESCE(source, 'unknown'))
+      `).all(),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM orders
+        WHERE substr(created_at, 1, 10) = ?
+      `).bind(today).first(),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM orders
+        WHERE payment_status = 'paid'
+          AND substr(created_at, 1, 10) = ?
+      `).bind(today).first(),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM orders
+        WHERE payment_status = 'unpaid'
+          AND substr(created_at, 1, 10) = ?
+      `).bind(today).first(),
+
+      env.DB.prepare(`
+  SELECT COUNT(*) as count
+  FROM orders
+  WHERE payment_status = 'paid'
+    AND status IN ('confirmed', 'processing')
+    AND (
+      (shipment_id IS NULL OR shipment_id = '')
+      AND (shiprocket_order_id IS NULL OR shiprocket_order_id = '')
+    )
+    AND substr(created_at, 1, 10) = ?
+`).bind(today).first(),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM orders
+        WHERE status = 'shipped'
+          AND substr(shipped_at, 1, 10) = ?
+      `).bind(today).first(),
+
+      getSettingValue(env, 'sync_mode', 'd1_only'),
+      getSettingValue(env, 'sync_google_sheets_enabled', 'false'),
+      getSettingValue(env, 'sync_supabase_enabled', 'false'),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM sync_queue
+        WHERE status = 'pending'
+      `).first().catch(() => ({ count: 0 })),
+
+      env.DB.prepare(`
+        SELECT COUNT(*) as count
+        FROM sync_queue
+        WHERE status = 'failed'
+      `).first().catch(() => ({ count: 0 })),
+
+      env.DB.prepare(`
+        SELECT created_at
+        FROM sync_log
+        WHERE status = 'success'
+        ORDER BY created_at DESC
+        LIMIT 1
+      `).first().catch(() => null),
+
+      env.DB.prepare(`
+        SELECT created_at
+        FROM sync_log
+        WHERE status = 'failed'
+        ORDER BY created_at DESC
+        LIMIT 1
+      `).first().catch(() => null),
+    ]);
+
+    const sourceMap = {
+      whatsapp: 0,
+      catalogue: 0,
+      website: 0,
+      manual: 0,
+    };
+
+    for (const row of (sourceRows?.results || [])) {
+      const key = String(row.source || '').toLowerCase();
+      if (sourceMap[key] != null) {
+        sourceMap[key] = Number(row.count || 0);
+      }
+    }
+
+    return jsonResponse({
+      success: true,
+      ops: {
+        lastSyncAt: new Date().toISOString(),
+
+        paymentBreakdown: {
+          paidCount: Number(paidSummary?.count || 0),
+          unpaidCount: Number(unpaidSummary?.count || 0),
+          paidValue: Number(paidSummary?.value || 0),
+          unpaidValue: Number(unpaidSummary?.value || 0),
+          todayPaid: Number(todayPaidSummary?.value || 0),
+          todayUnpaid: Number(todayUnpaidSummary?.value || 0),
+        },
+
+        shipmentQueue: {
+          readyForShiprocket: Number(readyForShiprocketRow?.count || 0),
+          shiprocketBooked: Number(shiprocketBookedRow?.count || 0),
+          awbAdded: Number(awbAddedRow?.count || 0),
+        },
+
+        inventory: {
+          lowStockCount: Number(lowStockRow?.count || 0),
+          outOfStockCount: Number(outOfStockRow?.count || 0),
+          totalProducts: Number(totalProductsRow?.count || 0),
+        },
+
+        sourceBreakdown: {
+          whatsapp: sourceMap.whatsapp,
+          catalogue: sourceMap.catalogue,
+          website: sourceMap.website,
+          manual: sourceMap.manual,
+        },
+
+        syncHealth: {
+  d1Live: true,
+  googleSheetsConnected: googleSheetsLive,
+  supabaseConnected: supabaseLive,
+  pendingQueue: Number(pendingQueueRow?.count || 0),
+  failedQueue: Number(failedQueueRow?.count || 0),
+  mode: syncMode || 'd1_only',
+  lastSuccess: lastSyncSuccessRow?.created_at || null,
+  lastFailure: lastSyncFailureRow?.created_at || null,
+        },
+
+        todayOps: {
+          totalOrders: Number(todayOrdersRow?.count || 0),
+          paidOrders: Number(todayPaidOrdersRow?.count || 0),
+          unpaidOrders: Number(todayUnpaidOrdersRow?.count || 0),
+          readyToShip: Number(todayReadyToShipRow?.count || 0),
+          shippedToday: Number(todayShippedRow?.count || 0),
+        },
+      }
+    });
+  } catch (e) {
+    console.error('handleGetDashboardOps error:', e);
+    return errorResponse('Failed to load dashboard ops', 500);
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// AUTORESPONDER — KAAPAV MENU SYSTEM
+//
+// FLOW MAP:
+//   MAIN MENU        → [💎 Shop] [🎁 Offers & Track] [❓ Help & FAQs]
+//   SHOP MENU        → [🌐 Website] [📱 Catalogue] [🏠 Back]
+//   OFFERS MENU      → [🔥 Deals & Offers] [📦 Pay & Track] [🏠 Back]
+//   DEALS MENU       → [🛍️ Bestsellers] [🌐 Shop Now] [🏠 Back]
+//   PAY & TRACK MENU → [💳 Pay Now] [📦 Track Order] [🏠 Back]
+//   HELP PROMPT      → freetext FAQ + [📋 Browse Topics] [🏠 Back]
+//   BROWSE TOPICS    → List of 10 FAQ categories (WhatsApp list)
+//   FAQ ANSWER       → answer text + [❓ More] [🛒 Order] [🏠 Home]
+//
+//   SOCIAL → inside Browse Topics → "Brand & Contact" category
+//   ORDER  → text trigger only ("order karna hai" etc.)
+// ═══════════════════════════════════════════════════════════════
+class AutoResponder {
+  constructor(env) {
+    this.env = env;
+
+    this.FAQ_CATEGORIES = [
+      { id: 'faq_cat_durability', title: '⏳ Durability',        desc: 'How long it lasts',           group: 'durability' },
+      { id: 'faq_cat_size',       title: '📐 Size & Fit',        desc: 'Rings, bracelets, earrings',  group: 'size'       },
+      { id: 'faq_cat_pricing',    title: '💰 Pricing & Offers',  desc: 'Prices, discounts, shipping', group: 'pricing'    },
+      { id: 'faq_cat_ordering',   title: '🛒 Ordering & Payment',desc: 'How to order, COD, pay',      group: 'ordering'   },
+      { id: 'faq_cat_delivery',   title: '🚚 Delivery',          desc: 'Time, area, tracking',        group: 'delivery'   },
+      { id: 'faq_cat_returns',    title: '🔄 Returns & Refunds', desc: 'Return, exchange, cancel',    group: 'returns'    },
+      { id: 'faq_cat_care',       title: '✨ Jewellery Care',    desc: 'Care tips, cleaning',         group: 'care'       },
+      { id: 'faq_cat_brand',      title: '👑 Brand & Contact',   desc: 'About us, social, contact',   group: 'brand'      },
+    ];
+
+    this.FAQ_SHORT_TITLES = {
+      'faq_last':            'How long will it last?',
+      'faq_tarnish':         'Black or green?',
+      'faq_antitarnish':     'Is it anti-tarnish?',
+      'faq_realgold':        'Is it real gold?',
+      'faq_daily':           'Can I wear daily?',
+      'faq_plating':         'Plating fade time?',
+      'faq_strong':          'Is it strong?',
+      'faq_ring_size':       'Will ring fit?',
+      'faq_bracelet_size':   'Bracelet size?',
+      'faq_necklace_length': 'Necklace length?',
+      'faq_earring_weight':  'Are earrings heavy?',
+      'faq_piercing':        'Need pierced ears?',
+      'faq_price':           'What are prices?',
+      'faq_discount':        'Any discount?',
+      'faq_shipping_cost':   'Is delivery free?',
+      'faq_combo':           'Any combo deals?',
+      'faq_minimum':         'Minimum order?',
+      'faq_how_order':       'How to order?',
+      'faq_cod':             'COD available?',
+      'faq_payment_safe':    'Is payment safe?',
+      'faq_confirmation':    'Order confirmation?',
+      'faq_gift_order':      'Order as a gift?',
+      'faq_delivery_time':   'Delivery time?',
+      'faq_delivery_area':   'Deliver to my area?',
+      'faq_packaging':       'Packaging safe?',
+      'faq_track':           'Track my order?',
+      'faq_delayed':         'Delivery delayed?',
+      'faq_return':          'Can I return?',
+      'faq_damaged':         'What if damaged?',
+      'faq_refund_time':     'Refund timeline?',
+      'faq_exchange':        'Can I exchange?',
+      'faq_cancel':          'Can I cancel?',
+      'faq_care':            'How to care?',
+      'faq_perfume':         'Spray perfume OK?',
+      'faq_sleep':           'Sleep wearing it?',
+      'faq_gift_pack':       'Gift packaging?',
+      'faq_multiple':        'Order many pieces?',
+      'faq_about':           'About KAAPAV',
+      'faq_social':          'Social media links?',
+      'faq_contact':         'How to contact?',
+    };
+
+    this.FAQ_DATA = {
+      durability: [
+        { shortcut: 'faq_last',        title: 'How long will it last?',      message: '⏳ *Durability*\n\nWith proper care, KAAPAV jewellery lasts *years* based on wear & tear!\n\n✅ Anti-tarnish coating on every piece\n✅ Keep away from water, sweat, perfume\n✅ Store in the pouch provided\n\n💎 Thousands of happy customers wear it daily!' },
+        { shortcut: 'faq_antitarnish', title: 'Is it anti-tarnish?',         message: '✨ *Anti-Tarnish Jewellery*\n\nYes! 100% anti-tarnish coated! 💛\n\n✅ Every KAAPAV piece has a special anti-tarnish protective layer\n✅ Will NOT turn black or green with basic care\n✅ Stays shiny & beautiful for years\n\n💡 *Simple care rules:*\n• Remove before shower/swim\n• Apply perfume BEFORE wearing\n• Wipe dry with soft cloth after use\n• Store in pouch when not wearing\n\n💎 Proper care = long lasting beauty!' },
+        { shortcut: 'faq_realgold',    title: 'Is it real gold?',            message: '💛 *About Our Jewellery*\n\nKAAPAV sells *premium artificial fashion jewellery* — not real gold.\n\n✅ High-quality brass/copper alloy base\n✅ Gold-plated with anti-tarnish coating\n✅ Looks exactly like real gold jewellery\n✅ Fraction of the price — starting ₹299/-\n\n💎 *Why choose KAAPAV?*\n• Same look as real gold\n• Safe to wear daily\n• No worry of theft or loss\n• Always on-trend designs\n\n👑 Simple Luxury — Crafted for You!' },
+        { shortcut: 'faq_tarnish',     title: 'Will it turn black/green?',   message: '🟢 *Tarnishing*\n\nWith basic care — *no, it will NOT tarnish*!\n\n✅ 100% anti-tarnish coating applied\n✅ Avoid water, sweat, perfume directly on jewellery\n✅ Wipe dry after wear\n\n💡 If any tarnish occurs → gently wipe with dry soft cloth.\n\n💎 With proper care your jewellery stays shiny for years!' },
+        { shortcut: 'faq_daily',       title: 'Can I wear it daily?',        message: '✨ *Daily Wear*\n\nYes! Designed for everyday wear.\n\n✅ Remove before shower/swim\n✅ Apply perfume BEFORE wearing\n✅ Wipe dry after sweating\n\n💎 Proper care = long lasting beauty!' },
+        { shortcut: 'faq_plating',     title: 'How long does plating last?', message: '💛 *Plating Durability*\n\n6 months to 2+ years depending on care.\n\n⚡ Avoid chemicals, water, sweat\n⚡ Store in pouch when not wearing\n⚡ Don\'t rub against hard surfaces\n\n✅ Our plating is thick & premium quality.' },
+        { shortcut: 'faq_strong',      title: 'Is it strong/sturdy?',        message: '💪 *Strength*\n\nYes! Made from high-quality steel alloy base and depends on Wear & Tear.\n\n✅ Won\'t bend easily\n✅ Clasps are secure & reliable\n✅ Won\'t break under normal wear\n\n⚠️ Avoid dropping on hard surfaces or heavy impact.' },
+      ],
+      size: [
+        { shortcut: 'faq_ring_size',       title: 'Will the ring fit?',       message: '💍 *Ring Size*\n\nMost of our rings are *free size / adjustable*.\n\nFits finger sizes: *(Indian size 14–18 depends on Ring Width)*\n\n✅ Gently adjust to your finger\n✅ Don\'t over-bend\n' },
+        { shortcut: 'faq_bracelet_size',   title: 'Bracelet size?',           message: '📿 *Bracelet Size*\n\nMost bracelets are *adjustable* with extender chain.\n\nFits wrist: *16cm–20cm*\n\n✅ Extender adds 2–3cm extra\n✅ Works for most wrists\n\nMeasure your wrist & message us if unsure!' },
+        { shortcut: 'faq_necklace_length', title: 'Necklace length?',         message: '📏 *Necklace Length*\n\nStandard lengths in our collection:\n\n• *16 inch* — choker style\n• *18 inch* — collarbone (most popular)\n• *20 inch* — just below collarbone\n\nWith extender chain (+2 inch) included on most pieces!' },
+        { shortcut: 'faq_earring_weight',  title: 'Are earrings heavy?',      message: '⚖️ *Earring Weight*\n\nOur earrings are *lightweight* — designed for all-day comfort!\n\n✅ 2–6 grams typically\n✅ No ear pain even after hours\n✅ Secure backs (push-back)\n\n💎 Comfort is our priority!' },
+        { shortcut: 'faq_piercing',        title: 'Do I need pierced ears?',  message: '👂 *Pierced Ears*\n\nAll earrings require *pierced ears*.\n\nWe offer:\n✅ Push-back studs\n' },
+      ],
+      pricing: [
+        { shortcut: 'faq_price',         title: 'What are the prices?',    message: '💰 *Our Prices*\n\n💍 *Earrings & Rings* — ₹299/-\n📿 *Necklace & Bracelet* — ₹549/-\n✨ *Pendant Sets* — ₹799/-\n\n🔥 Already Upto *50% OFF* — MRP crossed out!\n🚚 FREE shipping above ₹498/-\n\n👉 Website — browse & checkout:\n' + this.env.WEBSITE_URL + '\n\n👉 Catalogue — browse & checkout:\n' + this.env.CATALOG_URL},
+        { shortcut: 'faq_discount',      title: 'Any discount available?', message: '🎉 *Offers*\n\n✅ Already Upto *50% OFF* on all products!\n✅ No extra coupon needed\n\n🚚 FREE delivery on orders above ₹498/-\n\n⚡ Prices are *fixed* — already lowest possible.\nWe don\'t negotiate as every piece is handcrafted.\n\n👉 Website — browse & checkout:\n' + this.env.WEBSITE_URL + '\n\n👉 Catalogue — browse & checkout:\n' + this.env.CATALOG_URL},
+        { shortcut: 'faq_shipping_cost', title: 'Is delivery free?',        message: '🚚 *Shipping Cost*\n\n✅ *FREE* on orders above ₹498/-\n💸 ₹60/- shipping on orders below ₹498/-\n\n💡 Pro tip: Order 2 items to get free shipping!\n\nDelivery in *2–5 working days* via Shiprocket.' },
+        { shortcut: 'faq_combo',         title: 'Any combo deals?',         message: '🎁 *Combo Deals*\n\nYes! Check our website for current combo sets:\n\n✨ Pendant & Earring sets\n✨ Necklace & Earring sets\n\n👉 Website — browse & checkout:\n' + this.env.WEBSITE_URL + '\n\n👉 Catalogue — browse & checkout:\n' + this.env.CATALOG_URL},
+        { shortcut: 'faq_minimum',       title: 'Any minimum order?',       message: '🛒 *Minimum Order*\n\nNo minimum order! Order even *1 piece*.\n\n✅ Single pieces available\n✅ Sets available\n✅ Multiple pieces — no limit!\n\n💡 Order 2+ items → FREE shipping automatically!' },
+      ],
+      ordering: [
+        { shortcut: 'faq_how_order',    title: 'How to place an order?',  message: '🛒 *How to Order*\n\n3 easy ways:\n\n1️⃣ *Website* → browse → add to cart → checkout\n   👉 ' + this.env.WEBSITE_URL + '\n\n2️⃣ *WhatsApp Catalogue* → browse → add to cart → checkout\n   👉 ' + this.env.CATALOG_URL + '\n\n3️⃣ *Payment link* 👉 ' + this.env.PAYMENT_URL + '\n\n✅ Payment via UPI / Card / Net Banking' },
+        { shortcut: 'faq_cod',          title: 'Is COD available?',       message: '💸 *Cash on Delivery*\n\n❌ *COD is NOT available.*\n\nWe only accept *online payment*:\n✅ UPI (GPay, PhonePe, Paytm)\n✅ Debit/Credit Card\n✅ Net Banking\n✅ Razorpay Payment Link\n\n🔒 100% secure & instant confirmation.' },
+        { shortcut: 'faq_payment_safe', title: 'Is payment safe?',        message: '🔒 *Payment Safety*\n\n100% SAFE & SECURE!\n\n✅ Powered by *Razorpay* (India\'s #1 payment gateway)\n✅ SSL encrypted\n✅ No card details stored\n✅ RBI compliant\n✅ Instant order confirmation\n\n💎 100,000+ safe transactions processed daily by Razorpay.' },
+        { shortcut: 'faq_confirmation', title: 'Will I get confirmation?', message: '✅ *Order Confirmation*\n\nYes! You\'ll receive:\n\n📱 *WhatsApp message* — instant confirmation\n📧 *Email* — order details (if provided)\n\nYou\'ll get:\n• Order ID (KP-XXXXX)\n• Items ordered\n• Delivery address\n• Tracking details when shipped\n\n💎 We confirm every order personally!' },
+      ],
+      delivery: [
+        { shortcut: 'faq_delivery_time', title: 'How long to deliver?',   message: '🚚 *Delivery Time*\n\n📦 *2–5 working days* across India\n\n• Metro cities: 2–3 days\n• Other cities: 3–4 days\n• Remote areas: 4–7 days\n\n✅ Powered by *Shiprocket*\n✅ Tracking link sent on WhatsApp\n✅ Working days (Mon–Sat)' },
+        { shortcut: 'faq_delivery_area', title: 'Deliver to my area?',    message: '📍 *Delivery Coverage*\n\n✅ We deliver *PAN India* — all 28 states!\n\nIncluding:\n• All metro cities\n• Tier 2 & 3 cities\n• Towns & villages\n' },
+        { shortcut: 'faq_packaging',     title: 'Is packaging safe?',     message: '📦 *Packaging*\n\n✅ Each piece individually wrapped\n✅ Bubble wrap protection\n✅ Rigid box for safety\n✅ KAAPAV branded packaging\n✅ 100% damage-proof for transit\n\n🎁 Gift-ready packaging on every order!' },
+        { shortcut: 'faq_track',         title: 'How to track my order?', message: '📦 *Track Your Order*\n\nOr track directly:\n👉 ' + this.env.TRACKING_URL + '\n\n✅ AWB/tracking number sent on WhatsApp when shipped\n✅ Real-time Shiprocket tracking\n✅ SMS + email updates too!' },
+        { shortcut: 'faq_delayed',       title: 'My order is delayed',    message: '⏰ *Order Delayed?*\n\nSorry for the inconvenience! 🙏\n\nCommon reasons:\n• High demand period\n• Remote location\n• Courier delay\n' },
+      ],
+      returns: [
+        { shortcut: 'faq_return',      title: 'Can I return the order?',  message: '🔄 *Returns Policy*\n\n✅ *7-day return policy*\n\nConditions:\n✅ Unboxing video mandatory\n✅ Item unused & in original packaging\n✅ Return request within 7 days of delivery\n\n⚠️ ₹60/- reverse shipping deducted\n\nMessage us with Order ID + video to start return.' },
+        { shortcut: 'faq_damaged',     title: 'Item arrived damaged',     message: '😟 *Damaged Item*\n\nSo sorry! This shouldn\'t happen. 🙏\n\nDo this IMMEDIATELY:\n1. Record unboxing video (if not done)\n2. Share Order ID + photos/video here\n3. We\'ll replace or refund ASAP!\n\n✅ Damage cases resolved within 24 hours\n✅ Full replacement or refund — your choice!' },
+        { shortcut: 'faq_refund_time', title: 'How long for refund?',     message: '💰 *Refund Timeline*\n\nAfter we receive & verify the return:\n\n⏰ *5–7 working days* to original payment method\n\n• UPI → 2–3 days\n• Card/Net Banking → 5–7 days\n• Bank transfer → 3–5 days\n\n✅ We notify you on WhatsApp at every step!' },
+        { shortcut: 'faq_exchange',    title: 'Can I exchange?',          message: '🔄 *Exchange Policy*\n\n✅ Exchange available within *7 days*\n\nConditions:\n✅ Unboxing video required\n✅ Item unused & undamaged\n✅ Exchange for same or higher value item\n\n⚠️ ₹60/- shipping deducted for both ways\n\nMessage us with Order ID to start exchange!' },
+        { shortcut: 'faq_cancel',      title: 'Can I cancel my order?',   message: '❌ *Order Cancellation*\n\n⚠️ *Orders cannot be cancelled* once placed.\n\nReason: We process & ship within hours!\n\nIf delivered and issue:\n✅ Return within 7 days (with unboxing video)\n✅ Full refund minus ₹60 shipping\n\nPlease order carefully. Sizes & details in product description!' },
+      ],
+      care: [
+        { shortcut: 'faq_care',    title: 'How to care for jewellery?', message: '✨ *Jewellery Care Tips*\n\n💎 To make it last years:\n\n✅ Remove before shower/swimming\n✅ Apply perfume BEFORE wearing\n✅ Wipe dry with soft cloth after use\n✅ Store in pouch when not wearing\n✅ Avoid direct sunlight storage\n\n❌ Don\'t use harsh cleaners\n❌ Don\'t soak in water\n\n💛 5 minutes of care = years of beauty!' },
+        { shortcut: 'faq_perfume', title: 'Can I spray perfume on it?', message: '🌸 *Perfume & Jewellery*\n\n⚠️ Avoid spraying perfume DIRECTLY on jewellery.\n\n✅ Apply perfume first → let it dry → then wear\n✅ This prevents chemical reaction with plating\n✅ Your jewellery stays shiny longer!\n\n💡 Rule: Jewellery is the LAST thing you put on!' },
+        { shortcut: 'faq_sleep',   title: 'Can I sleep wearing it?',   message: '😴 *Sleeping with Jewellery*\n\nWe recommend *removing jewellery before sleep*.\n\nWhy:\n⚠️ Sweat & body heat accelerate tarnishing\n⚠️ Risk of bending delicate pieces\n⚠️ Chain can tangle or break\n\n✅ Store in pouch overnight\n✅ Takes 10 seconds — adds months to lifespan!' },
+      ],
+      brand: [
+{
+  shortcut: 'faq_about',
+  title: 'About KAAPAV',
+  message:
+    '👑 *About KAAPAV*\n\n' +
+    '💎 *Simple Luxury — Crafted for You.*\n\n' +
+    'KAAPAV is an Indian D2C *fashion jewellery* brand created for women who love elegant, premium-looking jewellery without paying real-gold prices.\n\n' +
+    '✨ Contemporary everyday designs\n' +
+    '💛 Premium artificial jewellery\n' +
+    '🛡️ Anti-tarnish coated pieces\n' +
+    '💰 Starting from ₹299/- only\n' +
+    '🚚 Free shipping above ₹498/-\n' +
+    '📦 Fast 2–4 day delivery\n\n' +
+    'Luxury should feel beautiful, easy and wearable — every single day. 🤍'
+},
+
+{
+  shortcut: 'faq_social',
+  title: 'Social media links',
+  message:
+    '📱 *Follow KAAPAV*\n\n' +
+    '✨ New arrivals\n' +
+    '💎 Styling ideas\n' +
+    '🔥 Offers & updates\n' +
+    '🤍 Behind-the-scenes jewellery drops\n\n' +
+    '📸 *Instagram*\n' +
+    '👉 ' + this.env.INSTAGRAM_URL + '\n\n' +
+    '👍 *Facebook*\n' +
+    '👉 ' + this.env.FACEBOOK_URL + '\n\n' +
+    '💛 Follow us and stay close to the KAAPAV sparkle!'
+},
+{
+  shortcut: 'faq_contact',
+  title: 'How to contact us',
+  message:
+    '📞 *Contact KAAPAV*\n\n' +
+    'Need help choosing your jewellery? We’re here for you. 🤍\n\n' +
+    '💬 *WhatsApp* — fastest support\n' +
+    'Just message us here.\n\n' +
+    '📧 *Email*\n' +
+    'care.kaapav@gmail.com\n\n' +
+    '🌐 *Website*\n' +
+    '👉 ' + this.env.WEBSITE_URL + '\n\n' +
+    '📱 *WhatsApp Catalogue*\n' +
+    '👉 ' + this.env.CATALOG_URL + '\n\n' +
+    '⚡ Instant reply'
+},
+      ],
+    };
+
+  }
+
+async getWebUrl(phone, category = '') {
+  const customer = await this.env.DB.prepare(`
+    SELECT customer_id
+    FROM customers
+    WHERE phone = ? OR phone = ?
+    LIMIT 1
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  const cid = customer?.customer_id;
+
+  if (!category) {
+    return `https://www.kaapav.com/${cid}`;
+  }
+
+  return `https://www.kaapav.com/${cid}/${category}`;
+}
+
+async getCatUrl(phone) {
+  const customer = await this.env.DB.prepare(`
+    SELECT customer_id
+    FROM customers
+    WHERE phone = ? OR phone = ?
+    LIMIT 1
+  `).bind(phone, phone.replace(/^91/, '')).first();
+
+  return `https://catalogue.kaapav.com/${customer?.customer_id}`;
+}
+
+async getCategoryUrl(phone, category) {
+  const cid = await createTrackingSession(
+    this.env, phone, category
+  );
+  return `https://catalogue.kaapav.com/${cid}`;
+}
+
+  // ── ENTRY POINT ────────────────────────────────────────────────
+  async process({ phone, name, text, messageType, buttonId, messageId }) {
+    // Global dedup — never process same message twice
+    const dedupeKey = `dedup:${messageId}`;
+    const already = await this.env.KV.get(dedupeKey);
+    if (already) return;
+    await this.env.KV.put(dedupeKey, '1', { expirationTtl: 86400 });
+
+    // Check if bot is disabled for this chat (admin manually chatting)
+    try {
+      const chat = await this.env.DB.prepare(
+        `SELECT is_bot_enabled FROM chats WHERE phone = ?`
+      ).bind(phone).first();
+      if (chat && chat.is_bot_enabled === 0) {
+        console.log(`Bot disabled for ${phone}, skipping autoresponder`);
+        return;
+      }
+    } catch {}
+
+    // ── Skip non-interactive message types ────────────────────
+    if (['image', 'video', 'audio', 'voice', 'sticker', 'document',
+         'unsupported', 'reaction', 'location', 'contacts', 'system'].includes(messageType)) {
+      return;
+    }
+
+    // ── 0. Order state machine — check first ─────────────────────
+    const convState = await getConvState(phone, this.env);
+    if (convState && convState.state.startsWith('order_')) {
+      await this.handleOrderState(phone, convState.state, convState.data, (text || '').trim());
+      return;
+    }
+
+const input = (buttonId || text || '').trim();
+const inputLower = input.toLowerCase();
+
+// If user is inside biz flow, only continue for biz list/buttons.
+// Normal typed keywords should escape back to normal autoresponder.
+if (convState && convState.state.startsWith('biz_')) {
+  if (
+    buttonId &&
+    (
+      buttonId.startsWith('biz_type_') ||
+      buttonId === 'biz_yes' ||
+      buttonId === 'biz_no'
+    )
+  ) {
+    await this.handleBizEnquiryState(phone, convState.state, convState.data, input);
+    return;
+  }
+
+  if (convState.state !== 'biz_type') {
+    await this.handleBizEnquiryState(phone, convState.state, convState.data, input);
+    return;
+  }
+
+  await clearConvState(phone, this.env);
+  // no return — let normal autoresponder handle order/exchange/hi/etc below
+}
+
+
+    // ── 1. Hard button IDs (exact match, no ambiguity) ───────────
+    const action = this.resolveButtonId(input);
+    if (action) {
+      await this.executeAction(phone, action, input);
+      return;
+    }
+
+    // ── 2. FAQ category list selection ───────────────────────────
+    //    buttonId looks like "faq_cat_appearance" etc.
+    const faqCat = this.FAQ_CATEGORIES.find(c => c.id === input);
+    if (faqCat) {
+      await this.sendFaqCategoryMenu(phone, faqCat);
+      return;
+    }
+
+    // ── 3. Individual FAQ item selected from category sub-list ───
+    //    buttonId looks like "faq_item_0", "faq_item_1" etc.
+    //    We store pending category in KV so we know which group
+    if (/^faq_item_\d+$/.test(input)) {
+      await this.handleFaqItemSelection(phone, input);
+      return;
+    }
+
+    // ── 4. Post-FAQ action buttons ───────────────────────────────
+    if (input === 'faq_more')  { await this.sendBrowseTopics(phone); return; }
+    if (input === 'faq_order') { await this.executeAction(phone, 'ORDER_FLOW'); return; }
+    if (input === 'faq_home')  { await this.executeAction(phone, 'MAIN_MENU'); return; }
+
+    // ── 5. Text triggers ─────────────────────────────────────────
+    const textAction = this.resolveTextTrigger(inputLower);
+    if (textAction) {
+      await this.executeAction(phone, textAction, input);
+      return;
+    }
+
+    // ── 6. Free-text FAQ keyword search (inside Help flow) ───────
+    //    Only fire if user is in help context OR no other match
+    const faqMatch = await this.searchFaqByKeyword(inputLower);
+    if (faqMatch) {
+      await this.sendFaqAnswer(phone, faqMatch);
+      return;
+    }
+
+    // ── 7. Greeting → always show Main Menu ──────────────────────
+    const greetRegex = new RegExp(
+  '^(hi|hello|hey|helo|hii|hiii|namaste|namaskar|jai|ram|shri|' +
+  'good (morning|evening|afternoon|night)|' +
+  'vanakkam|vannakkam|sugam|hai|enna|start|begin|menu|' +
+  '\u0bb5\u0ba3\u0b95\u0bcd\u0b95\u0bae\u0bcd|' +  // Tamil: வணக்கம்
+  '\u0c28\u0c2e\u0c38\u0c4d\u0c15\u0c3e\u0c30\u0c02\u0c32\u0c41|' + // Telugu: నమస్కారంలు
+  '\u0ca8\u0cae\u0cb8\u0ccd\u0c95\u0cbe\u0cb0)'     // Kannada: ನಮಸ್ಕಾರ
+);
+if (greetRegex.test(inputLower)) {
+  await this.executeAction(phone, 'MAIN_MENU');
+  return;
+}
+
+    // ── 8. No match → show Help prompt ───────────────────────────
+    await this.sendHelpPrompt(phone);
+  }
+
+  // ── BUTTON ID → ACTION MAP ─────────────────────────────────────
+  // All interactive button reply IDs used in menus
+  resolveButtonId(id) {
+    const MAP = {
+      // Main navigation
+      'main_menu':        'MAIN_MENU',
+      'back':             'MAIN_MENU',
+      'home':             'MAIN_MENU',
+      // Main menu buttons
+      'btn_website':       'OPEN_WEBSITE',
+      'btn_catalogue':     'OPEN_CATALOG',
+      'btn_help':          'HELP_MENU',
+
+      // Help menu buttons
+      'btn_browse':        'BROWSE_TOPICS',
+      'btn_offers':        'OFFERS_MENU',
+      'btn_help_back':     'MAIN_MENU',
+
+      // Offers menu buttons
+      'btn_deals':         'DEALS_MENU',
+      'btn_offers_back':   'HELP_MENU',
+
+      // Deals menu buttons
+      'btn_bestsellers':   'OPEN_BESTSELLERS',
+      'btn_shop_now':      'OPEN_WEBSITE',
+      'btn_deals_back':    'HELP_MENU',
+
+       ORDER_OPEN_WEBSITE: 'ORDER_OPEN_WEBSITE',
+       ORDER_OPEN_CATALOG: 'ORDER_OPEN_CATALOG',
+       ORDER_PAY_NOW: 'ORDER_PAY_NOW',
+
+      // Post-FAQ buttons
+      'faq_more':         null, // handled separately above
+      'faq_order':        null, // handled separately above
+      'faq_home':         null, // handled separately above
+    };
+    return MAP[id] ?? null;
+  }
+
+  // ── TEXT TRIGGER → ACTION MAP ──────────────────────────────────
+resolveTextTrigger(inputLower) {
+
+// ── BIZ_ENQUIRY ─────────────────────────────────────────────
+
+const bizRegex = /\b(content\s*creator|creator|reels?\s*creator|ugc\s*creator|influencer|youtuber|instagrammer|blogger|model|collab(?:oration|orate|otation)?|paid\s+(?:collab(?:oration)?|opportunit(?:y|ies)|partnership|promotion)|brand\s+(?:collab(?:oration)?|collab|deal|partnership)|media\s+kit|press\s+kit|sponsorship|sponsor|affiliate|ambassador|marketing\s+agency|digital\s+marketing|social\s+media\s+marketing|performance\s+marketing|meta\s+ads|facebook\s+ads|instagram\s+ads|google\s+ads|seo|reseller|wholesale|bulk\s+order|distributor|vendor|supplier|business\s+(?:proposal|enquiry|inquiry)|partnership\s+proposal|work\s+with\s+(?:you|your\s+brand)|tie[\s-]?up)\b/i;
+
+if (bizRegex.test(inputLower)) return 'BIZ_ENQUIRY';
+
+  // ── ORDER FLOW ─────────────────────────────────────────────
+  const orderRegex = new RegExp(
+    'i want to (buy|order|purchase)|how to (buy|order)|want to buy|can i order|place an? order|' +
+    'order karn[ae]|order dena|order chahiye|mujhe order|buy karna|kharidna hai|' +
+    'order pannanum|vanganum|vaanganam|' +
+    'order cheyali|kaavali|order cheyyandi|' +
+    'order maadabeku|kharidi maadabeku'
+  );
+  if (orderRegex.test(inputLower)) return 'ORDER_FLOW';
+
+  // ── BRACELET ───────────────────────────────────────────────
+  const braceletRegex = new RegExp(
+    'bracelet|br|bangle|bracelets|kada|kara|' +
+    '\u0bb5\u0bb3\u0bc8\u0baf\u0bb2\u0bcd|' +  // Tamil: வளையல்
+    '\u0c17\u0c3e\u0c1c\u0c41\u0c32\u0c41|' +  // Telugu: గాజులు
+    '\u0c2c\u0cb3\u0cc6'                         // Kannada: ಬಳೆ
+  );
+  if (braceletRegex.test(inputLower)) return 'CAT_BRACELET';
+
+  // ── NECKLACE ───────────────────────────────────────────────
+  const necklaceRegex = new RegExp(
+    'necklace|necklaces|haar|chain|mala|neck|nk|' +
+    '\u0bae\u0bbe\u0bb2\u0bc8|' +              // Tamil: மாலை
+    '\u0c28\u0c46\u0c15\u0c4d\u0c32\u0c46\u0c38\u0c4d|' + // Telugu: నెక్లెస్
+    '\u0cb9\u0cbe\u0cb0'                         // Kannada: ಹಾರ
+  );
+  if (necklaceRegex.test(inputLower)) return 'CAT_NECKLACE';
+
+  // ── EARRINGS ───────────────────────────────────────────────
+  const earringRegex = new RegExp(
+    'earring|earrings|ear|jhumka|bali|stud|tops|jhumke|' +
+    '\u0b95\u0bbe\u0ba4\u0ba3\u0bbf|' +        // Tamil: காதணி
+    '\u0c1a\u0c46\u0c35\u0c3f\u0c2a\u0c4b\u0c17\u0c41\u0c32\u0c41|' + // Telugu: చెవిపోగులు
+    '\u0c95\u0cbf\u0cb5\u0cbf\u0caf\u0ccb\u0cb2\u0cc6'  // Kannada: ಕಿವಿಯೋಲೆ
+  );
+  if (earringRegex.test(inputLower)) return 'CAT_EARRINGS';
+
+  // ── PENDANT SETS ───────────────────────────────────────────
+  const pendantSetRegex = new RegExp(
+    'pendant set|earring set|pendant sets|set|earring pendant sets|pendant earrings sets|sets|earrings sets|jewellery set|full set|set chahiye|' +
+    '\u0ba8\u0b95\u0bc8 \u0b9a\u0bc6\u0b9f\u0bcd|' +    // Tamil: நகை செட்
+    '\u0c1c\u0c4d\u0c2f\u0c41\u0c2f\u0c46\u0c32\u0c30\u0c40 \u0c38\u0c46\u0c1f\u0c4d|' + // Telugu: జ్యుయెలరీ సెట్
+    '\u0c92\u0ca1\u0cb5\u0cc6 \u0c38\u0cc6\u0c9f\u0ccd'  // Kannada: ಒಡವೆ ಸೆಟ್
+  );
+  if (pendantSetRegex.test(inputLower)) return 'CAT_PENDANT_SETS';
+
+  // ── PENDANT ────────────────────────────────────────────────
+  const pendantRegex = new RegExp(
+    'pendant|pendants|locket|mangalsutra|' +
+    '\u0bb2\u0bbe\u0b95\u0bcd\u0b95\u0bc6\u0b9f\u0bcd|' + // Tamil: லாக்கெட்
+    '\u0c32\u0c3e\u0c15\u0c46\u0c1f\u0c4d|' +             // Telugu: లాకెట్
+    '\u0cb2\u0cbe\u0c95\u0cc6\u0c9f\u0ccd'                 // Kannada: ಲಾಕೆಟ್
+  );
+  if (pendantRegex.test(inputLower)) return 'CAT_PENDANT';
+
+  // ── RINGS ──────────────────────────────────────────────────
+  const ringRegex = new RegExp(
+    '\\bring\\b|anguthi|ring|rings|fingerrings|fingerring|finger ring|finger rings|angoothi|' +
+    '\u0bae\u0bcb\u0ba4\u0bbf\u0bb0\u0bae\u0bcd|' +  // Tamil: மோதிரம்
+    '\u0c09\u0c02\u0c17\u0c30\u0c02|' +               // Telugu: ఉంగరం
+    '\u0c89\u0c02\u0c17\u0cb0'                         // Kannada: ಉಂಗರ
+  );
+  if (ringRegex.test(inputLower)) return 'CAT_RINGS';
+
+// ── WEBSITE ─────────────────────────────────────────────
+const websiteRegex = new RegExp(
+  'website|web site|site|online store|online shop|shop online|kaapav website|kaapav.com|www.kaapav.com|open website|visit website|website link|online shop|shop online|kaapav website|kaapav.com|www.kaapav.com|open website|visit website|website link'
+);
+
+if (websiteRegex.test(inputLower)) return 'OPEN_WEBSITE';
+
+  // ── CATALOGUE ──────────────────────────────────────────────
+  const catalogRegex = new RegExp(
+    'catalogue|catalog|collection|collections|catlog|sab dikhao|all products|poora|' +
+    '\u0b95\u0bbe\u0b9f\u0bcd\u0b9f\u0bc1|' +  // Tamil: காட்டு
+    '\u0c1a\u0c42\u0c2a\u0c3f\u0c02\u0c1a\u0c41|' + // Telugu: చూపించు
+    '\u0ca4\u0ccb\u0cb0\u0cbf\u0cb8\u0cc1'      // Kannada: ತೋರಿಸು
+  );
+if (catalogRegex.test(inputLower)) return 'OPEN_CATALOG';
+
+  return null;
+}
+
+  // ── EXECUTE ACTION ─────────────────────────────────────────────
+  async executeAction(phone, action, input = '') {
+    const env = this.env;
+
+    const wLink = await this.getWebUrl(phone);
+    const cLink = await this.getCatUrl(phone);
+   
+  const saveOutgoing = async (text, type = 'text', btns = null) => {
+  const msgId = `auto_${Date.now()}_${Math.random().toString(36).slice(2)}_${phone}`;
+  const isMenu = type === 'buttons' ? 1 : 0;
+  const buttonText = btns ? btns.map(b => b.title).join('|') : null;
+  const buttonsJson = btns ? JSON.stringify(btns) : null;
+
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status,
+       is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
+    VALUES (?, ?, ?, ?, 'outgoing', 'sent', 1, ?, ?, ?, datetime('now'), datetime('now'))
+  `).bind(msgId, phone, text, type, isMenu, buttonText, buttonsJson).run();
+
+  await env.DB.prepare(`
+    UPDATE chats SET
+      last_message = ?, last_message_type = ?, last_direction = 'outgoing',
+      last_timestamp = datetime('now'), updated_at = datetime('now')
+    WHERE phone = ?
+  `).bind(text, type, phone).run();
+};
+
+const sendButtons = async (text, btns, footer = null) => {
+  await sendWhatsAppButtons(env, phone, text, btns, footer);
+  await saveOutgoing('[Menu] ' + text, 'buttons', btns);
+};
+
+const sendCtaUrl = async (text, buttonText, url, footer = null) => {
+  await sendWhatsAppCtaUrl(env, phone, text, buttonText, url, footer);
+  await saveOutgoing('[CTA] ' + text + '\n' + url, 'buttons', [
+    { id: 'cta_url', title: buttonText, url }
+  ]);
+};
+
+const sendText = async (text) => {
+      await sendWhatsAppText(env, phone, text);
+      await saveOutgoing(text, 'text');
+    };
+
+    switch (action) {
+
+      // ════════════════════════════════════════
+      // MAIN MENU
+      // ════════════════════════════════════════
+      case 'MAIN_MENU':
+        await sendButtons(
+`═══════════════════════════
+✨ *KAAPAV Fashion Jewellery* ✨
+═══════════════════════════
+
+💎 Simple Luxury — Crafted for You
+
+👑 Elegant collections
+✨ Timeless sparkle
+💝 Crafted to impress	
+
+How can we help you today? 👇`,
+          [
+            { id: 'btn_website',   title: '💎 Website' },
+            { id: 'btn_catalogue', title: '📱 Catalogue' },
+            { id: 'btn_help',      title: '❓ Help & FAQs' },	
+          ],
+          '💖 Where Luxury Meets You'
+        );
+        break;
+
+
+
+      // ════════════════════════════════════════
+      // HELP MENU
+      // ════════════════════════════════════════
+      case 'HELP_MENU':
+        await sendButtons(
+`═══════════════════════════
+❓ *Help & FAQs*
+═══════════════════════════
+
+👑 We’re here to assist you
+
+💬 Get instant answers
+🎁 Explore offers & tracking
+✨ Everything in one place
+
+What would you like to do? 👇`,
+          [
+            { id: 'btn_browse',    title: '📋 FAQs' },
+            { id: 'btn_offers',    title: '🎁 Offers' },
+            { id: 'btn_help_back', title: '🏠 Back' },
+          ],
+          '💖 Assistance with elegance'
+        );
+        break;
+
+      // ════════════════════════════════════════
+      // OFFERS & DEALS MENU
+      // ════════════════════════════════════════
+      case 'OFFERS_MENU':
+        await sendButtons(
+`═══════════════════════════
+🎁 *Offers*
+═══════════════════════════
+
+👑 Discover our special picks
+
+🔥 Bestselling favourites
+✨ Luxury at irresistible prices
+💎 Curated to be loved
+
+What would you like to explore? 👇`,
+          [
+            { id: 'btn_deals',       title: '🔥 Bestsellers' },
+            { id: 'btn_shop_now',    title: '💎 Website' },
+            { id: 'btn_offers_back', title: '🏠 Back' },
+          ],
+          '✨ Great deals await!'
+        );
+        break;
+
+      // ════════════════════════════════════════
+      // DEALS MENU
+      // ════════════════════════════════════════
+      case 'DEALS_MENU':
+        await sendButtons(
+`═══════════════════════════
+🔥 *Bestsellers*
+═══════════════════════════
+
+👑 Most loved by KAAPAV customers
+
+💍 Earrings & Rings → ₹299/-
+📿 Necklace & Bracelet → ₹549/-
+✨ Sets → ₹799/-
+🚚 FREE shipping above ₹498/-
+
+Explore our favourites 👇`,
+          [
+            { id: 'btn_bestsellers', title: '🛍️ Open Bestsellers' },
+            { id: 'btn_shop_now',    title: '💎 Website' },
+            { id: 'btn_deals_back',  title: '🏠 Back' },
+          ],
+          "💖 Crafted to stand out"
+        );
+        break;
+
+ 
+      // ════════════════════════════════════════
+      // HELP PROMPT
+      // User types freely OR browses topics
+      // ════════════════════════════════════════
+      case 'HELP_PROMPT':
+        await sendButtons(
+`═══════════════════════════
+❓ *Help & FAQs*
+═══════════════════════════
+
+Just type your question! 😊
+
+For example:
+• "Will it tarnish?"
+• "How long to deliver?"
+• "Can I return it?"
+• "What is the price?"
+
+Or browse all topics below 👇`,
+          [
+            { id: 'btn_browse',    title: '📋 FAQs' },
+            { id: 'btn_offers',    title: '🎁 Offers & Track' },
+            { id: 'btn_help_back', title: '🏠 Back' },
+          ],
+          '💬 We answer everything!'
+        );
+        break;
+
+     // ════════════════════════════════════════
+// OPEN WEBSITE
+// ════════════════════════════════════════
+case 'OPEN_WEBSITE': {
+  const webUrl = await this.getWebUrl(phone);
+
+  await sendCtaUrl(
+`═══════════════════════════
+🌐 *Visit Our Website*
+═══════════════════════════
+
+💎 Complete Collection Online
+
+✨ Latest arrivals
+🛍️ All categories
+💳 Easy & secure checkout
+
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    '🌐 Open Website',
+    webUrl
+  );
+
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
+
+  break;
+}
+
+case 'OPEN_CATALOG': {
+  const catUrl = await this.getCatUrl(phone);
+
+  await sendCtaUrl(
+`═══════════════════════════
+📱 *KAAPAV Catalogue*
+═══════════════════════════
+
+💎 Explore our online collection
+
+✨ Browse all categories
+🛍️ Discover your favourites
+💝 Designed for effortless shopping
+
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    '🛍️ Open Catalogue',
+    catUrl
+  );
+
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
+
+  break;
+}
+
+// ════════════════════════════════════════
+// OPEN BESTSELLERS
+// ════════════════════════════════════════
+case 'OPEN_BESTSELLERS': {
+  const bestUrl = await this.getWebUrl(phone, 'bestsellers');
+
+  await sendCtaUrl(
+`═══════════════════════════
+🛍️ *Bestselling Pieces*
+═══════════════════════════
+
+💎 Most Loved by Customers
+
+❤️ Top rated designs
+🔥 Trending right now
+⚡ Limited stock available!
+
+═══════════════════════════
+💎 KAAPAV Fashion Jewellery`,
+    '🛍️ View Bestsellers',
+    bestUrl
+  );
+
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
+
+  break;
+}
+
+case 'CAT_BRACELET': {
+  const webUrl = await this.getWebUrl(phone, 'bracelets');
+
+  await sendCtaUrl(
+`═══════════════════════════
+📿 *KAAPAV Bracelets*
+═══════════════════════════
+
+💎 Our Bracelet Collection
+
+✨ Anti-tarnish artificial gold
+💰 Starting ₹549/- only
+🚚 Free shipping above ₹498/-
+
+💬 Message us to order!`,
+    '📿 Open Bracelets',
+    webUrl
+  );
+
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
+
+  break;
+}
+
+case 'CAT_NECKLACE': {
+  const webUrl = await this.getWebUrl(phone, 'necklaces');
+
+  await sendCtaUrl(
+`═══════════════════════════
+✨ *KAAPAV Necklaces*
+═══════════════════════════
+
+💎 Our Necklace Collection
+
+✨ Elegant & timeless designs
+💰 Starting ₹549/- only
+🚚 Free shipping above ₹498/-
+
+💬 Message us to order!`,
+    '✨ Open Necklaces',
+    webUrl
+  );
+
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
+
+  break;
+}
+
+case 'CAT_EARRINGS': {
+  const webUrl = await this.getWebUrl(phone, 'earrings');
+
+  await sendCtaUrl(
+`═══════════════════════════
+👂 *KAAPAV Earrings*
+═══════════════════════════
+
+💎 Our Earring Collection
+
+✨ Lightweight & comfortable
+💰 Starting ₹299/- only
+🚚 Free shipping above ₹498/-
+
+💬 Message us to order!`,
+    '👂 Open Earrings',
+    webUrl
+  );
+
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
+
+  break;
+}
+
+case 'CAT_RINGS': {
+  const webUrl = await this.getWebUrl(phone, 'rings');
+
+  await sendCtaUrl(
+`═══════════════════════════
+💍 *KAAPAV Rings*
+═══════════════════════════
+
+💎 Our Ring Collection
+
+✨ Free size & adjustable
+💰 Starting ₹299/- only
+🚚 Free shipping above ₹498/-
+
+💬 Message us to order!`,
+    '💍 Open Rings',
+    webUrl
+  );
+
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
+
+  break;
+}
+
+case 'CAT_PENDANT': {
+  const webUrl = await this.getWebUrl(phone, 'pendants');
+
+  await sendCtaUrl(
+`═══════════════════════════
+💎 *KAAPAV Pendants*
+═══════════════════════════
+
+💎 Our Pendant Collection
+
+✨ Stunning designs
+💰 Starting ₹549/- only
+🚚 Free shipping above ₹498/-
+
+💬 Message us to order!`,
+    '💎 Open Pendants',
+    webUrl
+  );
+
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
+
+  break;
+}
+
+case 'CAT_PENDANT_SETS': {
+  const webUrl = await this.getWebUrl(phone, 'sets');
+
+  await sendCtaUrl(
+`═══════════════════════════
+🎁 *KAAPAV Pendant Sets*
+═══════════════════════════
+
+💎 Our Jewellery Sets
+
+✨ Matching pendant + earring sets
+💰 Starting ₹799/- only
+🚚 Free shipping above ₹498/-
+
+💬 Message us to order!`,
+    '🎁 Open Pendant Sets',
+    webUrl
+  );
+
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
+
+  break;
+}
+
+case 'BIZ_ENQUIRY': {
+  const customerRow = await env.DB.prepare(
+    `SELECT name FROM customers WHERE phone = ? LIMIT 1`
+  ).bind(phone).first();
+  await clearConvState(phone, env);
+
+await setConvState(
+  phone,
+  'biz_type',
+  {
+    name: customerRow?.name || '',
+    initial_message: input || ''
+  },
+  env
+);
+  await sendWhatsAppList(
+    env, phone,
+`═══════════════════════════
+👑 *KAAPAV Business Enquiry*
+═══════════════════════════
+
+Welcome! Let's get your details.
+
+*Step 1 of 5*
+What best describes you? 👇`,
+    '📋 Select Your Role',
+    [{
+      title: 'Your Role',
+      rows: [
+        { id: 'biz_type_influencer',  title: '📸 Influencer / Creator', description: 'Instagram, YouTube, Reels' },
+        { id: 'biz_type_agency',      title: '📣 Marketing Agency',     description: 'Social media, SEO, Ads' },
+        { id: 'biz_type_webdesigner', title: '💻 Web Designer / Dev',   description: 'Website, app, tech' },
+        { id: 'biz_type_reseller',    title: '🛍️ Reseller / Wholesale', description: 'Bulk orders, distribution' },
+        { id: 'biz_type_collab',      title: '🤝 Collaboration',        description: 'Brand deal, sponsorship' },
+        { id: 'biz_type_other',       title: '💼 Other',                description: 'Something else' },
+      ]
+    }],
+    '💎 KAAPAV Fashion Jewellery'
+  );
+  break;
+}
+ case 'ORDER_FLOW': {
+  const webUrl = await this.getWebUrl(phone);
+  const catUrl = await this.getCatUrl(phone);
+  const paymentUrl = env.PAYMENT_URL || 'https://razorpay.me/@kaapav';
+
+  await sendCtaUrl(
+`🛒 *How to Order*
+
+🌐 *Website*
+Browse → add to cart → checkout
+
+Tap below to open Website 👇`,
+    '🌐 Open Website',
+    webUrl
+  );
+
+  await new Promise(r => setTimeout(r, 700));
+
+  await sendCtaUrl(
+`📱 *WhatsApp Catalogue*
+
+*Browse inside WhatsApp Catalogue*
+Add products → checkout easily
+
+Tap below to open Catalogue 👇`,
+    '📱 Open Catalogue',
+    catUrl
+  );
+
+  await new Promise(r => setTimeout(r, 700));
+
+  await sendCtaUrl(
+`💳 *Payment Link*
+
+*Pay securely through Razorpay*
+
+✅ UPI
+✅ Card
+✅ Net Banking
+
+Tap below to pay 👇`,
+    '💳 Pay Now',
+    paymentUrl
+  );
+
+  await new Promise(r => setTimeout(r, 800));
+
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
+
+  break;
+}
+
+case 'ORDER_OPEN_WEBSITE': {
+  await sendCtaUrl(
+`🌐 *KAAPAV Website*
+
+Website → browse → add to cart → checkout`,
+    '🌐 Open Website',
+    await this.getWebUrl(phone)
+  );
+
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
+
+  break;
+}
+
+case 'ORDER_OPEN_CATALOG': {
+  await sendCtaUrl(
+`📱 *WhatsApp Catalogue*
+
+Catalogue → browse → add to cart → checkout`,
+    '📱 Open Catalogue',
+    await this.getCatUrl(phone)
+  );
+
+  await sendButtons(`Need anything else?`, [
+    { id: 'home', title: '🏠 Main Menu' },
+  ]);
+
+  break;
+}
+}
+}
+  // ── BROWSE TOPICS — WhatsApp List Message ─────────────────────
+  // Shows all 10 FAQ categories as a scrollable list
+  async sendBrowseTopics(phone) {
+    const env = this.env;
+
+    // WhatsApp list allows max 10 items in one section
+    const sections = [
+      {
+        title: 'Choose a Topic',
+        rows: this.FAQ_CATEGORIES.map(cat => ({
+          id: cat.id,
+          title: cat.title,
+          description: cat.desc,
+        })),
+      }
+    ];
+
+    await sendWhatsAppList(
+      env,
+      phone,
+`═══════════════════════════
+📋 *Browse FAQ Topics*
+═══════════════════════════
+
+💎 Pick a topic below and
+I'll answer all your questions!
+
+Tap to select 👇`,
+      '📋 Choose Topic',
+      sections,
+      '💬 Everything you need to know'
+    );
+
+    const msgId = `auto_${Date.now()}_${phone}`;
+   // In sendBrowseTopics, replace the DB save:
+const browseMsg = '📋 Browse FAQ Topics\n\n💎 Pick a topic below and I\'ll answer all your questions!\n\nTap to select 👇';
+await env.DB.prepare(`
+  INSERT OR IGNORE INTO messages
+    (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at)
+  VALUES (?, ?, ?, ?, 'outgoing', 'sent', 1, datetime('now'), datetime('now'))
+`).bind(msgId, phone, browseMsg, 'list').run();
+
+    await env.DB.prepare(`
+      UPDATE chats SET last_message = 'Browse Topics', last_message_type = 'list',
+        last_direction = 'outgoing', last_timestamp = datetime('now'), updated_at = datetime('now')
+      WHERE phone = ?
+    `).bind(phone).run();
+  }
+
+  // ── FAQ CATEGORY SELECTED from Browse Topics list ─────────────
+  // Shows sub-list of all FAQ questions in that group
+async sendFaqCategoryMenu(phone, faqCat) {
+  const env = this.env;
+
+  // Use hardcoded FAQ data instead of DB
+  const faqs = this.FAQ_DATA[faqCat.group] || [];
+
+  if (faqs.length === 0) {
+    await sendWhatsAppText(env, phone,
+      `No FAQs found for ${faqCat.title}. Type your question and I'll help! 😊`
+    );
+    return;
+  }
+
+  // Store FAQ index in KV for item selection
+  const faqIndex = faqs.map(f => f.shortcut);
+  await env.KV.put(`faq_index:${phone}`, JSON.stringify(faqIndex), { expirationTtl: 600 });
+
+  const rows = faqs.slice(0, 10).map((f, i) => ({
+    id: `faq_item_${i}`,
+    title: f.title.substring(0, 24),
+    description: '',
+  }));
+
+  const sections = [{ title: faqCat.title, rows }];
+
+  await sendWhatsAppList(
+    env, phone,
+`═══════════════════════════
+${faqCat.title}
+═══════════════════════════
+
+💎 Select your question below
+and get an instant answer! 👇`,
+    '❓ Select Question',
+    sections,
+    '💬 Tap to get your answer'
+  );
+
+  // Save to DB
+  const msgId = 'auto_' + Date.now() + '_' + phone;
+  await env.DB.prepare(
+    'INSERT OR IGNORE INTO messages (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at) VALUES (?, ?, ?, ?, \'outgoing\', \'sent\', 1, datetime(\'now\'), datetime(\'now\'))'
+  ).bind(msgId, phone, '📋 ' + faqCat.title + '\n\n💎 Select your question below and get an instant answer! 👇', 'list').run();
+  
+  await env.DB.prepare(
+    'UPDATE chats SET last_message = ?, last_message_type = \'list\', last_direction = \'outgoing\', last_timestamp = datetime(\'now\'), updated_at = datetime(\'now\') WHERE phone = ?'
+  ).bind(faqCat.title, phone).run();
+}
+
+ async handleOrderState(phone, state, data, input) {
+  const env = this.env;
+  const lower = input.toLowerCase();
+
+  // Cancel anytime
+  if (/cancel|stop|quit|nahi|nope/.test(lower)) {
+    await clearConvState(phone, env);
+    await sendWhatsAppText(env, phone, '❌ Order cancelled. No worries!\n\nType *order karna hai* anytime to start again. 💎');
+    return;
+  }
+
+  switch (state) {
+    case 'order_name':
+      if (input.length < 2) {
+        await sendWhatsAppText(env, phone, '😊 Please enter your *full name* for delivery:');
+        return;
+      }
+      data.name = input;
+      await setConvState(phone, 'order_address', data, env);
+      await sendWhatsAppText(env, phone, `Thanks ${input.split(' ')[0]}! 👋\n\nPlease enter your *complete delivery address*:\n_(House no, Street, Area, City)_`);
+      break;
+
+    case 'order_address':
+      if (input.length < 10) {
+        await sendWhatsAppText(env, phone, '📍 Please enter a more complete address:');
+        return;
+      }
+      data.address = input;
+      await setConvState(phone, 'order_pincode', data, env);
+      await sendWhatsAppText(env, phone, '📮 Enter your *PIN code*:');
+      break;
+
+    case 'order_pincode':
+      if (!/^\d{6}$/.test(input)) {
+        await sendWhatsAppText(env, phone, '⚠️ Please enter a valid *6-digit PIN code*:');
+        return;
+      }
+      data.pincode = input;
+      await setConvState(phone, 'order_confirm', data, env);
+
+      const cart = data.cart || [];
+      const total = cart.reduce((s, i) => s + (i.price * (i.qty || 1)), 0);
+      const shipping = total >= 498 ? 0 : 60;
+      const grand = total + shipping;
+      const lines = cart.map(i => `• ${i.name} × ${i.qty || 1} — ₹${i.price * (i.qty || 1)}`).join('\n');
+
+      await sendWhatsAppButtons(env, phone,
+`═══════════════════════════
+🛒 *Order Summary*
+═══════════════════════════
+
+${lines}
+━━━━━━━━━━━━━━━━━━
+📦 Subtotal: ₹${total}
+🚚 Shipping: ${shipping === 0 ? 'FREE 🎉' : '₹' + shipping}
+💰 *Total: ₹${grand}*
+═══════════════════════════
+
+📍 *Deliver to:*
+${data.name}
+${data.address}
+PIN: ${data.pincode}
+
+Confirm order? 👇`,
+        [
+          { id: 'order_yes', title: '✅ Confirm Order' },
+          { id: 'order_no',  title: '❌ Cancel' },
+        ]
+      );
+      break;
+
+      case 'order_confirm':
+        if (input === 'order_yes' || /yes|confirm|haan|ha/.test(lower)) {
+          const cart = data.cart || [];
+
+          // Duplicate order check
+          const dupeOrderId = await checkDuplicateOrder(env, phone, cart);
+          if (dupeOrderId) {
+            await clearConvState(phone, env);
+            await sendWhatsAppText(env, phone,
+              `⚠️ *Duplicate Order Detected*\n\nYou already have a recent order *${dupeOrderId}* with the same items.\n\nPlease complete payment for that order first, or wait 5 minutes to place a new one.\n\n💎 KAAPAV Fashion Jewellery`
+            );
+            return;
+          }
+
+          const total = cart.reduce((s, i) => s + (i.price * (i.qty || 1)), 0);
+    const shipping = total >= 498 ? 0 : 60;
+    const grand = total + shipping;
+    const orderId = await generateOrderId(env);
+    const items = cart.map(i => ({
+      name: i.name, sku: i.sku, qty: i.qty || 1, price: i.price
+    }));
+
+    // Save order to D1
+    await env.DB.prepare(`
+      INSERT INTO orders (
+        order_id, phone, customer_name, items, item_count,
+        subtotal, shipping_cost, total,
+        shipping_name, shipping_address, shipping_pincode,
+        status, payment_status, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unpaid', 'whatsapp', datetime('now'), datetime('now'))
+    `).bind(
+      orderId, phone, data.name,
+      JSON.stringify(items), items.length,
+      total, shipping, grand,
+      data.name, data.address, data.pincode
+    ).run();
+ 
+    await logOrderEvent(env, orderId, 'order_created', 'WhatsApp order created', {
+  phone,
+  customerName: data.name,
+  total: grand,
+  itemCount: items.length,
+}, 'whatsapp_bot');
+
+    try {
+      await syncOrderToGoogleSheetsSafe(env, orderId);
+      await syncCustomerToGoogleSheetsSafe(env, phone);
+      await syncLeadToGoogleSheetsSafe(env, phone);
+      await syncSalesToGoogleSheetsSafe(env, orderId);
+      await rebuildSourcePerformanceSheet(env);
+    } catch (e) {
+      console.error('Google Sheets sync error (WhatsApp order):', e);
+      await appendSyncFailureToGoogleSheets(env, {
+        destination: 'google_sheets',
+        entity_type: 'order',
+        entity_id: orderId,
+        action: 'order_created',
+        error_message: e.message,
+        retry_count: 0,
+        status: 'failed',
+      });
+    }
+    await clearConvState(phone, env);
+
+    // Build item lines for owner message
+    const itemLines = items
+      .map(i => `• ${i.name} x${i.qty} — \u20B9${i.price * i.qty}`)
+      .join('\n');
+
+    // Owner WA — new order alert (before payment, so they know it's coming)
+    await sendWhatsAppText(env, env.OWNER_PHONE,
+      `🛒 *New Order Placed!*\n\n` +
+      `Order ID: *${orderId}*\n` +
+      `Customer: ${data.name} (${phone})\n` +
+      `Address: ${data.address}\n` +
+      `PIN: ${data.pincode}\n\n` +
+      `🛍️ *Items:*\n${itemLines}\n\n` +
+      `📦 Subtotal: \u20B9${subtotal}\n` +
+      `🚚 Shipping: ${shipping === 0 ? 'FREE' : '\u20B9' + shipping}\n` +
+      `💰 *Total: \u20B9${grand}*\n\n` +
+      `⏳ Payment link sent. Awaiting payment...`
+    );
+
+    // Generate Razorpay payment link and send to customer
+    try {
+      const payLink = await createRazorpayLink(env, {
+        amount: grand,
+        name: data.name,
+        phone,
+        orderId,
+        description: `KAAPAV Order ${orderId}`
+      });
+
+      await env.DB.prepare(
+        `UPDATE orders SET payment_link = ? WHERE order_id = ?`
+      ).bind(payLink, orderId).run();
+
+      // Customer WA — order confirmed + payment link
+      await sendWhatsAppText(env, phone,
+        `💎 *Order Placed Successfully!*\n\n` +
+        `Order ID: *${orderId}*\n\n` +
+        `🛍️ *Items:*\n${itemLines}\n\n` +
+        `📦 Subtotal: \u20B9${subtotal}\n` +
+        `🚚 Shipping: ${shipping === 0 ? 'FREE 🎉' : '\u20B9' + shipping}\n` +
+        `💰 *Total: \u20B9${grand}*\n\n` +
+        `💳 *Complete payment here (valid 24 hrs):*\n${payLink}\n\n` +
+        `_Your order ships once payment is confirmed_ 🚚\n\n` +
+        `💎 KAAPAV Fashion Jewellery`
+      );
+
+    } catch(e) {
+      console.error('Razorpay error:', e);
+      // Fallback — order saved, tell customer we'll send link
+      await sendWhatsAppText(env, phone,
+        `✅ *Order Placed!*\n\n` +
+        `Order ID: *${orderId}*\n\n` +
+        `We'll send your payment link shortly! 💳\n\n` +
+        `💎 KAAPAV Fashion Jewellery`
+      );
+    }
+
+  } else {
+    await clearConvState(phone, env);
+    await sendWhatsAppText(env, phone,
+      `❌ Order cancelled.\n\nType *order karna hai* anytime to start again! 💎`
+    );
+  }
+  break;
+
+    default:
+      await clearConvState(phone, env);
+      await sendWhatsAppText(env, phone, 'Something went wrong. Let\'s start fresh!\n\nType *hi* to see the main menu. 😊');
+  }
+}
+  // ── FAQ ITEM SELECTED from category sub-list ──────────────────
+  async handleFaqItemSelection(phone, buttonId) {
+  const env = this.env;
+  const idx = parseInt(buttonId.split('_').pop(), 10);
+
+  const faqIndexRaw = await env.KV.get(`faq_index:${phone}`);
+  if (!faqIndexRaw) { await this.sendBrowseTopics(phone); return; }
+
+  const faqIndex = JSON.parse(faqIndexRaw);
+  const shortcut = faqIndex[idx];
+  if (!shortcut) { await this.sendBrowseTopics(phone); return; }
+
+// ✅ Make "How to Order" FAQ open the same Order Now button menu
+if (shortcut === 'faq_how_order') {
+  await this.executeAction(phone, 'ORDER_FLOW', 'faq_how_order');
+  return;
+}
+
+  // Find in hardcoded FAQ_DATA
+  let faq = null;
+  for (const group of Object.values(this.FAQ_DATA)) {
+    faq = group.find(f => f.shortcut === shortcut);
+    if (faq) break;
+  }
+
+  if (!faq) {
+    await sendWhatsAppText(env, phone, 'Sorry, could not find that answer. Please try again! 😊');
+    return;
+  }
+
+  await this.sendFaqAnswer(phone, faq);
+}
+
+  // ── SEND FAQ ANSWER + post-answer buttons ─────────────────────
+  // After answer: [❓ More] [🛒 Order] [🏠 Home]
+async sendFaqAnswer(phone, faq) {
+  const env = this.env;
+
+  // ✅ Make "How to Order" FAQ behave exactly like Order Now
+  if (
+    faq?.shortcut === 'faq_how_order' ||
+    /how to.*order|place.*order/i.test(faq?.title || '')
+  ) {
+    await this.executeAction(phone, 'ORDER_FLOW', 'faq_how_order');
+    return;
+  }
+
+  const webUrl = await this.getWebUrl(phone);
+  const catUrl = await this.getCatUrl(phone);
+
+  // ✅ FAQ price answer with Website/Catalogue buttons + normal next menu
+if (faq?.shortcut === 'faq_price') {
+  const priceMessage =
+`💰 *Our Prices*
+
+💍 *Earrings & Rings* — ₹299/-
+📿 *Necklace & Bracelet* — ₹549/-
+✨ *Pendant Sets* — ₹799/-
+
+🔥 Already Upto *50% OFF* — MRP crossed out!
+🚚 FREE shipping above ₹498/-
+
+🌐 *Website*
+Tap below to browse on Website 👇`;
+
+  const catalogueMessage =
+`📱 *WhatsApp Catalogue*
+Tap below to browse on Catalogue 👇`;
+
+  const nextButtons = [
+    { id: 'faq_more',  title: '❓ More Questions' },
+    { id: 'faq_order', title: '🛒 Order Now' },
+    { id: 'faq_home',  title: '🏠 Home' },
+  ];
+
+  await sendWhatsAppCtaUrl(
+    env,
+    phone,
+    priceMessage,
+    '🌐 Open Website',
+    webUrl,
+    '💎 KAAPAV Fashion Jewellery'
+  );
+
+  await new Promise(r => setTimeout(r, 700));
+
+  await sendWhatsAppCtaUrl(
+    env,
+    phone,
+    catalogueMessage,
+    '📱 Open Catalogue',
+    catUrl,
+    '💎 KAAPAV Fashion Jewellery'
+  );
+
+  await new Promise(r => setTimeout(r, 800));
+
+  await sendWhatsAppButtons(
+    env,
+    phone,
+    'Was that helpful? What would you like to do next?',
+    nextButtons,
+  );
+
+  const now = Date.now();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status,
+       is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
+     VALUES (?, ?, ?, 'buttons', 'outgoing', 'sent', 1, 1, ?, ?, datetime('now'), datetime('now'))`
+  ).bind(
+    `auto_${now}_faq_price_website_cta_${phone}`,
+    phone,
+    `[CTA] ${priceMessage}\n${webUrl}`,
+    '🌐 Open Website',
+    JSON.stringify([
+      { id: 'cta_url', title: '🌐 Open Website', url: webUrl }
+    ])
+  ).run();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status,
+       is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
+     VALUES (?, ?, ?, 'buttons', 'outgoing', 'sent', 1, 1, ?, ?, datetime('now'), datetime('now'))`
+  ).bind(
+    `auto_${now + 1}_faq_price_catalogue_cta_${phone}`,
+    phone,
+    `[CTA] ${catalogueMessage}\n${catUrl}`,
+    '📱 Open Catalogue',
+    JSON.stringify([
+      { id: 'cta_url', title: '📱 Open Catalogue', url: catUrl }
+    ])
+  ).run();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status,
+       is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
+     VALUES (?, ?, ?, 'buttons', 'outgoing', 'sent', 1, 1, ?, ?, datetime('now'), datetime('now'))`
+  ).bind(
+    `auto_${now + 2}_faq_price_next_${phone}`,
+    phone,
+    'Was that helpful? What would you like to do next?',
+    nextButtons.map(b => b.title).join('|'),
+    JSON.stringify(nextButtons)
+  ).run();
+
+  await env.DB.prepare(
+    `UPDATE chats SET last_message = ?, last_message_type = 'buttons',
+      last_direction = 'outgoing', last_timestamp = datetime('now'), updated_at = datetime('now')
+     WHERE phone = ?`
+  ).bind(
+    'Was that helpful? What would you like to do next?',
+    phone
+  ).run();
+
+  return;
+}
+
+// ✅ FAQ discount answer with direct Website/Catalogue CTA + normal next menu
+if (faq?.shortcut === 'faq_discount') {
+  const discountMessage =
+`🎉 *Offers*
+
+✅ Already Upto *50% OFF* on all products!
+✅ No extra coupon needed
+
+🚚 FREE delivery on orders above ₹498/-
+
+⚡ Prices are *fixed* — already lowest possible.
+We don't negotiate as every piece is handcrafted.
+
+🌐 *Website*
+Tap below to browse on Website 👇`;
+
+  const catalogueMessage =
+`📱 *WhatsApp Catalogue*
+Tap below to browse on Catalogue 👇`;
+
+  const nextButtons = [
+    { id: 'faq_more',  title: '❓ More Questions' },
+    { id: 'faq_order', title: '🛒 Order Now' },
+    { id: 'faq_home',  title: '🏠 Home' },
+  ];
+
+  await sendWhatsAppCtaUrl(
+    env,
+    phone,
+    discountMessage,
+    '🌐 Open Website',
+    webUrl,
+    '💎 KAAPAV Fashion Jewellery'
+  );
+
+  await new Promise(r => setTimeout(r, 700));
+
+  await sendWhatsAppCtaUrl(
+    env,
+    phone,
+    catalogueMessage,
+    '📱 Open Catalogue',
+    catUrl,
+    '💎 KAAPAV Fashion Jewellery'
+  );
+
+  await new Promise(r => setTimeout(r, 800));
+
+  await sendWhatsAppButtons(
+    env,
+    phone,
+    'Was that helpful? What would you like to do next?',
+    nextButtons,
+    '💎 KAAPAV Fashion Jewellery'
+  );
+
+  const now = Date.now();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status,
+       is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
+     VALUES (?, ?, ?, 'buttons', 'outgoing', 'sent', 1, 1, ?, ?, datetime('now'), datetime('now'))`
+  ).bind(
+    `auto_${now}_faq_discount_website_cta_${phone}`,
+    phone,
+    `[CTA] ${discountMessage}\n${webUrl}`,
+    '🌐 Open Website',
+    JSON.stringify([
+      { id: 'cta_url', title: '🌐 Open Website', url: webUrl }
+    ])
+  ).run();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status,
+       is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
+     VALUES (?, ?, ?, 'buttons', 'outgoing', 'sent', 1, 1, ?, ?, datetime('now'), datetime('now'))`
+  ).bind(
+    `auto_${now + 1}_faq_discount_catalogue_cta_${phone}`,
+    phone,
+    `[CTA] ${catalogueMessage}\n${catUrl}`,
+    '📱 Open Catalogue',
+    JSON.stringify([
+      { id: 'cta_url', title: '📱 Open Catalogue', url: catUrl }
+    ])
+  ).run();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status,
+       is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
+     VALUES (?, ?, ?, 'buttons', 'outgoing', 'sent', 1, 1, ?, ?, datetime('now'), datetime('now'))`
+  ).bind(
+    `auto_${now + 2}_faq_discount_next_${phone}`,
+    phone,
+    'Was that helpful? What would you like to do next?',
+    nextButtons.map(b => b.title).join('|'),
+    JSON.stringify(nextButtons)
+  ).run();
+
+  await env.DB.prepare(
+    `UPDATE chats SET last_message = ?, last_message_type = 'buttons',
+      last_direction = 'outgoing', last_timestamp = datetime('now'), updated_at = datetime('now')
+     WHERE phone = ?`
+  ).bind(
+    'Was that helpful? What would you like to do next?',
+    phone
+  ).run();
+
+  return;
+}
+
+  let message = String(faq.message || '');
+
+  if (env.WEBSITE_URL) {
+    message = message.replaceAll(env.WEBSITE_URL, webUrl);
+  }
+
+  if (env.CATALOG_URL) {
+    message = message.replaceAll(env.CATALOG_URL, catUrl);
+  }
+
+  await sendWhatsAppText(env, phone, message);
+
+  await new Promise(r => setTimeout(r, 800));
+
+  const nextButtons = [
+    { id: 'faq_more',  title: '❓ More Questions' },
+    { id: 'faq_order', title: '🛒 Order Now' },
+    { id: 'faq_home',  title: '🏠 Home' },
+  ];
+
+  await sendWhatsAppButtons(
+    env,
+    phone,
+    'Was that helpful? What would you like to do next?',
+    nextButtons,
+    '💎 KAAPAV Fashion Jewellery'
+  );
+
+  const now = Date.now();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at)
+     VALUES (?, ?, ?, 'text', 'outgoing', 'sent', 1, datetime('now'), datetime('now'))`
+  ).bind(
+    `auto_${now}_faq_${phone}`,
+    phone,
+    message
+  ).run();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO messages
+      (message_id, phone, text, message_type, direction, status,
+       is_auto_reply, is_menu, button_text, buttons, timestamp, created_at)
+     VALUES (?, ?, ?, 'buttons', 'outgoing', 'sent', 1, 1, ?, ?, datetime('now'), datetime('now'))`
+  ).bind(
+    `auto_${now + 1}_faqbtn_${phone}`,
+    phone,
+    'Was that helpful? What would you like to do next?',
+    nextButtons.map(b => b.title).join('|'),
+    JSON.stringify(nextButtons)
+  ).run();
+
+  await env.DB.prepare(
+    `UPDATE chats SET last_message = ?, last_message_type = 'buttons',
+      last_direction = 'outgoing', last_timestamp = datetime('now'), updated_at = datetime('now')
+     WHERE phone = ?`
+  ).bind(
+    'Was that helpful? What would you like to do next?',
+    phone
+  ).run();
+}
+
+// ── KEYWORD SEARCH across all FAQs ───────────────────────────
+  // Scans keywords JSON array in quick_replies for any word match
+  async searchFaqByKeyword(inputLower) {
+  if (inputLower.length < 3) return null;
+  // Simple keyword matching against FAQ titles and shortcuts
+  const keywords = {
+    'tarnish|tanish|tarnich|tarish|tarnesh|black|blacken|green|kaala|kala|colour|color|discolor|oxidiz|கருப்பு|పచ్చగా|ಕಪ್ಪು|കറുക്കും|काला|हरा': 'faq_tarnish',
+    'anti.?tarnish|antitarnish|tarnish.?free|non.?tarnish|anti.?rust|rust.?free|won.?t.?tarnish|no.?tarnish|protective coat': 'faq_antitarnish',
+    'real gold|original gold|asli sona|asli gold|pure gold|24k|22k|18k|artificial|imitation|nakli|naqli|fashion jewel|असली|నిజమైన|ಅಸಲಿ|യഥാർത്ഥ|real hai|original hai': 'faq_realgold',
+    'last|long|durable|durability|kitne din|kitna time|how many days|tikai|tikau|teekau|टिकाऊ|tikega|எத்தனை நாள்|ఎంత కాలం|ಎಷ್ಟು ದಿನ|എത്ര ദിവസം|कितने दिन': 'faq_last',
+    'daily|everyday|regular|roz|rozana|har din|தினமும்|ప్రతిరోజూ|ದಿನನಿತ್ಯ|ദിവസവും': 'faq_daily',
+    'ring|size|fit|anguthi|மோதிர|ఉంగరం|ಉಂಗುರ|മോതിരം': 'faq_ring_size',
+    'bracelet|bangle|kada|wrist|வளையல்|గాజులు|ಬಳೆ|വള': 'faq_bracelet_size',
+    'necklace|length|chain|haar|மாலை|నెక్లెస్|ಹಾರ|മാല': 'faq_necklace_length',
+    'earring|heavy|weight|ear|jhumka|bali|காதணி|చెవిపోగు|ಕಿವಿಯೋಲೆ|കമ്മൽ': 'faq_earring_weight',
+    'price|cost|rate|pp|Pp|PP|price?|kitna|how much|kitne ka|paisa|amount|sasta|mehnga|affordable|₹|rupee|விலை|ధర|ಬೆಲೆ|വില|दाम|कीमत': 'faq_price',
+    'discount|discounts|offer|offers|sale|off|coupon|promo|chut|छूट|தள்ளுபடி|డిస్కౌంట్|ರಿಯಾಯಿತಿ|കിഴിവ്': 'faq_discount',
+    'shipping|delivery charge|free ship|free delivery|डिलीवरी चार्ज|ஷிப்பிங்|డెలివరీ చార్జ్|ಡೆಲಿವರಿ ಶುಲ್ಕ|ഡെലിവറി ചാർജ്': 'faq_shipping_cost',
+    'cod|cash on delivery|cash|pay on delivery|कैश ऑन|கேஷ் ஆன்|క్యాష్ ఆన్|ಕ್ಯಾಶ್ ಆನ್|ക്യാഷ് ഓൺ': 'faq_cod',
+    'how to order|place order|order|Order|ordering|how order|orders|do order|make order|take order|order karna|order kaise|kaise kharide|எப்படி ஆர்டர்|ఆర్డర్ ఎలా|ಆರ್ಡರ್ ಹೇಗೆ|ഓർഡർ എങ്ങനെ': 'faq_how_order',
+    'return|refund|wapas|money back|வாபஸ்|రిటర్న్|ರಿಟರ್ನ್|റിട്ടേൺ|वापसी': 'faq_return',
+    'exchange|replace|swap|badal|மாற்று|మార్పిడి|ವಿನಿಮಯ|മാറ്റം|बदलना': 'faq_exchange',
+    'cancel|cancellation|रद्द|ரத்து|రద్దు|ರದ್ದು|റദ്ദ്': 'faq_cancel',
+    'track|tracking|status|shiprocket|shiprocket tracking|kahan|where is my order|order kahan|ட்ராக்|ట్రాకింగ్|ಟ್ರ್ಯಾಕಿಂಗ್|ട്രാക്കിംഗ്|ट्रैकिंग': 'faq_track',
+    'deliver|delivery time|days|kab milega|kab aayega|kitne din mein|எத்தனை நாளில்|ఎన్ని రోజుల్లో|ಎಷ್ಟು ದಿನದಲ್ಲಿ|എത്ര ദിവസത്തിൽ': 'faq_delivery_time',
+    'care|clean|maintain|kaise saaf|saaf karo|chamak|dekhbhal|பராமரிப்பு|సంరక్షణ|ಆರೈಕೆ|സൂക്ഷിക്കൽ|देखभाल': 'faq_care',
+    'damage|broken|defect|crack|टूटा|உடைந்த|పగిలింది|ಮುರಿದಿದೆ|തകർന്നത്': 'faq_damaged',
+    'about|kaapav|brand|காபவ்|కాపావ్|ಕಾಪವ್|കാപാവ്': 'faq_about',
+    'contact|reach|email|phone|support|customer care|தொடர்பு|సంప్రదించండి|ಸಂಪರ್ಕ|ബന്ധപ്പെടുക|संपर्क': 'faq_contact',
+    'instagram|facebook|social|insta|fb|சமூக ஊடகம்|సోషల్|ಸಾಮಾಜಿಕ|സോഷ്യൽ': 'faq_social',
+    'payment|pay|safe|secure|upi|card|gpay|phonepe|paytm|சுரக்ஷிதம்|సురక్షిత|ಸುರಕ್ಷಿತ|സുരക്ഷിത|सुरक्षित': 'faq_payment_safe',
+    'strong|sturdy|break|bend|मजबूत|உறுதியான|బలమైన|ಗಟ್ಟಿ|ബലമുള്ള': 'faq_strong',
+    'plating|plate|fade|fading|peel|rang utarna|பூச்சு|రంగు వెళ్ళి|ಲೇಪ|മൂലാം': 'faq_plating',
+    'perfume|spray|chemical|scent|deo|इत्र|பர்஫்யூம்|పెర్ఫ్యూమ్|ಪರ್ಫ್ಯೂಮ್|പെർഫ്യൂം': 'faq_perfume',
+    'sleep|night|wear at night|sote time|सोते वक्त|தூக்கத்தில்|నిద్రలో|ನಿದ್ದೆಯಲ್ಲಿ|ഉറക്കത്തിൽ': 'faq_sleep',
+    'piercing|pierced|ear hole|kaan chidwa|துளை|కన్నం|ಕಿವಿ ಚುಚ್ಚಿ|കാതു കുത്ത്': 'faq_piercing',
+    'delayed|late|not received|order late|தாமதம்|ఆలస్యం|ತಡವಾಗಿದೆ|വൈകി|देरी': 'faq_delayed',
+    'area|pincode|deliver to|my city|my location|யார் பகுதி|నా ఏరియా|ನನ್ನ ಪ್ರದೇಶ|എന്റെ ഏരിയ|मेरे शहर': 'faq_delivery_area',
+    'packaging|pack|box|wrapper|பேக்கேஜிங்|ప్యాకేజింగ్|ಪ್ಯಾಕೇಜಿಂಗ್|പാക്കേജിംഗ്|पैकेजिंग': 'faq_packaging',
+    'refund time|when refund|refund kab|money return|பணம் திரும்ப|డబ్బు తిరిగి|ಹಣ ವಾಪಸ್|പണം തിരിച്ച്|पैसे वापस': 'faq_refund_time',
+    'confirm|confirmation|order confirm|కన్ఫర్మేషన్|உறுதிப்படுத்தல்|ಆರ್ಡರ್ ದೃಢ|ഓർഡർ സ്ഥിരീകരണം|कन्फर्मेशन': 'faq_confirmation',
+    'combo|set|bundle|full set|matching|pair|जोड़ी|தொகுப்பு|కాంబో|ಕಾಂಬೊ|കോംബോ': 'faq_combo',
+    'minimum|min order|ek piece|single piece|1 piece|ஒரு பீஸ்|ఒక్క పీస్|ಒಂದು ಪೀಸ್|ഒരു പീസ്': 'faq_minimum',
+    'multiple|many|bulk|bulk order|bahut saare|பல|అనేక|ಅನೇಕ|പല': 'faq_multiple',
+    'gift pack|gift box|gift wrap|gift packaging|gift ke liye|பரிசு பேக்|గిఫ్ట్ ప్యాక్|ಗಿಫ್ಟ್ ಪ್ಯಾಕ್|ഗിഫ്റ്റ് പ്യാക്ക്': 'faq_gift_pack',
+    'gift order|order.*gift|gift ke liye order|பரிசுக்கு|గిఫ్ట్ కోసం|ಗಿಫ್ಟ್ ಗಾಗಿ|ഗിഫ്റ്റിനായി': 'faq_gift_order',
+  };
+
+  let matchedShortcut = null;
+  for (const [pattern, shortcut] of Object.entries(keywords)) {
+    if (new RegExp(pattern, 'i').test(inputLower)) {
+      matchedShortcut = shortcut;
+      break;
+    }
+  }
+
+  if (!matchedShortcut) return null;
+
+  for (const group of Object.values(this.FAQ_DATA)) {
+    const faq = group.find(f => f.shortcut === matchedShortcut);
+    if (faq) return faq;
+  }
+  return null;
+}
+
+async handleBizEnquiryState(phone, state, data, input) {
+  const env = this.env;
+  const lower = input.toLowerCase();
+
+  // Cancel anytime
+  if (/cancel|stop|quit|nahi|nope/.test(lower)) {
+    await clearConvState(phone, env);
+    await sendWhatsAppText(env, phone,
+      '❌ Enquiry cancelled. No worries!\n\nType *hi* anytime to start again. 💎'
+    );
+    return;
+  }
+
+  switch (state) {
+
+    // ── STEP 1: Type selection (from list) ──
+    case 'biz_type': {
+      const typeMap = {
+        'biz_type_influencer':  { type: 'influencer',   profession: 'Social Media Influencer' },
+        'biz_type_agency':      { type: 'agency',       profession: 'Marketing Agency' },
+        'biz_type_webdesigner': { type: 'web_designer', profession: 'Web Designer / Developer' },
+        'biz_type_reseller':    { type: 'reseller',     profession: 'Reseller / Wholesaler' },
+        'biz_type_collab':      { type: 'collaboration',profession: 'Brand Collaboration' },
+        'biz_type_other':       { type: 'other',        profession: '' },
+      };
+
+const selected = typeMap[input];
+if (!selected) {
+  // Re-send the list — don't send dead-end text
+  await sendWhatsAppList(
+    env, phone,
+`═══════════════════════════
+👑 *KAAPAV Business Enquiry*
+═══════════════════════════
+
+Welcome! Let's get your details.
+
+*Step 1 of 5*
+What best describes you? 👇`,
+    '📋 Select Your Role',
+    [{
+      title: 'Your Role',
+      rows: [
+        { id: 'biz_type_influencer',  title: '📸 Influencer / Creator', description: 'Instagram, YouTube, Reels' },
+        { id: 'biz_type_agency',      title: '📣 Marketing Agency',     description: 'Social media, SEO, Ads' },
+        { id: 'biz_type_webdesigner', title: '💻 Web Designer / Dev',   description: 'Website, app, tech' },
+        { id: 'biz_type_reseller',    title: '🛍️ Reseller / Wholesale', description: 'Bulk orders, distribution' },
+        { id: 'biz_type_collab',      title: '🤝 Collaboration',        description: 'Brand deal, sponsorship' },
+        { id: 'biz_type_other',       title: '💼 Other',                description: 'Something else' },
+      ]
+    }],
+    '💎 KAAPAV Fashion Jewellery'
+  );
+  return;
+}
+
+      data.enquiry_type = selected.type;
+      data.profession   = selected.profession;
+
+      await setConvState(phone, 'biz_profession', data, env);
+      await sendWhatsAppText(env, phone,
+
+        `✅ Got it!\n\n` +
+        `*Step 2 of 5*\n\n` +
+        `What is your exact profession or job title?\n\n` +
+        `_Examples: Fashion Influencer, Digital Marketer, Freelance Web Developer, Bulk Reseller..._`
+      );
+      break;
+    }
+
+    // ── STEP 2: Profession (free text) ──
+    case 'biz_profession': {
+      if (input.length < 3) {
+        await sendWhatsAppText(env, phone, '😊 Please describe your profession briefly:');
+        return;
+      }
+
+      data.profession = input;
+
+      await setConvState(phone, 'biz_brand', data, env);
+      await sendWhatsAppText(env, phone,
+        `*Step 3 of 5*\n\n` +
+        `What is your *Brand / Company / Channel name*?\n\n` +
+        `_Type "skip" if you don't have one_`
+      );
+      break;
+    }
+
+    // ── STEP 3: Brand name ──
+    case 'biz_brand': {
+      data.brand_name = /^skip$/i.test(input.trim()) ? '' : input.trim().slice(0, 60);
+
+      await setConvState(phone, 'biz_insta', data, env);
+      await sendWhatsAppText(env, phone,
+        `*Step 4 of 5*\n\n` +
+        `Share your *Instagram / YouTube / Website link or handle*:\n\n` +
+        `_Examples:_\n` +
+        `• @myhandle\n` +
+        `• instagram.com/myhandle\n` +
+        `• youtube.com/@mychannel\n` +
+        `• mywebsite.com\n\n` +
+        `_Type "skip" if not applicable_`
+      );
+      break;
+    }
+
+    // ── STEP 4: Social / Website link ──
+    case 'biz_insta': {
+      let instaHandle = '';
+      let instaUrl    = '';
+
+      if (!/^skip$/i.test(input.trim())) {
+        const atMatch       = input.match(/@([A-Za-z0-9_.]+)/);
+        const igUrlMatch    = input.match(/instagram\.com\/([A-Za-z0-9_.]+)/i);
+        const ytUrlMatch    = input.match(/youtube\.com\/@?([A-Za-z0-9_.]+)/i);
+        const domainMatch   = input.match(/^(https?:\/\/)?([A-Za-z0-9-]+\.[A-Za-z]{2,}[^\s]*)/i);
+
+        if (igUrlMatch) {
+          instaHandle = '@' + igUrlMatch[1];
+          instaUrl    = `https://instagram.com/${igUrlMatch[1]}`;
+        } else if (ytUrlMatch) {
+          instaHandle = ytUrlMatch[1];
+          instaUrl    = `https://youtube.com/@${ytUrlMatch[1]}`;
+        } else if (atMatch) {
+          instaHandle = '@' + atMatch[1];
+          instaUrl    = `https://instagram.com/${atMatch[1]}`;
+        } else if (domainMatch) {
+          instaHandle = domainMatch[2];
+          instaUrl    = input.startsWith('http') ? input : `https://${input}`;
+        } else {
+          // Raw text handle
+          instaHandle = input.trim();
+          instaUrl    = `https://instagram.com/${input.trim().replace('@', '')}`;
+        }
+      }
+
+      data.insta_handle = instaHandle;
+      data.insta_url    = instaUrl;
+
+      await setConvState(phone, 'biz_message', data, env);
+      await sendWhatsAppText(env, phone,
+        `*Step 5 of 5*\n\n` +
+        `Briefly describe *what you're looking for* or *how you'd like to collaborate* with KAAPAV:\n\n` +
+        `_Keep it short — 1 to 3 sentences is perfect_ 😊`
+      );
+      break;
+    }
+
+    // ── STEP 5: Message / Proposal ──
+    case 'biz_message': {
+      if (input.length < 10) {
+        await sendWhatsAppText(env, phone,
+          '😊 Please share a brief description of what you\'re looking for:'
+        );
+        return;
+      }
+
+      data.raw_message = input;
+
+      await setConvState(phone, 'biz_confirm', data, env);
+
+      await sendWhatsAppButtons(env, phone,
+`═══════════════════════════
+📋 *Review Your Enquiry*
+═══════════════════════════
+
+*Type:* ${data.enquiry_type}
+*Profession:* ${data.profession || '-'}
+*Brand / Channel:* ${data.brand_name || '-'}
+*Social / Website:* ${data.insta_handle || '-'}
+${data.insta_url ? `🔗 ${data.insta_url}` : ''}
+
+*Your message:*
+"${data.raw_message.slice(0, 200)}"
+
+═══════════════════════════
+Confirm & submit? 👇`,
+        [
+          { id: 'biz_yes', title: '✅ Submit Enquiry' },
+          { id: 'biz_no',  title: '❌ Cancel' },
+        ]
+      );
+      break;
+    }
+
+    // ── CONFIRM ──
+    case 'biz_confirm': {
+      if (input === 'biz_yes' || /yes|confirm|submit|haan/.test(lower)) {
+
+        const createdAt = new Date().toLocaleString('sv-SE', {
+          timeZone: 'Asia/Kolkata'
+        }).replace(',', '');
+
+        // Save to D1
+        try {
+          await env.DB.prepare(`
+            INSERT INTO business_enquiries
+              (phone, name, enquiry_type, profession, brand_name,
+               insta_handle, insta_url, raw_message, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', datetime('now'), datetime('now'))
+          `).bind(
+            phone,
+            data.name || '',
+            data.enquiry_type || 'other',
+            data.profession   || '',
+            data.brand_name   || '',
+            data.insta_handle || '',
+            data.insta_url    || '',
+            data.raw_message  || ''
+          ).run();
+        } catch (e) {
+          console.error('BIZ D1 save error:', e);
+        }
+
+        // Sync to Sheets
+        await appendBusinessEnquiryToSheets(env, {
+          created_at:   createdAt,
+          phone,
+          name:         data.name || '',
+          enquiry_type: data.enquiry_type || 'other',
+          profession:   data.profession   || '',
+          brand_name:   data.brand_name   || '',
+          insta_handle: data.insta_handle || '',
+          insta_url:    data.insta_url    || '',
+          raw_message:  data.raw_message  || '',
+          status:       'new',
+          notes:        '',
+        });
+
+        // Owner WA
+        await sendWhatsAppText(env, env.OWNER_PHONE,
+          `📋 *New Business Enquiry*\n\n` +
+          `Type: *${data.enquiry_type}*\n` +
+          `Profession: ${data.profession || '-'}\n` +
+          `From: ${data.name || 'Unknown'} (${phone})\n` +
+          `Brand: ${data.brand_name || '-'}\n` +
+          `Social: ${data.insta_handle || '-'}\n` +
+          (data.insta_url ? `🔗 ${data.insta_url}\n` : '') +
+          `\nMessage:\n"${data.raw_message.slice(0, 300)}"\n\n` +
+          `⚡ Check Business Enquiries sheet.`
+        );
+
+        await clearConvState(phone, env);
+
+        // Confirmation to sender
+        await sendWhatsAppButtons(env, phone,
+          `✅ *Enquiry Submitted!*\n\n` +
+          `Thank you ${(data.name || '').split(' ')[0] || 'there'}! 🙏\n\n` +
+          `We've received your enquiry and will review it.\n` +
+          `Our team will get back to you within *24–48 hours*.\n\n` +
+          `💎 KAAPAV Fashion Jewellery`,
+          [{ id: 'home', title: '🏠 Main Menu' }]
+        );
+
+      } else {
+        await clearConvState(phone, env);
+        await sendWhatsAppText(env, phone,
+          '❌ Enquiry cancelled.\n\nType *hi* anytime to start again! 💎'
+        );
+      }
+      break;
+    }
+
+    default:
+      await clearConvState(phone, env);
+      await sendWhatsAppText(env, phone,
+        'Something went wrong. Type *hi* to start again! 😊'
+      );
+  }
+}
+
+
+  // ── HELP PROMPT (fallback) ─────────────────────────────────────
+  async sendHelpPrompt(phone) {
+    const env = this.env;
+    await sendWhatsAppButtons(
+      env,
+      phone,
+`═══════════════════════════
+❓ *Need Help?*
+═══════════════════════════
+
+Just type your question! 😊
+
+Examples:
+• "Will it tarnish?"
+• "How to return?"
+• "Delivery time?"
+
+Or browse all FAQ topics 👇`,
+      [
+        { id: 'btn_browse',    title: '📋 Browse Topics' },
+        { id: 'btn_help_back', title: '🏠 Main Menu' },
+      ],
+      '💎 KAAPAV Fashion Jewellery'
+    );
+
+   const msgId = 'auto_' + Date.now() + '_' + phone;
+  await env.DB.prepare(
+    'INSERT OR IGNORE INTO messages (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at) VALUES (?, ?, ?, ?, \'outgoing\', \'sent\', 1, datetime(\'now\'), datetime(\'now\'))'
+  ).bind(msgId, phone, '[Browse Topics list sent]', 'list').run();
+  await env.DB.prepare(
+    'UPDATE chats SET last_message = ?, last_message_type = \'list\', last_direction = \'outgoing\', last_timestamp = datetime(\'now\'), updated_at = datetime(\'now\') WHERE phone = ?'
+  ).bind('Browse Topics', phone).run();;
+  }
+}
+
+
+async function autoCancelOldUnpaidCatalogueOrders(env) {
+  const cutoffIso = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+
+  const { results: orders } = await env.DB.prepare(`
+    SELECT order_id, phone, customer_name, total, created_at
+    FROM orders
+    WHERE source = 'catalogue'
+      AND payment_status = 'unpaid'
+      AND status = 'pending'
+      AND datetime(created_at) <= datetime(?)
+    ORDER BY datetime(created_at) ASC
+    LIMIT 50
+  `).bind(cutoffIso).all();
+
+  if (!orders || orders.length === 0) {
+    console.log('AUTO_CANCEL_UNPAID: none');
+    return { cancelled: 0 };
+  }
+
+  let cancelled = 0;
+
+  for (const order of orders) {
+    try {
+      await env.DB.prepare(`
+        UPDATE orders
+        SET
+          status = 'cancelled',
+          cancellation_reason = 'Auto-cancelled: unpaid catalogue order older than 48 hours',
+          cancelled_at = datetime('now'),
+          updated_at = datetime('now')
+        WHERE order_id = ?
+          AND source = 'catalogue'
+          AND payment_status = 'unpaid'
+          AND status = 'pending'
+      `).bind(order.order_id).run();
+
+      await logOrderEvent(
+        env,
+        order.order_id,
+        'order_auto_cancelled',
+        'Unpaid catalogue order auto-cancelled after 48 hours',
+        {
+          phone: order.phone,
+          total: order.total,
+          createdAt: order.created_at,
+          cutoffIso,
+        },
+        'cron'
+      );
+
+      try {
+        await syncOrderToGoogleSheetsSafe(env, order.order_id);
+        await syncSalesToGoogleSheetsSafe(env, order.order_id);
+
+        if (order.phone) {
+          await syncCustomerToGoogleSheetsSafe(env, order.phone);
+          await syncLeadToGoogleSheetsSafe(env, order.phone);
+        }
+      } catch (syncErr) {
+        console.error('AUTO_CANCEL_UNPAID sync error:', syncErr);
+      }
+
+      cancelled++;
+    } catch (e) {
+      console.error('AUTO_CANCEL_UNPAID order error:', order.order_id, e);
+    }
+  }
+
+  console.log(`AUTO_CANCEL_UNPAID: cancelled ${cancelled}`);
+  return { cancelled };
+}
+
+function normalizeCustomerEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function isValidCustomerEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function createCustomerOtp() {
+  const arr = new Uint32Array(1);
+  crypto.getRandomValues(arr);
+  return String(100000 + (arr[0] % 900000));
+}
+
+function createCustomerSessionToken() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function parseDbTime(value) {
+  if (!value) return 0;
+  const s = String(value);
+  const iso = s.includes('T') ? s : s.replace(' ', 'T') + 'Z';
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? t : 0;
+}
+
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(String(value))
+  );
+
+  return [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function hashCustomerOtp(env, email, otp) {
+  return sha256Hex(`${email}:${otp}:${env.JWT_SECRET}`);
+}
+
+async function hashCustomerToken(token) {
+  return sha256Hex(token);
+}
+
+async function sendCustomerOtpEmail(env, email, otp) {
+  if (!env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY missing');
+  }
+
+  const from = env.CUSTOMER_EMAIL_FROM || 'KAAPAV <orders@kaapav.com>';
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from,
+      to: [email],
+      subject: 'Your KAAPAV login OTP',
+      html: `
+        <div style="font-family:Arial,sans-serif;line-height:1.6;color:#1A1A1A">
+          <h2 style="margin:0 0 12px;color:#C49432">KAAPAV Login OTP</h2>
+          <p>Use this OTP to login or create your KAAPAV account:</p>
+          <div style="font-size:30px;font-weight:800;letter-spacing:6px;color:#C49432;margin:18px 0">${otp}</div>
+          <p>This OTP is valid for 10 minutes.</p>
+          <p>If you did not request this, you can safely ignore this email.</p>
+        </div>
+      `,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    console.error('CUSTOMER_OTP_EMAIL_FAILED', data);
+    throw new Error(data?.message || data?.error || 'Failed to send OTP email');
+  }
+
+  return data;
+}
+
+async function getCustomerAuth(request, env) {
+  const auth = request.headers.get('Authorization') || '';
+  if (!auth.startsWith('Bearer ')) return null;
+
+  const token = auth.slice(7).trim();
+  if (!token) return null;
+
+  const tokenHash = await hashCustomerToken(token);
+
+  const session = await env.DB.prepare(`
+    SELECT email, expires_at
+    FROM customer_auth_sessions
+    WHERE token_hash = ?
+      AND datetime(expires_at) > datetime('now')
+    LIMIT 1
+  `).bind(tokenHash).first();
+
+  if (!session?.email) return null;
+
+  await env.DB.prepare(`
+    UPDATE customer_auth_sessions
+    SET last_seen_at = datetime('now')
+    WHERE token_hash = ?
+  `).bind(tokenHash).run();
+
+  return {
+    email: session.email,
+    tokenHash,
+  };
+}
+
+async function handleCustomerSendOtp(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const email = normalizeCustomerEmail(body.email);
+
+  if (!isValidCustomerEmail(email)) {
+    return errorResponse('Valid email required', 400);
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT last_sent_at
+    FROM customer_otps
+    WHERE email = ?
+    LIMIT 1
+  `).bind(email).first();
+
+  if (existing?.last_sent_at) {
+    const lastSent = parseDbTime(existing.last_sent_at);
+    if (lastSent && Date.now() - lastSent < 60 * 1000) {
+      return errorResponse('Please wait 60 seconds before requesting another OTP', 429);
+    }
+  }
+
+  const otp = createCustomerOtp();
+  const otpHash = await hashCustomerOtp(env, email, otp);
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+  await env.DB.prepare(`
+    INSERT INTO customer_otps (
+      email, otp_hash, attempts, expires_at, consumed_at, last_sent_at, created_at
+    )
+    VALUES (?, ?, 0, ?, NULL, datetime('now'), datetime('now'))
+    ON CONFLICT(email) DO UPDATE SET
+      otp_hash = excluded.otp_hash,
+      attempts = 0,
+      expires_at = excluded.expires_at,
+      consumed_at = NULL,
+      last_sent_at = datetime('now')
+  `).bind(email, otpHash, expiresAt).run();
+
+  await sendCustomerOtpEmail(env, email, otp);
+
+  return jsonResponse({
+    success: true,
+    message: 'OTP sent',
+  });
+}
+
+async function handleCustomerVerifyOtp(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const email = normalizeCustomerEmail(body.email);
+  const otp = String(body.otp || '').trim();
+let linkedPhone = normalizePhone91(body.phone);
+const linkedCustomerId = String(body.customerId || body.customer_id || '')
+  .trim()
+  .toUpperCase();
+
+if (linkedCustomerId && !linkedPhone) {
+  const linkedCustomer = await env.DB.prepare(`
+    SELECT phone
+    FROM customers
+    WHERE customer_id = ?
+    LIMIT 1
+  `).bind(linkedCustomerId).first();
+
+  linkedPhone = normalizePhone91(linkedCustomer?.phone);
+}
+  if (!isValidCustomerEmail(email)) {
+    return errorResponse('Valid email required', 400);
+  }
+
+  if (!/^\d{6}$/.test(otp)) {
+    return errorResponse('Valid 6 digit OTP required', 400);
+  }
+
+  const row = await env.DB.prepare(`
+    SELECT otp_hash, attempts, expires_at, consumed_at
+    FROM customer_otps
+    WHERE email = ?
+    LIMIT 1
+  `).bind(email).first();
+
+  if (!row || row.consumed_at) {
+    return errorResponse('OTP expired or invalid', 400);
+  }
+
+  if (Number(row.attempts || 0) >= 5) {
+    return errorResponse('Too many attempts. Request a new OTP.', 429);
+  }
+
+  if (parseDbTime(row.expires_at) < Date.now()) {
+    return errorResponse('OTP expired', 400);
+  }
+
+  const expectedHash = await hashCustomerOtp(env, email, otp);
+
+  if (expectedHash !== row.otp_hash) {
+    await env.DB.prepare(`
+      UPDATE customer_otps
+      SET attempts = COALESCE(attempts, 0) + 1
+      WHERE email = ?
+    `).bind(email).run();
+
+    return errorResponse('Invalid OTP', 400);
+  }
+
+  await env.DB.prepare(`
+    UPDATE customer_otps
+    SET consumed_at = datetime('now')
+    WHERE email = ?
+  `).bind(email).run();
+
+await env.DB.prepare(`
+  INSERT INTO customer_accounts (
+    email, phone, customer_id, created_at, updated_at
+  )
+  VALUES (?, ?, ?, datetime('now'), datetime('now'))
+  ON CONFLICT(email) DO UPDATE SET
+    phone = COALESCE(NULLIF(excluded.phone, ''), customer_accounts.phone),
+    customer_id = COALESCE(NULLIF(excluded.customer_id, ''), customer_accounts.customer_id),
+    updated_at = datetime('now')
+`).bind(email, linkedPhone, linkedCustomerId).run();
+
+  const token = createCustomerSessionToken();
+  const tokenHash = await hashCustomerToken(token);
+  const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+
+  await env.DB.prepare(`
+    INSERT INTO customer_auth_sessions (
+      token_hash, email, expires_at, created_at, last_seen_at
+    )
+    VALUES (?, ?, ?, datetime('now'), datetime('now'))
+  `).bind(tokenHash, email, expiresAt).run();
+
+  const account = await env.DB.prepare(`
+    SELECT email, name, phone, created_at, updated_at
+    FROM customer_accounts
+    WHERE email = ?
+    LIMIT 1
+  `).bind(email).first();
+
+  return jsonResponse({
+    success: true,
+    token,
+    expiresAt,
+    account,
+  });
+}
+
+async function handleCustomerMe(request, env) {
+  const auth = await getCustomerAuth(request, env);
+  if (!auth) return errorResponse('Unauthorized', 401);
+
+  const account = await env.DB.prepare(`
+    SELECT email, name, phone, created_at, updated_at
+    FROM customer_accounts
+    WHERE email = ?
+    LIMIT 1
+  `).bind(auth.email).first();
+
+  const address = await env.DB.prepare(`
+    SELECT id, name, phone, address, city, state, pincode, is_default
+    FROM customer_addresses
+    WHERE email = ?
+    ORDER BY is_default DESC, datetime(updated_at) DESC
+    LIMIT 1
+  `).bind(auth.email).first();
+
+  const wishlistRows = await env.DB.prepare(`
+    SELECT sku
+    FROM customer_wishlist
+    WHERE email = ?
+    ORDER BY datetime(created_at) DESC
+  `).bind(auth.email).all();
+
+  return jsonResponse({
+    success: true,
+    account: account || { email: auth.email },
+    address: address || null,
+    wishlist: (wishlistRows.results || []).map((r) => r.sku),
+  });
+}
+
+async function getCustomerOrderContext(
+  request,
+  env,
+  orderId
+) {
+  const auth =
+    await getCustomerAuth(
+      request,
+      env
+    );
+
+  if (!auth) {
+    return {
+      authenticated: false,
+      order: null,
+      account: null,
+    };
+  }
+
+  const account =
+    await env.DB.prepare(`
+      SELECT
+        email,
+        phone,
+        customer_id
+      FROM customer_accounts
+      WHERE email = ?
+      LIMIT 1
+    `)
+      .bind(auth.email)
+      .first();
+
+  const email =
+    normalizeCustomerEmail(
+      account?.email ||
+      auth.email
+    );
+
+  const phone91 =
+    normalizePhone91(
+      account?.phone
+    );
+
+const phone10 =
+  phone91
+    ? phone91.slice(-10)
+    : '';
+
+const phone91Lookup =
+  phone91 || null;
+
+const phone10Lookup =
+  phone10 || null;
+
+const cleanOrderId =
+    cleanReturnText(
+      orderId,
+      100
+    );
+
+  const order =
+    await env.DB.prepare(`
+      SELECT *
+      FROM orders
+      WHERE order_id = ?
+        AND (
+          lower(
+            COALESCE(email, '')
+          ) = ?
+
+          OR REPLACE(
+            REPLACE(
+              REPLACE(
+                COALESCE(phone, ''),
+                '+',
+                ''
+              ),
+              ' ',
+              ''
+            ),
+            '-',
+            ''
+          ) = ?
+
+          OR REPLACE(
+            REPLACE(
+              REPLACE(
+                COALESCE(phone, ''),
+                '+',
+                ''
+              ),
+              ' ',
+              ''
+            ),
+            '-',
+            ''
+          ) = ?
+        )
+      LIMIT 1
+    `)
+.bind(
+  cleanOrderId,
+  email,
+  phone91Lookup,
+  phone10Lookup
+)
+      .first();
+
+  return {
+    authenticated: true,
+    auth,
+    account,
+    email,
+    phone91,
+    phone10,
+    order: order || null,
+  };
+}
+
+function packCustomerReturnRequest(
+  returnRequest,
+  items = []
+) {
+  if (!returnRequest) {
+    return null;
+  }
+
+  return {
+    request_id:
+      returnRequest.request_id,
+
+    order_id:
+      returnRequest.order_id,
+
+    request_type:
+      returnRequest.request_type,
+
+    request_scope:
+      returnRequest.request_scope,
+
+    reason_code:
+      returnRequest.reason_code,
+
+    reason_text:
+      returnRequest.reason_text,
+
+    customer_note:
+      returnRequest.customer_note,
+
+    status:
+      returnRequest.status,
+
+    reverse_shipping_fee:
+      Number(
+        returnRequest
+          .reverse_shipping_fee ||
+        0
+      ),
+
+    refund_amount:
+      Number(
+        returnRequest
+          .refund_amount ||
+        0
+      ),
+
+    price_difference:
+      Number(
+        returnRequest
+          .price_difference ||
+        0
+      ),
+
+    refund_status:
+      returnRequest.refund_status ||
+      '',
+
+    requested_at:
+      returnRequest.requested_at,
+
+    approved_at:
+      returnRequest.approved_at,
+
+    rejected_at:
+      returnRequest.rejected_at,
+
+    pickup_scheduled_at:
+      returnRequest
+        .pickup_scheduled_at,
+
+    picked_up_at:
+      returnRequest.picked_up_at,
+
+    received_at:
+      returnRequest.received_at,
+
+    qc_completed_at:
+      returnRequest.qc_completed_at,
+
+    refund_processed_at:
+      returnRequest
+        .refund_processed_at,
+
+    refund_failed_at:
+      returnRequest.refund_failed_at,
+
+    completed_at:
+      returnRequest.completed_at,
+
+    created_at:
+      returnRequest.created_at,
+
+    updated_at:
+      returnRequest.updated_at,
+
+    items,
+  };
+}
+
+async function handleCustomerOrderReturnRequests(
+  request,
+  env,
+  orderId
+) {
+  const context =
+    await getCustomerOrderContext(
+      request,
+      env,
+      orderId
+    );
+
+  if (!context.authenticated) {
+    return errorResponse(
+      'Unauthorized',
+      401
+    );
+  }
+
+  if (!context.order) {
+    return errorResponse(
+      'Order not found',
+      404
+    );
+  }
+
+  if (
+    request.method === 'POST'
+  ) {
+    const body =
+      await request
+        .json()
+        .catch(() => ({}));
+
+    const safeItems =
+      Array.isArray(body.items)
+        ? body.items
+            .slice(0, 50)
+            .map(
+              (item) => ({
+                line_index:
+                  item?.line_index,
+
+                sku:
+                  item?.sku,
+
+                quantity:
+                  item?.quantity ??
+                  item?.qty,
+
+                replacement_sku:
+                  item
+                    ?.replacement_sku,
+
+                replacement_name:
+                  item
+                    ?.replacement_name,
+
+                condition_note:
+                  item
+                    ?.condition_note,
+
+                evidence_urls:
+                  item
+                    ?.evidence_urls,
+              })
+            )
+        : [];
+
+    const safeBody = {
+      request_type:
+        body.request_type,
+
+      request_scope:
+        body.request_scope,
+
+      reason_code:
+        body.reason_code,
+
+      reason_text:
+        body.reason_text,
+
+      customer_note:
+        body.customer_note,
+
+      evidence_urls:
+        body.evidence_urls,
+
+      items:
+        safeItems,
+
+      reverse_shipping_fee:
+        60,
+
+      owner_override:
+        false,
+    };
+
+    return handleCreateReturnRequest(
+      context.order.order_id,
+      request,
+      env,
+      {
+        body:
+          safeBody,
+
+        order:
+          context.order,
+
+        eventSource:
+          'customer',
+
+        allowOwnerOverride:
+          false,
+
+        fixedReverseShippingFee:
+          60,
+
+        notifyCustomer:
+          true,
+      }
+    );
+  }
+
+  const {
+    results: requests,
+  } =
+    await env.DB.prepare(`
+      SELECT
+        request_id,
+        order_id,
+        request_type,
+        request_scope,
+        reason_code,
+        reason_text,
+        customer_note,
+        status,
+        reverse_shipping_fee,
+        refund_amount,
+        price_difference,
+        refund_status,
+        requested_at,
+        approved_at,
+        rejected_at,
+        pickup_scheduled_at,
+        picked_up_at,
+        received_at,
+        qc_completed_at,
+        refund_processed_at,
+        refund_failed_at,
+        completed_at,
+        created_at,
+        updated_at
+      FROM return_requests
+      WHERE order_id = ?
+      ORDER BY id DESC
+    `)
+      .bind(
+        context.order.order_id
+      )
+      .all();
+
+  const {
+    results: itemRows,
+  } =
+    await env.DB.prepare(`
+      SELECT
+        request_id,
+        line_index,
+        sku,
+        product_name,
+        quantity,
+        unit_price,
+        replacement_sku,
+        replacement_name,
+        condition_note,
+        created_at,
+        updated_at
+      FROM return_request_items
+      WHERE order_id = ?
+      ORDER BY
+        request_id,
+        line_index
+    `)
+      .bind(
+        context.order.order_id
+      )
+      .all();
+
+  const itemsByRequest =
+    new Map();
+
+  for (
+    const item of itemRows || []
+  ) {
+    const current =
+      itemsByRequest.get(
+        item.request_id
+      ) || [];
+
+    current.push(item);
+
+    itemsByRequest.set(
+      item.request_id,
+      current
+    );
+  }
+
+  const packedRequests =
+    (requests || []).map(
+      (returnRequest) =>
+        packCustomerReturnRequest(
+          returnRequest,
+          itemsByRequest.get(
+            returnRequest.request_id
+          ) || []
+        )
+    );
+
+  const latestRequest =
+    packedRequests[0] || null;
+
+  const eligibility =
+    getPurchaseReturnEligibility(
+      context.order
+    );
+
+  const hasOpenRequest =
+    isOpenReturnRequestStatus(
+      latestRequest?.status
+    );
+
+  return jsonResponse({
+    success: true,
+
+    orderId:
+      context.order.order_id,
+
+    requests:
+      packedRequests,
+
+    total:
+      packedRequests.length,
+
+    latestRequest,
+
+    returnEligibility: {
+      eligible:
+        eligibility.eligible &&
+        !hasOpenRequest,
+
+      windowDays:
+        CUSTOMER_RETURN_WINDOW_DAYS,
+
+      expiresAt:
+        eligibility.expiresAt,
+
+      daysRemaining:
+        eligibility.daysRemaining,
+
+      reason:
+        hasOpenRequest
+          ? 'An active return or exchange request already exists'
+          : eligibility.reason,
+
+      code:
+        hasOpenRequest
+          ? 'active_request_exists'
+          : eligibility.code,
+    },
+  });
+}
+
+async function handleCustomerOrders(
+  request,
+  env
+) {
+  const auth =
+    await getCustomerAuth(
+      request,
+      env
+    );
+
+  if (!auth) {
+    return errorResponse(
+      'Unauthorized',
+      401
+    );
+  }
+
+  const account =
+    await env.DB.prepare(`
+      SELECT
+        email,
+        phone,
+        customer_id
+      FROM customer_accounts
+      WHERE email = ?
+      LIMIT 1
+    `)
+      .bind(auth.email)
+      .first();
+
+  const email =
+    normalizeCustomerEmail(
+      account?.email ||
+      auth.email
+    );
+
+  const phone91 =
+    normalizePhone91(
+      account?.phone
+    );
+
+const phone10 =
+  phone91
+    ? phone91.slice(-10)
+    : '';
+
+const phone91Lookup =
+  phone91 || null;
+
+const phone10Lookup =
+  phone10 || null;
+
+const result =
+    await env.DB.prepare(`
+      SELECT
+        order_id,
+        email,
+        phone,
+        customer_name,
+        items,
+        item_count,
+        subtotal,
+        discount,
+        discount_code,
+        shipping_cost,
+        total,
+        status,
+        payment_status,
+        payment_method,
+        payment_id,
+        payment_link,
+        shipping_name,
+        shipping_phone,
+        shipping_address,
+        shipping_city,
+        shipping_state,
+        shipping_pincode,
+        tracking_id,
+        tracking_url,
+        courier,
+        awb_number,
+        paid_at,
+        shipped_at,
+        delivered_at,
+        cancelled_at,
+        created_at,
+        updated_at
+      FROM orders
+      WHERE
+        lower(
+          COALESCE(email, '')
+        ) = ?
+
+        OR REPLACE(
+          REPLACE(
+            REPLACE(
+              COALESCE(phone, ''),
+              '+',
+              ''
+            ),
+            ' ',
+            ''
+          ),
+          '-',
+          ''
+        ) = ?
+
+        OR REPLACE(
+          REPLACE(
+            REPLACE(
+              COALESCE(phone, ''),
+              '+',
+              ''
+            ),
+            ' ',
+            ''
+          ),
+          '-',
+          ''
+        ) = ?
+
+      ORDER BY
+        datetime(created_at) DESC
+
+      LIMIT 100
+    `)
+.bind(
+  email,
+  phone91Lookup,
+  phone10Lookup
+)
+      .all();
+
+  const returnResult =
+    await env.DB.prepare(`
+      SELECT
+        rr.request_id,
+        rr.order_id,
+        rr.request_type,
+        rr.request_scope,
+        rr.reason_code,
+        rr.reason_text,
+        rr.customer_note,
+        rr.status,
+        rr.reverse_shipping_fee,
+        rr.refund_amount,
+        rr.price_difference,
+        rr.refund_status,
+        rr.requested_at,
+        rr.approved_at,
+        rr.rejected_at,
+        rr.pickup_scheduled_at,
+        rr.picked_up_at,
+        rr.received_at,
+        rr.qc_completed_at,
+        rr.refund_processed_at,
+        rr.refund_failed_at,
+        rr.completed_at,
+        rr.created_at,
+        rr.updated_at
+      FROM return_requests rr
+
+      INNER JOIN orders o
+        ON o.order_id =
+           rr.order_id
+
+      WHERE
+        lower(
+          COALESCE(o.email, '')
+        ) = ?
+
+        OR REPLACE(
+          REPLACE(
+            REPLACE(
+              COALESCE(o.phone, ''),
+              '+',
+              ''
+            ),
+            ' ',
+            ''
+          ),
+          '-',
+          ''
+        ) = ?
+
+        OR REPLACE(
+          REPLACE(
+            REPLACE(
+              COALESCE(o.phone, ''),
+              '+',
+              ''
+            ),
+            ' ',
+            ''
+          ),
+          '-',
+          ''
+        ) = ?
+
+      ORDER BY rr.id DESC
+    `)
+.bind(
+  email,
+  phone91Lookup,
+  phone10Lookup
+)
+      .all();
+
+  const latestReturnByOrder =
+    new Map();
+
+  for (
+    const returnRequest of
+    returnResult.results || []
+  ) {
+    if (
+      !latestReturnByOrder.has(
+        returnRequest.order_id
+      )
+    ) {
+      latestReturnByOrder.set(
+        returnRequest.order_id,
+        packCustomerReturnRequest(
+          returnRequest
+        )
+      );
+    }
+  }
+
+  const orders =
+    (result.results || []).map(
+      (order) => {
+        const latestReturn =
+          latestReturnByOrder.get(
+            order.order_id
+          ) || null;
+
+        const eligibility =
+          getPurchaseReturnEligibility(
+            order
+          );
+
+        const hasOpenRequest =
+          isOpenReturnRequestStatus(
+            latestReturn?.status
+          );
+
+        return {
+          ...order,
+
+          return_eligible:
+            eligibility.eligible &&
+            !hasOpenRequest,
+
+          return_window_days:
+            CUSTOMER_RETURN_WINDOW_DAYS,
+
+          return_expires_at:
+            eligibility.expiresAt,
+
+          return_days_remaining:
+            eligibility.daysRemaining,
+
+          return_ineligible_reason:
+            hasOpenRequest
+              ? 'An active return or exchange request already exists'
+              : eligibility.reason,
+
+          return_ineligible_code:
+            hasOpenRequest
+              ? 'active_request_exists'
+              : eligibility.code,
+
+          return_request:
+            latestReturn,
+        };
+      }
+    );
+
+  return jsonResponse({
+    success: true,
+
+    orders,
+
+    identity: {
+      email,
+
+      phone:
+        phone91,
+
+      customerId:
+        account?.customer_id || '',
+    },
+
+    returnPolicy: {
+      windowDays:
+        CUSTOMER_RETURN_WINDOW_DAYS,
+
+      startsFrom:
+        'purchase_date',
+
+      reverseShippingFee:
+        60,
+    },
+  });
+}
+
+async function handleCustomerLogout(request, env) {
+  const auth = await getCustomerAuth(request, env);
+  if (!auth) return jsonResponse({ success: true });
+
+  await env.DB.prepare(`
+    DELETE FROM customer_auth_sessions
+    WHERE token_hash = ?
+  `).bind(auth.tokenHash).run();
+
+  return jsonResponse({
+    success: true,
+  });
+}
+
+// ═══════════════════ AD ENGINE CROSS-ACCOUNT READ BRIDGE ═══════════════════
+
+function adEngineSyncDate(value, fallback) {
+  const text = String(value || '').trim();
+
+  return /^\d{4}-\d{2}-\d{2}$/.test(text)
+    ? text
+    : fallback;
+}
+
+function adEngineSyncLimit(value) {
+  const parsed = Math.trunc(Number(value || 3000));
+
+  if (!Number.isFinite(parsed)) {
+    return 3000;
+  }
+
+  return Math.min(10000, Math.max(50, parsed));
+}
+
+async function handleAdEngineLearningExport(request, env) {
+  const expectedSecret = String(
+    env.KAAPAV_EVENT_SECRET || ''
+  ).trim();
+
+  const suppliedSecret = String(
+    request.headers.get('X-Kaapav-Event-Secret') || ''
+  ).trim();
+
+  if (!expectedSecret || suppliedSecret !== expectedSecret) {
+    return errorResponse('Unauthorized', 401);
+  }
+
+  const url = new URL(request.url);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const since = adEngineSyncDate(
+    url.searchParams.get('since'),
+    '2026-06-12'
+  );
+
+  const until = adEngineSyncDate(
+    url.searchParams.get('until'),
+    today
+  );
+
+  const limit = adEngineSyncLimit(
+    url.searchParams.get('limit')
+  );
+
+  const catalogueRows = await env.DB.prepare(`
+    SELECT
+      ce.*,
+      c.customer_id,
+      COALESCE(c.name, '') AS customer_name
+    FROM catalogue_events ce
+    LEFT JOIN customers c ON (
+      c.phone = ce.phone
+      OR c.phone = CASE
+        WHEN ce.phone LIKE '91%' THEN substr(ce.phone, 3)
+        ELSE '91' || ce.phone
+      END
+    )
+    WHERE substr(ce.created_at, 1, 10) >= ?
+      AND substr(ce.created_at, 1, 10) <= ?
+    ORDER BY ce.created_at ASC
+    LIMIT ?
+  `)
+    .bind(since, until, limit)
+    .all();
+
+  const orderRows = await env.DB.prepare(`
+    SELECT
+      o.*,
+      c.customer_id
+    FROM orders o
+    LEFT JOIN customers c ON (
+      c.phone = o.phone
+      OR c.phone = CASE
+        WHEN o.phone LIKE '91%' THEN substr(o.phone, 3)
+        ELSE '91' || o.phone
+      END
+    )
+    WHERE substr(
+      COALESCE(o.paid_at, o.updated_at, o.created_at),
+      1,
+      10
+    ) >= ?
+      AND substr(
+        COALESCE(o.paid_at, o.updated_at, o.created_at),
+        1,
+        10
+      ) <= ?
+      AND lower(COALESCE(o.payment_status, '')) = 'paid'
+      AND lower(COALESCE(o.status, ''))
+        NOT IN ('cancelled', 'canceled')
+    ORDER BY COALESCE(
+      o.paid_at,
+      o.updated_at,
+      o.created_at
+    ) ASC
+    LIMIT ?
+  `)
+    .bind(since, until, limit)
+    .all();
+
+  return jsonResponse({
+    success: true,
+    data: {
+      since,
+      until,
+      limit,
+      catalogue_rows: catalogueRows.results || [],
+      order_rows: orderRows.results || [],
+      catalogue_count: catalogueRows.results?.length || 0,
+      paid_order_count: orderRows.results?.length || 0,
+      source: 'kaapav_app_d1_read_bridge',
+      generated_at: new Date().toISOString(),
+    },
+  });
+}
+
+// ═══════════════════ ROUTER ═══════════════════
+export default {
+  async fetch(request, env, ctx) {
+
+    const url = new URL(request.url);
+    const path = url.pathname;
+    const method = request.method;
+    if (
+  path === '/internal/ad-engine/learning-export' &&
+  method === 'GET'
+) {
+  return handleAdEngineLearningExport(request, env);
+}
+
+// ═══ TRACKING ROUTES — kaapav.com/CID and catalogue.kaapav.com/CID ═══
+
+const reqHost = request.headers.get('host') || '';
+const isCatalogueHost = reqHost.startsWith('catalogue.');
+const isMainSiteHost =
+  reqHost === 'kaapav.com' ||
+  reqHost === 'www.kaapav.com';
+
+if ((isCatalogueHost || isMainSiteHost) && method === 'GET') {
+
+  if (path.match(/^\/[A-Z0-9]{6}$/i)) {
+
+const categoryMatch = path.match(
+  /^\/([A-Z0-9]{6})\/([a-z0-9-]+)$/i
+);
+
+if (categoryMatch) {
+
+  const customerId = categoryMatch[1].toUpperCase();
+  const categorySlug = categoryMatch[2].toLowerCase();
+
+  const categoryMap = {
+    bracelets: {
+      url: 'https://www.kaapav.com/shop/category/all-jewellery-bracelets-13',
+      title: 'KAAPAV Bracelets',
+      desc: 'Bracelet Collection'
+    },
+    necklaces: {
+      url: 'https://www.kaapav.com/shop/category/all-jewellery-necklace-19',
+      title: 'KAAPAV Necklaces',
+      desc: 'Necklace Collection'
+    },
+    rings: {
+      url: 'https://www.kaapav.com/shop/category/all-jewellery-rings-20',
+      title: 'KAAPAV Rings',
+      desc: 'Ring Collection'
+    },
+    earrings: {
+      url: 'https://www.kaapav.com/shop/category/all-jewellery-earrings-21',
+      title: 'KAAPAV Earrings',
+      desc: 'Earring Collection'
+    },
+    pendants: {
+      url: 'https://www.kaapav.com/shop/category/all-jewellery-pendant-22',
+      title: 'KAAPAV Pendants',
+      desc: 'Pendant Collection'
+    },
+    sets: {
+      url: 'https://www.kaapav.com/shop/category/all-jewellery-sets-23',
+      title: 'KAAPAV Sets',
+      desc: 'Set Collection'
+    },
+    bestsellers: {
+      url: 'https://www.kaapav.com/shop/category/all-jewellery-12?category=12&search=&order=&tags=16',
+      title: 'KAAPAV Bestsellers',
+      desc: 'Bestseller Collection'
+    }
+  };
+
+  const category = categoryMap[categorySlug];
+
+  if (!category) {
+    return Response.redirect(
+      'https://www.kaapav.com/',
+      302
+    );
+  }
+
+  const customer = await env.DB.prepare(`
+    SELECT phone, customer_id
+    FROM customers
+    WHERE customer_id = ?
+    LIMIT 1
+  `).bind(customerId).first();
+
+  if (!customer) {
+    return Response.redirect(
+      'https://www.kaapav.com/',
+      302
+    );
+  }
+
+  return new Response(
+    getTrackingHtml(
+      customer.phone,
+      customer.customer_id,
+      category.url,
+      category.title,
+      category.desc
+    ),
+    {
+      headers: {
+        'Content-Type': 'text/html;charset=UTF-8',
+        'Cache-Control': 'no-store'
+      }
+    }
+  );
+}
+
+    const customerId = path.slice(1).toUpperCase();
+
+    const customer = await env.DB.prepare(`
+      SELECT phone, customer_id
+      FROM customers
+      WHERE customer_id = ?
+      LIMIT 1
+    `).bind(customerId).first();
+
+    const phone = customer?.phone || '';
+
+    console.log(
+      'CID_MATCH',
+      customerId,
+      !!customer,
+      phone,
+      isMainSiteHost,
+      isCatalogueHost
+    );
+
+    ctx.waitUntil((async () => {
+      try {
+
+        const col = isCatalogueHost
+          ? 'clicked_catalogue'
+          : 'clicked_website';
+
+        if (customer) {
+
+          console.log(
+            'TRACK CLICK',
+            customerId,
+            phone,
+            col
+          );
+
+          await env.DB.prepare(`
+            UPDATE customers
+            SET ${col} = COALESCE(${col}, 0) + 1,
+                updated_at = datetime('now')
+            WHERE phone = ?
+          `).bind(phone).run();
+
+          await env.DB.prepare(`
+            INSERT INTO catalogue_events (
+              phone,
+              event_type,
+              source,
+              created_at
+            )
+            VALUES (
+              ?,
+              ?,
+              ?,
+              datetime('now', '+5 hours', '+30 minutes')
+            )
+          `).bind(
+            phone,
+            isCatalogueHost
+              ? 'CatalogueClick'
+              : 'WebsiteClick',
+            isCatalogueHost
+              ? 'catalogue'
+              : 'website'
+          ).run();
+
+          await syncLeadToGoogleSheetsSafe(env, phone);
+
+          console.log(
+            'TRACK CLICK DONE',
+            customerId,
+            phone
+          );
+        }
+
+      } catch (e) {
+        console.error('CID click log error:', e);
+      }
+    })());
+
+    const redirectBase = isCatalogueHost
+      ? 'https://catalogue.kaapav.com/'
+      : 'https://www.kaapav.com/';
+
+    const ogTitle = isCatalogueHost
+      ? 'KAAPAV Catalogue — Browse & Order'
+      : 'KAAPAV Fashion Jewellery';
+
+    const ogDesc = isCatalogueHost
+      ? 'Browse 250+ designs. Wishlist, cart & order directly.'
+      : 'Shop 250+ handcrafted designs. Starting ₹299/-. Free shipping above ₹498/-.';
+
+
+    return new Response(
+      getTrackingHtml(
+        phone,
+        customerId,
+        redirectBase,
+        ogTitle,
+        ogDesc
+      ),
+      {
+        headers: {
+          'Content-Type': 'text/html;charset=UTF-8',
+          'Cache-Control': 'no-store, no-cache',
+        }
+      }
+    );
+  }
+
+  // catalogue.kaapav.com/* — serve index.html
+  if (isCatalogueHost) {
+    if (path.startsWith('/api/')) {
+      // fall through
+    } else {
+      const html = await env.KV.get('catalogue:index', 'text');
+
+      if (html) {
+        return new Response(html, {
+          headers: {
+            'Content-Type': 'text/html;charset=UTF-8'
+          }
+        });
+      }
+
+      return fetch(request);
+    }
+  }
+
+  // kaapav.com/* — pass through to Odoo
+  if (isMainSiteHost) {
+    return fetch(request);
+  }
+}
+
+const categoryMatch = path.match(
+  /^\/([A-Z0-9]{6})\/([a-z0-9-]+)$/i
+);
+
+if (categoryMatch) {
+
+  const customerId = categoryMatch[1].toUpperCase();
+  const category = categoryMatch[2].toLowerCase();
+
+  const customer = await env.DB.prepare(`
+    SELECT phone, customer_id
+    FROM customers
+    WHERE customer_id = ?
+    LIMIT 1
+  `).bind(customerId).first();
+
+  if (!customer) {
+    return Response.redirect(
+      'https://www.kaapav.com/',
+      302
+    );
+  }
+
+const categoryMap = {
+  bracelets: '/shop/category/all-jewellery-bracelets-13',
+  necklaces: '/shop/category/all-jewellery-necklace-19',
+  rings: '/shop/category/all-jewellery-rings-20',
+  earrings: '/shop/category/all-jewellery-earrings-21',
+  pendants: '/shop/category/all-jewellery-pendant-22',
+  sets: '/shop/category/all-jewellery-sets-23',
+  bestsellers: '/shop/category/all-jewellery-12?category=12&search=&order=&tags=16'
+};
+
+  const destination = categoryMap[category];
+
+  if (!destination) {
+    return Response.redirect(
+      'https://www.kaapav.com/',
+      302
+    );
+  }
+
+  return new Response(
+    getTrackingHtml(
+      customer.phone,
+      customer.customer_id,
+      `https://www.kaapav.com${destination}`,
+      'KAAPAV Fashion Jewellery',
+      'Fashion Jewellery Collection'
+    ),
+    {
+      headers: {
+        'Content-Type': 'text/html;charset=UTF-8',
+        'Cache-Control': 'no-store, no-cache'
+      }
+    }
+  );
+}
+
+if (path.startsWith('/api/customer-id/') && method === 'GET') {
+  const customerId = decodeURIComponent(path.split('/').pop());
+  const customer = await env.DB.prepare(`SELECT phone FROM customers WHERE customer_id = ? LIMIT 1`).bind(customerId).first();
+  const phone = customer?.phone || '';
+
+if (phone) {
+  ctx.waitUntil((async () => {
+
+    await env.DB.prepare(`
+      UPDATE customers
+      SET clicked_website =
+          COALESCE(clicked_website, 0) + 1,
+          updated_at = datetime('now')
+      WHERE phone = ?
+    `).bind(phone).run();
+
+    // ADD THIS
+
+    await env.DB.prepare(`
+      INSERT INTO catalogue_events (
+        phone,
+        event_type,
+        source,
+        created_at
+      )
+      VALUES (
+        ?,
+        'WebsiteClick',
+        'website',
+        datetime('now', '+5 hours', '+30 minutes')
+      )
+    `).bind(phone).run();
+
+    await syncCustomerToGoogleSheetsSafe(env, phone);
+    await syncLeadToGoogleSheetsSafe(env, phone);
+
+  })());
+}
+
+  return jsonResponse({ success: true, phone: customer?.phone || null });
+}
+
+if (path === '/api/customer-events' && method === 'POST') {
+  try {
+    return await handleCustomerEvent(request, env);
+  } catch (e) {
+    console.error('CUSTOMER EVENT ERROR', e);
+    return errorResponse(e.message, 500);
+  }
+}
+
+if (path === '/api/catalogue/events' && method === 'POST') {
+  try {
+    return await handleCustomerEvent(request, env);
+  } catch (e) {
+    console.error('CATALOGUE EVENT ERROR', e);
+    return errorResponse(e.message, 500);
+  }
+}
+    if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+    if (path === '/health') return new Response('OK', { status: 200 });
+
+// ── Link tracking redirects ──
+if (path === '/w' || path === '/c') {
+
+  const phone = url.searchParams.get('t') || 'unknown';
+
+  console.log('CLICK_REDIRECT', path, phone);
+
+  const destination = path === '/w' ? 'website' : 'catalogue';
+  const eventType = path === '/w' ? 'WebsiteClick' : 'CatalogueClick';
+
+  const cid = await createTrackingSession(env, phone, destination);
+
+  const target = path === '/w'
+    ? `https://www.kaapav.com/${cid}`
+    : `https://catalogue.kaapav.com/${cid}`;
+
+  ctx.waitUntil((async () => {
+    try {
+
+      console.log('CLICK_LOG_START', phone, eventType);
+
+const clickCreatedAt = new Date().toLocaleString('sv-SE', {
+  timeZone: 'Asia/Kolkata'
+}).replace(',', '');
+
+await env.DB.prepare(`
+  INSERT INTO catalogue_events (
+    phone,
+    event_type,
+    sku,
+    product_name,
+    category,
+    price,
+    quantity,
+    cart_total,
+    checkout_items,
+    source,
+    utm_source,
+    utm_medium,
+    utm_campaign,
+    created_at
+  )
+  VALUES (
+    ?, ?, '', '', '',
+    0, 1, 0, '',
+    ?, '', '', '',
+    ?
+  )
+`)
+.bind(phone, eventType, destination, clickCreatedAt)
+.run();
+
+const clickCustomer = await env.DB.prepare(`
+  SELECT customer_id, name
+  FROM customers
+  WHERE phone = ?
+  LIMIT 1
+`)
+.bind(phone)
+.first();
+
+await appendCatalogueEventToGoogleSheets(env, {
+  created_at: clickCreatedAt,
+  customer_id: clickCustomer?.customer_id || '',
+  phone,
+  customer_name: clickCustomer?.name || '',
+  event_type: eventType,
+  sku: '',
+  product_name: '',
+  category: '',
+  price: 0,
+  quantity: 1,
+  cart_total: 0,
+  checkout_items: '',
+  source: destination,
+  utm_source: '',
+  utm_medium: '',
+  utm_campaign: '',
+});
+
+      await env.DB.prepare(`
+        UPDATE customers
+        SET ${
+          path === '/w'
+            ? 'clicked_website'
+            : 'clicked_catalogue'
+        } = COALESCE(${
+          path === '/w'
+            ? 'clicked_website'
+            : 'clicked_catalogue'
+        }, 0) + 1,
+        updated_at = datetime('now')
+        WHERE phone = ?
+      `)
+      .bind(phone)
+      .run();
+
+      console.log('CLICK_LOGGED', phone, eventType);
+
+      await syncCustomerToGoogleSheetsSafe(env, phone);
+      await syncLeadToGoogleSheetsSafe(env, phone);
+
+      console.log('CLICK_SYNC_DONE', phone, eventType);
+
+    } catch (e) {
+      console.error('CLICK_LOG_ERROR', e);
+    }
+  })());
+
+  return Response.redirect(target, 302);
+}
+
+
+
+
+
+
+if (path === '/api/debug/run-supabase-sync' && method === 'GET') {
+  const key = url.searchParams.get('key');
+  if (!key || key !== env.SYNC_API_KEY) return errorResponse('Unauthorized', 401);
+  try {
+    const summary = await backfillAllSupabase(env);
+    return jsonResponse({ success: true, summary });
+  } catch (e) {
+    console.error('Supabase debug sync error:', e);
+    return errorResponse('Supabase sync failed: ' + e.message, 500);
+  }
+}
+    if (path === '/api/debug/google-auth' && method === 'GET') {
+  const email = env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
+  const key = env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
+
+  return jsonResponse({
+    email: email,
+    emailLength: email.length,
+    keyExists: !!key,
+    keyLength: key.length,
+    keyFirst30: key.substring(0, 30),
+  });
+}
+
+if (path === '/api/debug/supabase-check' && method === 'GET') {
+  const url = env.SUPABASE_URL || '';
+  const key = env.SUPABASE_SERVICE_KEY || '';
+  let testResult = 'not tested';
+  let ordersCount = null;
+  let customersCount = null;
+  let productsCount = null;
+
+  try {
+    const res = await fetch(`${url}/rest/v1/orders?select=order_id`, {
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'apikey': key,
+      },
+    });
+    testResult = `status: ${res.status}`;
+
+    const ordersRes = await fetch(`${url}/rest/v1/orders?select=count`, {
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'apikey': key,
+        'Prefer': 'count=exact',
+      },
+    });
+    ordersCount = ordersRes.headers.get('content-range');
+
+    const customersRes = await fetch(`${url}/rest/v1/customers?select=count`, {
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'apikey': key,
+        'Prefer': 'count=exact',
+      },
+    });
+    customersCount = customersRes.headers.get('content-range');
+
+    const productsRes = await fetch(`${url}/rest/v1/products?select=count`, {
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'apikey': key,
+        'Prefer': 'count=exact',
+      },
+    });
+    productsCount = productsRes.headers.get('content-range');
+
+  } catch (e) {
+    testResult = `error: ${e.message}`;
+  }
+
+  return jsonResponse({
+    urlExists: !!url,
+    urlLength: url.length,
+    urlValue: url,
+    keyExists: !!key,
+    keyLength: key.length,
+    connectionTest: testResult,
+    ordersCount,
+    customersCount,
+    productsCount,
+  });
+}
+
+if (path === '/api/debug/supabase-env' && method === 'GET') {
+  return jsonResponse({
+    envSeenByWorker: {
+      SUPABASE_URL: !!env.SUPABASE_URL,
+      SUPABASE_URL_LENGTH: (env.SUPABASE_URL || '').length,
+      SUPABASE_SERVICE_KEY: !!env.SUPABASE_SERVICE_KEY,
+      SUPABASE_SERVICE_KEY_LENGTH: (env.SUPABASE_SERVICE_KEY || '').length,
+      SYNC_API_KEY: !!env.SYNC_API_KEY,
+      SYNC_API_KEY_LENGTH: (env.SYNC_API_KEY || '').length,
+    },
+    isSupabaseReady: !!(env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY),
+  });
+}
+
+    if (path === '/api/debug/sync-check' && method === 'POST') {
+  const incomingKey = request.headers.get('x-sync-key');
+  const storedKey = env.SYNC_API_KEY;
+
+  return jsonResponse({
+    incomingKeyExists: !!incomingKey,
+    incomingKeyLength: incomingKey ? incomingKey.length : 0,
+    incomingKeyFirst4: incomingKey ? incomingKey.substring(0, 4) : 'NONE',
+    storedKeyExists: !!storedKey,
+    storedKeyLength: storedKey ? storedKey.length : 0,
+    storedKeyFirst4: storedKey ? storedKey.substring(0, 4) : 'NONE',
+    keysMatch: incomingKey === storedKey,
+    envVarsAvailable: {
+      SYNC_API_KEY: !!env.SYNC_API_KEY,
+      GOOGLE_SHEETS_SPREADSHEET_ID: !!env.GOOGLE_SHEETS_SPREADSHEET_ID,
+      GOOGLE_SERVICE_ACCOUNT_EMAIL: !!env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: !!env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+    }
+  });
+}
+
+// ═══ DEBUG: Supabase write test ═══
+if (path === '/api/debug/supabase-write-test' && method === 'GET') {
+  if (!isSupabaseReady(env)) {
+    return jsonResponse({ error: 'Supabase not configured' });
+  }
+
+  const action = url.searchParams.get('action') || 'test';
+
+  // ═══ ACTION: diagnose — find exactly what's failing ═══
+  if (action === 'diagnose') {
+    const results = { steps: [] };
+
+    // Step 1: Read one real order from D1
+    const order = await env.DB.prepare('SELECT * FROM orders LIMIT 1').first();
+    if (!order) return jsonResponse({ error: 'No orders in D1' });
+    results.steps.push({
+      step: '1_d1_read',
+      ok: true,
+      order_id: order.order_id,
+      phone: order.phone,
+    });
+
+    // Step 2: Map it using the same mapper as backfill
+    const categoryMap = await getAllProductCategories(env);
+    const category = getCategoryFromItems(order.items, categoryMap);
+    const mapped = mapOrderToSupabase(order, category);
+    results.steps.push({
+      step: '2_mapped',
+      ok: true,
+      field_count: Object.keys(mapped).length,
+      order_id: mapped.order_id,
+      phone: mapped.phone,
+      status: mapped.status,
+    });
+
+    // Step 3: Upsert using EXACT same method as backfill
+    try {
+      const upsertRes = await fetch(
+        `${env.SUPABASE_URL}/rest/v1/orders?on_conflict=order_id`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+            'apikey': env.SUPABASE_SERVICE_KEY,
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=merge-duplicates,return=representation',
+          },
+          body: JSON.stringify([mapped]),
+        }
+      );
+      const upsertBody = await upsertRes.text();
+      results.steps.push({
+        step: '3_upsert',
+        ok: upsertRes.ok,
+        status: upsertRes.status,
+        body_length: upsertBody.length,
+        body_preview: upsertBody.substring(0, 500),
+        is_empty_array: upsertBody === '[]',
+      });
+    } catch (e) {
+      results.steps.push({
+        step: '3_upsert',
+        ok: false,
+        error: e.message,
+      });
+    }
+
+    // Step 4: Read it back from Supabase
+    try {
+      const readRes = await fetch(
+        `${env.SUPABASE_URL}/rest/v1/orders?order_id=eq.${encodeURIComponent(order.order_id)}&select=order_id,phone,status,total`,
+        {
+          headers: {
+            'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+            'apikey': env.SUPABASE_SERVICE_KEY,
+          },
+        }
+      );
+      const readBody = await readRes.text();
+      results.steps.push({
+        step: '4_readback',
+        ok: readRes.ok,
+        status: readRes.status,
+        body: readBody,
+        found: readBody !== '[]',
+      });
+    } catch (e) {
+      results.steps.push({
+        step: '4_readback',
+        ok: false,
+        error: e.message,
+      });
+    }
+
+    // Step 5: Count total rows in Supabase orders table
+    try {
+      const countRes = await fetch(
+        `${env.SUPABASE_URL}/rest/v1/orders?select=order_id`,
+        {
+          headers: {
+            'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+            'apikey': env.SUPABASE_SERVICE_KEY,
+            'Range': '0-0',
+            'Prefer': 'count=exact',
+          },
+        }
+      );
+      const range = countRes.headers.get('content-range');
+      results.steps.push({
+        step: '5_count',
+        content_range: range,
+        status: countRes.status,
+      });
+    } catch (e) {
+      results.steps.push({
+        step: '5_count',
+        error: e.message,
+      });
+    }
+
+    // Step 6: Show Supabase URL (first 35 chars) for verification
+    results.supabase_url_preview = (env.SUPABASE_URL || '').substring(0, 35) + '...';
+
+    return jsonResponse(results);
+  }
+
+  // ═══ ACTION: backfill — with FULL error reporting ═══
+  if (action === 'backfill') {
+    const errors = [];
+    const counts = { d1: {}, supabase: {} };
+
+    try {
+      const categoryMap = await getAllProductCategories(env);
+
+      // ── ORDERS ──
+      const { results: d1Orders } = await env.DB.prepare(
+        'SELECT * FROM orders ORDER BY created_at DESC'
+      ).all();
+      counts.d1.orders = (d1Orders || []).length;
+
+      if (d1Orders && d1Orders.length > 0) {
+        const orderRows = d1Orders.map(o => mapOrderToSupabase(o, getCategoryFromItems(o.items, categoryMap)));
+        try {
+          const res = await fetch(
+            `${env.SUPABASE_URL}/rest/v1/orders?on_conflict=order_id`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+                'apikey': env.SUPABASE_SERVICE_KEY,
+                'Content-Type': 'application/json',
+                'Prefer': 'resolution=merge-duplicates,return=representation',
+              },
+              body: JSON.stringify(orderRows),
+            }
+          );
+          const body = await res.text();
+          let parsed = [];
+          try { parsed = JSON.parse(body); } catch {}
+          counts.supabase.orders = Array.isArray(parsed) ? parsed.length : 0;
+          if (!res.ok) errors.push({ table: 'orders', status: res.status, body: body.substring(0, 300) });
+          if (res.ok && counts.supabase.orders === 0) errors.push({ table: 'orders', issue: 'GOT 201 BUT 0 ROWS RETURNED', body: body.substring(0, 300) });
+        } catch (e) {
+          errors.push({ table: 'orders', error: e.message });
+        }
+      }
+
+      // ── CUSTOMERS ──
+      const { results: d1Customers } = await env.DB.prepare(
+        'SELECT * FROM customers ORDER BY last_seen DESC'
+      ).all();
+      counts.d1.customers = (d1Customers || []).length;
+
+      if (d1Customers && d1Customers.length > 0) {
+        const customerRows = [];
+        for (const c of d1Customers) {
+          const phone = c.phone;
+          const orderStats = await env.DB.prepare(`
+            SELECT COUNT(*) as order_count,
+            COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_spent
+            FROM orders WHERE phone = ? OR phone = ?
+          `).bind(phone, phone.replace(/^91/, '')).first();
+          const unpaid = await env.DB.prepare(`
+            SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as value
+            FROM orders WHERE (phone = ? OR phone = ?) AND payment_status = 'unpaid' AND status != 'cancelled'
+          `).bind(phone, phone.replace(/^91/, '')).first();
+          const firstOrder = await env.DB.prepare(`
+            SELECT source, shipping_city, shipping_state, shipping_pincode
+            FROM orders WHERE phone = ? OR phone = ?
+            ORDER BY datetime(created_at) ASC LIMIT 1
+          `).bind(phone, phone.replace(/^91/, '')).first();
+          customerRows.push(mapCustomerToSupabase(c, orderStats, unpaid, firstOrder));
+        }
+        try {
+          const res = await fetch(
+            `${env.SUPABASE_URL}/rest/v1/customers?on_conflict=phone`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+                'apikey': env.SUPABASE_SERVICE_KEY,
+                'Content-Type': 'application/json',
+                'Prefer': 'resolution=merge-duplicates,return=representation',
+              },
+              body: JSON.stringify(customerRows),
+            }
+          );
+          const body = await res.text();
+          let parsed = [];
+          try { parsed = JSON.parse(body); } catch {}
+          counts.supabase.customers = Array.isArray(parsed) ? parsed.length : 0;
+          if (!res.ok) errors.push({ table: 'customers', status: res.status, body: body.substring(0, 300) });
+        } catch (e) {
+          errors.push({ table: 'customers', error: e.message });
+        }
+      }
+
+      // ── PRODUCTS (batch by 50) ──
+      const { results: d1Products } = await env.DB.prepare(
+        'SELECT * FROM products ORDER BY name ASC'
+      ).all();
+      counts.d1.products = (d1Products || []).length;
+      counts.supabase.products = 0;
+
+      if (d1Products && d1Products.length > 0) {
+        const productRows = d1Products.map(p => mapProductToSupabase(p));
+        // Batch in groups of 50
+        for (let i = 0; i < productRows.length; i += 50) {
+          const batch = productRows.slice(i, i + 50);
+          try {
+            const res = await fetch(
+              `${env.SUPABASE_URL}/rest/v1/products?on_conflict=sku`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+                  'apikey': env.SUPABASE_SERVICE_KEY,
+                  'Content-Type': 'application/json',
+                  'Prefer': 'resolution=merge-duplicates,return=representation',
+                },
+                body: JSON.stringify(batch),
+              }
+            );
+            const body = await res.text();
+            let parsed = [];
+            try { parsed = JSON.parse(body); } catch {}
+            counts.supabase.products += Array.isArray(parsed) ? parsed.length : 0;
+            if (!res.ok) errors.push({ table: 'products', batch: `${i}-${i + batch.length}`, status: res.status, body: body.substring(0, 300) });
+          } catch (e) {
+            errors.push({ table: 'products', batch: `${i}-${i + 50}`, error: e.message });
+          }
+        }
+      }
+
+      // ── INVENTORY ──
+      counts.supabase.inventory = 0;
+      if (d1Products && d1Products.length > 0) {
+        const invRows = d1Products.map(p => mapInventoryToSupabase(p));
+        for (let i = 0; i < invRows.length; i += 50) {
+          const batch = invRows.slice(i, i + 50);
+          try {
+            const res = await fetch(
+              `${env.SUPABASE_URL}/rest/v1/inventory?on_conflict=sku`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+                  'apikey': env.SUPABASE_SERVICE_KEY,
+                  'Content-Type': 'application/json',
+                  'Prefer': 'resolution=merge-duplicates,return=representation',
+                },
+                body: JSON.stringify(batch),
+              }
+            );
+            const body = await res.text();
+            let parsed = [];
+            try { parsed = JSON.parse(body); } catch {}
+            counts.supabase.inventory += Array.isArray(parsed) ? parsed.length : 0;
+            if (!res.ok) errors.push({ table: 'inventory', status: res.status, body: body.substring(0, 300) });
+          } catch (e) {
+            errors.push({ table: 'inventory', error: e.message });
+          }
+        }
+      }
+
+      // ── LEADS ──
+      if (d1Customers && d1Customers.length > 0) {
+        const leadRows = [];
+        for (const c of d1Customers) {
+          const phone = c.phone;
+          const orderStats = await env.DB.prepare(`
+            SELECT COUNT(*) as order_count,
+            COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_spent
+            FROM orders WHERE phone = ? OR phone = ?
+          `).bind(phone, phone.replace(/^91/, '')).first();
+          const firstOrder = await env.DB.prepare(`
+            SELECT source, items, created_at FROM orders
+            WHERE phone = ? OR phone = ?
+            ORDER BY datetime(created_at) ASC LIMIT 1
+          `).bind(phone, phone.replace(/^91/, '')).first();
+          const cat = firstOrder ? getCategoryFromItems(firstOrder.items, categoryMap) : '';
+          leadRows.push(mapLeadToSupabase(c, firstOrder, cat, orderStats));
+        }
+        try {
+          const res = await fetch(
+            `${env.SUPABASE_URL}/rest/v1/leads?on_conflict=phone`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+                'apikey': env.SUPABASE_SERVICE_KEY,
+                'Content-Type': 'application/json',
+                'Prefer': 'resolution=merge-duplicates,return=representation',
+              },
+              body: JSON.stringify(leadRows),
+            }
+          );
+          const body = await res.text();
+          let parsed = [];
+          try { parsed = JSON.parse(body); } catch {}
+          counts.supabase.leads = Array.isArray(parsed) ? parsed.length : 0;
+          if (!res.ok) errors.push({ table: 'leads', status: res.status, body: body.substring(0, 300) });
+        } catch (e) {
+          errors.push({ table: 'leads', error: e.message });
+        }
+      }
+
+      // ── SALES ──
+      if (d1Orders && d1Orders.length > 0) {
+        const salesRows = d1Orders.map(o => mapSalesToSupabase(o, getCategoryFromItems(o.items, categoryMap)));
+        try {
+          const res = await fetch(
+            `${env.SUPABASE_URL}/rest/v1/sales?on_conflict=order_id`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+                'apikey': env.SUPABASE_SERVICE_KEY,
+                'Content-Type': 'application/json',
+                'Prefer': 'resolution=merge-duplicates,return=representation',
+              },
+              body: JSON.stringify(salesRows),
+            }
+          );
+          const body = await res.text();
+          let parsed = [];
+          try { parsed = JSON.parse(body); } catch {}
+          counts.supabase.sales = Array.isArray(parsed) ? parsed.length : 0;
+          if (!res.ok) errors.push({ table: 'sales', status: res.status, body: body.substring(0, 300) });
+        } catch (e) {
+          errors.push({ table: 'sales', error: e.message });
+        }
+      }
+
+    } catch (e) {
+      errors.push({ global: true, error: e.message, stack: e.stack });
+    }
+
+    return jsonResponse({
+      success: errors.length === 0,
+      counts,
+      errors: errors.length > 0 ? errors : 'none',
+      syncedAt: new Date().toISOString(),
+    });
+  }
+
+  // ═══ DEFAULT: simple write test ═══
+  const results = {};
+  try {
+    const writeRes = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/orders?on_conflict=order_id`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+          'apikey': env.SUPABASE_SERVICE_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates,return=representation',
+        },
+        body: JSON.stringify([{
+          order_id: '__test__', phone: '0000000000', status: 'test',
+          total: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        }]),
+      }
+    );
+    results.write = { status: writeRes.status, body: await writeRes.text() };
+    const readRes = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/orders?order_id=eq.__test__&select=order_id,status`,
+      { headers: { 'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'apikey': env.SUPABASE_SERVICE_KEY } }
+    );
+    results.read = { status: readRes.status, body: await readRes.text() };
+    await fetch(
+      `${env.SUPABASE_URL}/rest/v1/orders?order_id=eq.__test__`,
+      { method: 'DELETE', headers: { 'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'apikey': env.SUPABASE_SERVICE_KEY } }
+    );
+    results.verdict = results.read.body.includes('__test__') ? 'WRITES WORKING' : 'WRITES BLOCKED';
+    results.hint = 'Use ?action=diagnose or ?action=backfill';
+  } catch (e) {
+    results.error = e.message;
+  }
+  return jsonResponse(results);
+}
+
+    if (path === '/webhook' || path === '/api/webhook') {
+      if (method === 'GET') return handleWebhookVerify(request, env);
+      if (method === 'POST') return handleWebhookPost(request, env, ctx);
+    }
+
+if (path === '/api/catalogue' && method === 'GET') {
+  const { results } = await env.DB.prepare(
+    `SELECT sku, name, category, price, compare_price, image_url, images,
+            website_link, description, tags, stock, is_featured
+     FROM products WHERE is_active = 1 ORDER BY category ASC, name ASC`
+  ).all();
+  return new Response(JSON.stringify({ success: true, products: results || [] }), {
+    headers: { 
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'Pragma': 'no-cache',
+    }
+  });
+}
+ 
+if (path === '/' || path === '/index.html') {
+  const response = await fetch(request);
+  return new Response(response.body, {
+    headers: {
+      ...response.headers,
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'Pragma': 'no-cache',
+    }
+  });
+}
+
+    // ═══ SHIPROCKET WEBHOOK ═══
+if (path === '/api/courier/updates' && method === 'POST') {
+  try {
+    const rawBody = await request.text();
+
+    console.log('COURIER_WEBHOOK_HIT', JSON.stringify({
+      method,
+      hasBody: !!rawBody,
+      contentType: request.headers.get('content-type') || '',
+      hasApiKey: !!request.headers.get('x-api-key'),
+      hasAuth: !!request.headers.get('authorization')
+    }));
+
+    const expectedKey = String(env.SHIPROCKET_WEBHOOK_KEY || '').trim();
+    const receivedKey = String(request.headers.get('x-api-key') || '').trim();
+
+    if (expectedKey && receivedKey !== expectedKey) {
+      console.error('COURIER_WEBHOOK_AUTH_FAILED');
+      return errorResponse('Unauthorized', 401);
+    }
+
+    if (!rawBody || rawBody.trim() === '' || rawBody.trim() === '{}') {
+      return jsonResponse({ status: 'ok', validation: true });
+    }
+
+    const body = JSON.parse(rawBody);
+
+const rawOrderId = String(body.order_id || '').trim();
+const rawSrOrderId = String(
+  body.sr_order_id ||
+  body.shiprocket_order_id ||
+  ''
+).trim();
+
+const rawChannelOrderId = String(
+  body.channel_order_id ||
+  body.order_number ||
+  body.orderId ||
+  ''
+).trim();
+
+const srOrderId = /^[0-9]+$/.test(rawSrOrderId)
+  ? rawSrOrderId
+  : (/^[0-9]+$/.test(rawOrderId) ? rawOrderId : '');
+
+const channelOrderId = rawChannelOrderId || (
+  /^KFJW-/i.test(rawOrderId) ? rawOrderId : ''
+);
+
+    const shipmentId = String(
+      body.shipment_id ||
+      body.shipmentId ||
+      ''
+    );
+
+    const rawStatus = String(
+      body.current_status ||
+      body.status ||
+      body.shipment_status ||
+      ''
+    ).toLowerCase();
+
+    const awb = String(
+      body.awb ||
+      body.awb_code ||
+      body.awb_number ||
+      ''
+    ).trim();
+
+    const courier = String(
+      body.courier_name ||
+      body.courier ||
+      ''
+    ).trim();
+
+    const trackingId = String(
+      body.tracking_id ||
+      body.awb ||
+      body.awb_code ||
+      ''
+    ).trim();
+
+    const trackingUrl = awb
+      ? `https://www.shiprocket.in/shipment-tracking/?id=${awb}`
+      : '';
+
+    if (!srOrderId && !channelOrderId && !shipmentId && !awb) {
+      return jsonResponse({ status: 'ok' });
+    }
+
+    const order = await env.DB.prepare(`
+      SELECT * FROM orders
+      WHERE shiprocket_order_id = ?
+         OR order_id = ?
+         OR shipment_id = ?
+         OR awb_number = ?
+         OR awb_code = ?
+      LIMIT 1
+    `).bind(
+      srOrderId,
+      channelOrderId || srOrderId,
+      shipmentId,
+      awb,
+      awb
+    ).first();
+
+    if (!order) {
+      console.log('SHIPROCKET_WEBHOOK_ORDER_NOT_FOUND', JSON.stringify({
+        srOrderId,
+        channelOrderId,
+        shipmentId,
+        awb,
+        rawStatus
+      }));
+      return jsonResponse({ status: 'ok' });
+    }
+
+const courierCancelled =
+  rawStatus.includes('cancel') ||
+  rawStatus.includes('canceled') ||
+  rawStatus.includes('pickup cancelled') ||
+  rawStatus.includes('pickup canceled') ||
+  rawStatus.includes('shipment cancelled') ||
+  rawStatus.includes('order cancelled');
+
+const statusMap = {
+  'new': 'processing',
+  'ready to ship': 'processing',
+  'pickup scheduled': 'processing',
+  'manifest generated': 'processing',
+  'pickup generated': 'processing',
+  'shipped': 'shipped',
+  'in transit': 'shipped',
+  'picked up': 'shipped',
+  'out for delivery': 'shipped',
+  'delivered': 'delivered',
+  'rto initiated': 'cancelled',
+  'rto delivered': 'cancelled',
+};
+
+const newStatus = courierCancelled
+  ? 'processing'
+  : (statusMap[rawStatus] || (awb ? 'shipped' : order.status || 'processing'));
+
+await env.DB.prepare(`
+  UPDATE orders SET
+    status = ?,
+
+    shiprocket_order_id = CASE
+      WHEN ? = 1 THEN NULL
+      WHEN ? != '' THEN ?
+      ELSE shiprocket_order_id
+    END,
+
+    shipment_id = CASE
+      WHEN ? = 1 THEN NULL
+      WHEN ? != '' THEN ?
+      ELSE shipment_id
+    END,
+
+    awb_number = CASE
+      WHEN ? = 1 THEN NULL
+      WHEN ? != '' THEN ?
+      ELSE awb_number
+    END,
+
+    awb_code = CASE
+      WHEN ? = 1 THEN NULL
+      WHEN ? != '' THEN ?
+      ELSE awb_code
+    END,
+
+    courier = CASE
+      WHEN ? = 1 THEN NULL
+      WHEN ? != '' THEN ?
+      ELSE courier
+    END,
+
+    tracking_id = CASE
+      WHEN ? = 1 THEN NULL
+      WHEN ? != '' THEN ?
+      ELSE tracking_id
+    END,
+
+    tracking_url = CASE
+      WHEN ? = 1 THEN NULL
+      WHEN ? != '' THEN ?
+      ELSE tracking_url
+    END,
+
+    shipped_at = CASE
+      WHEN ? = 1 THEN NULL
+      WHEN ? = 'shipped' AND shipped_at IS NULL THEN datetime('now')
+      ELSE shipped_at
+    END,
+
+    delivered_at = CASE
+      WHEN ? = 1 THEN NULL
+      WHEN ? = 'delivered' AND delivered_at IS NULL THEN datetime('now')
+      ELSE delivered_at
+    END,
+
+    shipping_sent = CASE
+      WHEN ? = 1 THEN 0
+      ELSE shipping_sent
+    END,
+
+    delivery_sent = CASE
+      WHEN ? = 1 THEN 0
+      ELSE delivery_sent
+    END,
+
+    cancellation_reason = CASE
+      WHEN ? = 1 THEN 'Shiprocket courier booking cancelled'
+      ELSE cancellation_reason
+    END,
+
+    updated_at = datetime('now')
+  WHERE order_id = ?
+`).bind(
+  newStatus,
+
+  courierCancelled ? 1 : 0,
+  srOrderId, srOrderId,
+
+  courierCancelled ? 1 : 0,
+  shipmentId, shipmentId,
+
+  courierCancelled ? 1 : 0,
+  awb, awb,
+
+  courierCancelled ? 1 : 0,
+  awb, awb,
+
+  courierCancelled ? 1 : 0,
+  courier, courier,
+
+  courierCancelled ? 1 : 0,
+  trackingId, trackingId,
+
+  courierCancelled ? 1 : 0,
+  trackingUrl, trackingUrl,
+
+  courierCancelled ? 1 : 0,
+  newStatus,
+
+  courierCancelled ? 1 : 0,
+  newStatus,
+
+  courierCancelled ? 1 : 0,
+  courierCancelled ? 1 : 0,
+  courierCancelled ? 1 : 0,
+
+  order.order_id
+).run();
+
+    await logOrderEvent(
+      env,
+      order.order_id,
+      `shiprocket_${rawStatus.replace(/\s+/g, '_') || 'update'}`,
+      `Shiprocket status: ${rawStatus || 'update'}`,
+      { srOrderId, channelOrderId, shipmentId, awb, courier, trackingUrl },
+      'shiprocket_webhook'
+    );
+
+    if (newStatus === 'delivered' && !order.delivered_at && isWhatsAppOrder(order.source)) {
+      await sendWhatsAppText(env, order.phone,
+        `🎉 *Order Delivered!*\n\n` +
+        `Hi ${(order.customer_name || 'Customer').split(' ')[0]}!\n\n` +
+        `Order ID: *${order.order_id}*\n\n` +
+        `📦 Your KAAPAV jewellery has been delivered!\n\n` +
+        `💎 Thank you for choosing KAAPAV!`
+      );
+    }
+
+    if (newStatus === 'shipped' && !order.shipped_at && isWhatsAppOrder(order.source)) {
+await sendWhatsAppCtaUrl(
+  env,
+  order.phone,
+  `🚚 *Your KAAPAV order is on the way!*\n\n` +
+  `Hi ${(order.customer_name || 'Customer').split(' ')[0]}!\n\n` +
+  `Order ID: *${order.order_id}*\n` +
+  `${awb ? `AWB: *${awb}*\n` : ''}` +
+  `${courier ? `Courier: ${courier}\n` : ''}` +
+  `\nTap below to track your parcel anytime.\n\n` +
+  `💎 KAAPAV Fashion Jewellery`,
+  'Track Now',
+  trackingUrl || `https://www.shiprocket.in/shipment-tracking/?id=${awb}`
+);
+    }
+await saveOwnerInboxAlert(env, ctx, {
+  type: 'shipping',
+  priority: newStatus === 'delivered' ? 'high' : 'normal',
+  title:
+    newStatus === 'delivered'
+      ? '✅ Order Delivered'
+      : newStatus === 'shipped'
+        ? '🚚 Order Shipped'
+        : '📦 Shiprocket Update',
+  body:
+    `Order: ${order.order_id}\n` +
+    `Customer: ${order.customer_name || 'Customer'} (${order.phone})\n` +
+    `Status: ${rawStatus || newStatus || 'update'}\n` +
+    `${awb ? `AWB: ${awb}\n` : ''}` +
+    `${courier ? `Courier: ${courier}\n` : ''}` +
+    `Time: ${formatISTDateTime()}`,
+  orderId: order.order_id,
+  phone: order.phone,
+  customerName: order.customer_name || 'Customer',
+  amount: order.total,
+  source: order.source || 'shiprocket',
+  actionType: 'order_detail',
+  actionLabel: 'Open Order',
+  actionUrl: trackingUrl || '',
+  meta: {
+    rawStatus,
+    newStatus,
+    srOrderId,
+    channelOrderId,
+    shipmentId,
+    awb,
+    courier,
+    trackingUrl,
+  },
+  dedupeKey: `shiprocket_update:${order.order_id}:${rawStatus || newStatus}:${awb || shipmentId || srOrderId || ''}`,
+});
+
+    try {
+      await syncOrderToGoogleSheetsSafe(env, order.order_id);
+      await syncShipmentToGoogleSheetsSafe(env, order.order_id);
+      await syncCustomerToGoogleSheetsSafe(env, order.phone);
+      await syncSalesToGoogleSheetsSafe(env, order.order_id);
+    } catch (e) {
+      console.error('Shiprocket webhook sync error:', e);
+    }
+
+    return jsonResponse({ status: 'ok' });
+  } catch (e) {
+    console.error('Shiprocket webhook error:', e);
+    return jsonResponse({ status: 'ok' });
+  }
+}
+
+    // ═══ RAZORPAY WEBHOOK ═══
+    if ((path === '/api/razorpay/webhook' || path === '/api/payment/webhook') && method === 'POST') {
+  const rawBody = await request.text();
+  const sig = request.headers.get('x-razorpay-signature');
+
+// Verify HMAC signature
+try {
+  const webhookSecret =
+    env.RAZORPAY_WEBHOOK_SECRET;
+    
+
+  if (!webhookSecret) {
+    return new Response(
+      'Webhook secret missing',
+      {
+        status: 500,
+      }
+    );
+  }
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(
+      webhookSecret
+    ),
+    {
+      name: 'HMAC',
+      hash: 'SHA-256',
+    },
+    false,
+    ['sign']
+  );
+    const expectedSig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody));
+    const expectedHex = Array.from(new Uint8Array(expectedSig))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+    if (sig !== expectedHex) return new Response('Invalid signature', { status: 400 });
+  } catch(e) { return new Response('Sig error', { status: 400 }); }
+
+const event = JSON.parse(rawBody);
+const eventType = event.event;
+
+// ── return refund reconciliation ──────────────────────────────
+if ([
+  'refund.created',
+  'refund.processed',
+  'refund.failed',
+  'refund.speed_changed',
+].includes(eventType)) {
+  const refund =
+    event.payload?.refund?.entity || {};
+
+  const payment =
+    event.payload?.payment?.entity || {};
+
+  const refundId = cleanReturnText(
+    refund.id,
+    200
+  );
+
+  const paymentId = cleanReturnText(
+    refund.payment_id || payment.id,
+    200
+  );
+
+  const requestIdFromNotes =
+    cleanReturnText(
+      refund.notes?.request_id,
+      200
+    );
+
+  const orderIdFromNotes =
+    cleanReturnText(
+      refund.notes?.order_id,
+      200
+    );
+
+  const eventAttemptKey =
+    cleanReturnText(
+      refund.notes?.refund_attempt_key,
+      100
+    );
+
+  if (!refundId || !paymentId) {
+    console.error(
+      'RAZORPAY_REFUND_WEBHOOK_MISSING_IDS',
+      eventType,
+      refundId,
+      paymentId
+    );
+
+    return jsonResponse({
+      status: 'ok',
+      ignored: true,
+    });
+  }
+
+  const webhookEventId =
+    cleanReturnText(
+      request.headers.get(
+        'x-razorpay-event-id'
+      ),
+      200
+    ) ||
+    (
+      `rzp_${eventType}_${refundId}_` +
+      `${event.created_at || refund.created_at || 0}`
+    )
+      .replace(
+        /[^A-Za-z0-9_-]/g,
+        '_'
+      )
+      .slice(0, 200);
+
+  const previousEvent =
+    await env.DB.prepare(`
+      SELECT processing_status
+      FROM return_refund_events
+      WHERE event_id = ?
+      LIMIT 1
+    `)
+      .bind(webhookEventId)
+      .first();
+
+  if (
+    String(
+      previousEvent?.processing_status || ''
+    ).toLowerCase() === 'processed'
+  ) {
+    return jsonResponse({
+      status: 'ok',
+      duplicate: true,
+    });
+  }
+
+  const returnRequest =
+    await env.DB.prepare(`
+      SELECT
+        rr.*,
+        o.total AS order_total,
+        o.phone AS order_phone
+
+      FROM return_requests rr
+
+      JOIN orders o
+        ON o.order_id = rr.order_id
+
+      WHERE
+        (
+          ? != '' AND
+          rr.refund_id = ?
+        )
+        OR
+        (
+          ? != '' AND
+          rr.request_id = ?
+        )
+        OR
+        (
+          ? != '' AND
+          ? != '' AND
+          rr.order_id = ? AND
+          rr.payment_id = ? AND
+          rr.refund_status IN (
+            'processing',
+            'pending',
+            'created'
+          )
+        )
+
+      ORDER BY
+        CASE
+          WHEN rr.refund_id = ?
+          THEN 0
+
+          WHEN rr.request_id = ?
+          THEN 1
+
+          ELSE 2
+        END,
+        rr.updated_at DESC
+
+      LIMIT 1
+    `)
+      .bind(
+        refundId,
+        refundId,
+
+        requestIdFromNotes,
+        requestIdFromNotes,
+
+        orderIdFromNotes,
+        paymentId,
+        orderIdFromNotes,
+        paymentId,
+
+        refundId,
+        requestIdFromNotes
+      )
+      .first();
+
+  if (!returnRequest) {
+    console.error(
+      'RAZORPAY_REFUND_WEBHOOK_UNMATCHED',
+      webhookEventId,
+      refundId,
+      paymentId,
+      requestIdFromNotes,
+      orderIdFromNotes
+    );
+
+    return jsonResponse({
+      status: 'ok',
+      unmatched: true,
+    });
+  }
+
+  const requestId = String(
+    returnRequest.request_id
+  );
+
+  const orderId = String(
+    returnRequest.order_id
+  );
+
+  const rawRefundStatus = String(
+    refund.status || ''
+  ).toLowerCase();
+
+  const isFailed =
+    eventType === 'refund.failed' ||
+    rawRefundStatus === 'failed';
+
+  const isProcessed =
+    !isFailed &&
+    (
+      eventType === 'refund.processed' ||
+      rawRefundStatus === 'processed'
+    );
+
+  const currentRefundStatus = String(
+    returnRequest.refund_status || ''
+  ).toLowerCase();
+
+  const currentRefundId =
+    cleanReturnText(
+      returnRequest.refund_id,
+      200
+    );
+
+  const currentAttemptKey =
+    cleanReturnText(
+      returnRequest.refund_idempotency_key,
+      100
+    );
+
+  let staleReason = '';
+
+  if (
+    eventAttemptKey &&
+    currentAttemptKey &&
+    eventAttemptKey !== currentAttemptKey
+  ) {
+    staleReason =
+      'Ignored webhook from an older refund attempt';
+  } else if (
+    currentRefundId &&
+    currentRefundId !== refundId
+  ) {
+    staleReason =
+      'Ignored webhook for a different refund ID';
+  } else if (
+    currentRefundStatus === 'processed' &&
+    !isProcessed
+  ) {
+    staleReason =
+      'Ignored non-processed event after refund completion';
+  } else if (
+    currentRefundStatus === 'failed' &&
+    !isFailed &&
+    !isProcessed
+  ) {
+    staleReason =
+      'Ignored non-terminal event after refund failure';
+  }
+
+  const nextRefundStatus =
+    isFailed
+      ? 'failed'
+      : isProcessed
+        ? 'processed'
+        : rawRefundStatus || 'pending';
+
+  const nextRequestStatus =
+    isFailed
+      ? 'qc_passed'
+      : isProcessed
+        ? 'refunded'
+        : 'refund_pending';
+
+  const refundAmount = Math.max(
+    0,
+    Number(
+      refund.amount || 0
+    ) / 100
+  );
+
+  const acquirer =
+    refund.acquirer_data || {};
+
+  const acquirerReference =
+    cleanReturnText(
+      acquirer.arn ||
+      acquirer.rrn ||
+      acquirer.utr ||
+      acquirer.bank_transaction_id,
+      200
+    ) || null;
+
+  const acquirerReferenceType =
+    acquirer.arn
+      ? 'arn'
+      : acquirer.rrn
+        ? 'rrn'
+        : acquirer.utr
+          ? 'utr'
+          : acquirer.bank_transaction_id
+            ? 'bank_transaction_id'
+            : null;
+
+  const failureReason =
+    isFailed
+      ? cleanReturnText(
+          refund.error_description ||
+          refund.error_reason ||
+          refund.error_code ||
+          'Razorpay could not process the refund',
+          2000
+        )
+      : '';
+
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO return_refund_events (
+      event_id,
+      request_id,
+      order_id,
+      payment_id,
+      refund_id,
+      event_type,
+      refund_status,
+      amount,
+      currency,
+      acquirer_reference,
+      acquirer_reference_type,
+      payload_json,
+      processing_status,
+      error_message,
+      received_at,
+      processed_at
+    ) VALUES (
+      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, datetime('now'), ?
+    )
+  `)
+    .bind(
+      webhookEventId,
+      requestId,
+      orderId,
+      paymentId,
+      refundId,
+      eventType,
+      nextRefundStatus,
+      refundAmount,
+
+      cleanReturnText(
+        refund.currency || 'INR',
+        20
+      ),
+
+      acquirerReference,
+      acquirerReferenceType,
+      rawBody,
+
+      staleReason
+        ? 'processed'
+        : 'received',
+
+      staleReason ||
+      failureReason,
+
+      staleReason
+        ? new Date().toISOString()
+        : null
+    )
+    .run();
+
+  if (staleReason) {
+    console.warn(
+      'RAZORPAY_REFUND_WEBHOOK_STALE',
+      webhookEventId,
+      requestId,
+      refundId,
+      staleReason
+    );
+
+    return jsonResponse({
+      status: 'ok',
+      ignored: true,
+      reason: staleReason,
+    });
+  }
+
+  await env.DB.prepare(`
+    UPDATE return_requests
+    SET
+      status = ?,
+
+      refund_id = CASE
+        WHEN ? = 1
+        THEN NULL
+        ELSE ?
+      END,
+
+      refund_idempotency_key = CASE
+        WHEN ? = 1
+        THEN NULL
+        ELSE refund_idempotency_key
+      END,
+
+      refund_status = ?,
+
+      refund_amount = CASE
+        WHEN ? > 0
+        THEN ?
+        ELSE refund_amount
+      END,
+
+      refund_currency = ?,
+
+      refund_speed_requested = ?,
+
+      refund_speed_processed = ?,
+
+      refund_acquirer_reference = ?,
+
+      refund_acquirer_reference_type = ?,
+
+      refund_failure_reason = ?,
+
+      refund_failed_at = CASE
+        WHEN ? = 1
+        THEN datetime('now')
+        ELSE NULL
+      END,
+
+      refund_processed_at = CASE
+        WHEN ? = 1
+        THEN COALESCE(
+          refund_processed_at,
+          datetime('now')
+        )
+        ELSE refund_processed_at
+      END,
+
+      completed_at = CASE
+        WHEN ? = 1
+        THEN COALESCE(
+          completed_at,
+          datetime('now')
+        )
+        ELSE completed_at
+      END,
+
+      updated_at = datetime('now')
+
+    WHERE order_id = ?
+      AND request_id = ?
+  `)
+    .bind(
+      nextRequestStatus,
+
+      isFailed ? 1 : 0,
+      refundId,
+
+      isFailed ? 1 : 0,
+
+      nextRefundStatus,
+
+      refundAmount,
+      refundAmount,
+
+      cleanReturnText(
+        refund.currency || 'INR',
+        20
+      ),
+
+      cleanReturnText(
+        refund.speed_requested,
+        50
+      ) || null,
+
+      cleanReturnText(
+        refund.speed_processed,
+        50
+      ) || null,
+
+      acquirerReference,
+      acquirerReferenceType,
+      failureReason,
+
+      isFailed ? 1 : 0,
+      isProcessed ? 1 : 0,
+      isProcessed ? 1 : 0,
+
+      orderId,
+      requestId
+    )
+    .run();
+
+  if (isProcessed) {
+    const refundTotals =
+      await env.DB.prepare(`
+        SELECT
+          COALESCE(
+            SUM(refund_amount),
+            0
+          ) AS refunded_total
+
+        FROM return_requests
+
+        WHERE order_id = ?
+          AND refund_status = 'processed'
+      `)
+        .bind(orderId)
+        .first();
+
+    const orderTotal = Math.max(
+      0,
+      Number(
+        returnRequest.order_total || 0
+      )
+    );
+
+    const fullyRefunded =
+      orderTotal > 0 &&
+      Number(
+        refundTotals?.refunded_total || 0
+      ) + 0.001 >= orderTotal;
+
+    if (fullyRefunded) {
+      await env.DB.prepare(`
+        UPDATE orders
+        SET
+          payment_status = 'refunded',
+          updated_at = datetime('now')
+        WHERE order_id = ?
+      `)
+        .bind(orderId)
+        .run();
+    }
+  }
+
+  await env.DB.prepare(`
+    UPDATE return_refund_events
+    SET
+      processing_status = 'processed',
+      error_message = ?,
+      processed_at = datetime('now')
+
+    WHERE event_id = ?
+  `)
+    .bind(
+      failureReason,
+      webhookEventId
+    )
+    .run();
+
+  await logOrderEvent(
+    env,
+    orderId,
+
+    isFailed
+      ? 'return_refund_failed'
+      : isProcessed
+        ? 'return_refund_processed'
+        : 'return_refund_updated',
+
+    `Return request ${requestId} ` +
+    `refund ${nextRefundStatus}: ` +
+    `₹${refundAmount.toFixed(2)}`,
+
+    {
+      requestId,
+      refundId,
+      paymentId,
+      webhookEventId,
+      refundStatus:
+        nextRefundStatus,
+      amount:
+        refundAmount,
+      acquirerReference,
+      acquirerReferenceType,
+    },
+
+    'razorpay_webhook'
+  );
+
+  try {
+    if (isProcessed) {
+      await sendWhatsAppText(
+        env,
+
+        returnRequest.order_phone ||
+        returnRequest.phone,
+
+        `*Refund Processed*\n\n` +
+        `Order: *${orderId}*\n` +
+        `Refund amount: *₹${refundAmount.toFixed(2)}*\n` +
+        `Refund ID: *${refundId}*\n` +
+        (
+          acquirerReference
+            ? `${String(
+                acquirerReferenceType || ''
+              ).toUpperCase()}: ` +
+              `*${acquirerReference}*\n`
+            : ''
+        ) +
+        `\nThe refund was sent to your original payment method.\n\n` +
+        `KAAPAV Fashion Jewellery`
+      );
+    } else if (isFailed) {
+      await sendWhatsAppText(
+        env,
+
+        returnRequest.order_phone ||
+        returnRequest.phone,
+
+        `*Refund Update*\n\n` +
+        `Order: *${orderId}*\n` +
+        `We could not complete the refund yet. ` +
+        `Our team will review and retry it.\n\n` +
+        `KAAPAV Fashion Jewellery`
+      );
+    }
+  } catch (notificationError) {
+    console.error(
+      'RETURN_REFUND_WEBHOOK_NOTIFICATION_FAILED',
+      requestId,
+      notificationError?.message ||
+      notificationError
+    );
+  }
+
+  return jsonResponse({
+    status: 'ok',
+    reconciled: true,
+    refundStatus:
+      nextRefundStatus,
+  });
+}
+
+// ── payment_link.paid ─────────────────────────────────────────
+  // Fires when customer pays via WhatsApp bot or Catalogue payment link
+  if (eventType === 'payment_link.paid') {
+    const pl = event.payload.payment_link.entity;
+    const orderId = pl.reference_id;
+    const paymentId = event.payload.payment.entity.id;
+    const amount = pl.amount / 100;
+
+    const order = await env.DB.prepare(
+      `SELECT * FROM orders WHERE order_id = ?`
+    ).bind(orderId).first();
+
+    if (!order) return jsonResponse({ status: 'ok' });
+
+// Idempotent — order may already be marked paid by frontend/app.
+// Still create owner inbox alert once.
+if (order.payment_status === 'paid') {
+  await saveOwnerInboxAlert(env, ctx, {
+    type: 'payment',
+    priority: 'high',
+    title: '💰 Razorpay Payment Received',
+    body:
+      `${formatINR(amount)} received\n` +
+      `Order: ${orderId}\n` +
+      `Customer: ${order.customer_name || 'Customer'} (${order.phone || ''})\n` +
+      `Time: ${formatISTDateTime()}\n` +
+      `Payment ID: ${paymentId}\n` +
+      `Source: ${order.source || 'catalogue'}`,
+    orderId,
+    phone: order.phone || '',
+    customerName: order.customer_name || 'Customer',
+    amount,
+    source: order.source || 'catalogue',
+    actionType: 'order_detail',
+    actionLabel: 'Open Order',
+    meta: {
+      paymentId,
+      method: event.payload?.payment?.entity?.method || '',
+      alreadyPaid: true,
+    },
+    dedupeKey: `payment_received:${paymentId || orderId}`,
+  });
+
+  return jsonResponse({ status: 'ok', alreadyPaid: true });
+}
+
+
+// Update payment status only. Razorpay must never mark shipment as shipped.
+await env.DB.prepare(`
+  UPDATE orders SET
+    payment_status = 'paid',
+    status         = 'confirmed',
+    payment_id     = ?,
+    payment_method = ?,
+    paid_at        = datetime('now'),
+    updated_at     = datetime('now')
+  WHERE order_id = ?
+`).bind(
+  paymentId,
+  event.payload?.payment?.entity?.method || 'razorpay',
+  orderId
+).run();
+
+    await logOrderEvent(env, orderId, 'payment_confirmed', 'Payment confirmed via payment_link.paid webhook', {
+  paymentId,
+  amount,
+  source: order.source || 'whatsapp',
+}, 'razorpay_webhook');
+
+        // Deduct stock
+        await deductStockForOrder(env, orderId);
+
+    const phone = order.phone;
+    try {
+      await syncOrderToGoogleSheetsSafe(env, orderId);
+      await syncCustomerToGoogleSheetsSafe(env, phone);
+      await syncLeadToGoogleSheetsSafe(env, phone);
+      await syncSalesToGoogleSheetsSafe(env, orderId);
+      await rebuildSourcePerformanceSheet(env);
+    } catch (e) {
+      console.error('Google Sheets sync error (payment_link.paid):', e);
+      await appendSyncFailureToGoogleSheets(env, {
+        destination: 'google_sheets',
+        entity_type: 'order',
+        entity_id: orderId,
+        action: 'payment_link_paid',
+        error_message: e.message,
+        retry_count: 0,
+        status: 'failed',
+      });
+    }
+    const customerName = order.customer_name || 'Customer';
+
+    // Parse items for owner message
+    let itemLines = '';
+    try {
+      const items = JSON.parse(order.items || '[]');
+      itemLines = items.length > 0
+        ? items.map(i => `• ${i.name} x${i.qty || 1} — \u20B9${i.price * (i.qty || 1)}`).join('\n')
+        : '• (items not available)';
+    } catch(e) { itemLines = '• (items not available)'; }
+
+    // Customer WA — payment confirmed
+        // Customer WA — only for WhatsApp/catalogue orders
+        if (isWhatsAppOrder(order.source)) {
+          await sendWhatsAppText(env, phone,
+            `✅ *Payment Confirmed!*\n\n` +
+            `Hi ${customerName.split(' ')[0]}! 🎉\n\n` +
+            `Order ID: *${orderId}*\n` +
+            `Amount Paid: \u20B9${amount}\n\n` +
+            `📦 Your order is confirmed!\n` +
+            `We will pack & ship within *24 hours*.\n` +
+            `You will get your tracking details here on WhatsApp once shipped. 🚚\n\n` +
+            `Questions? Just message us here anytime 😊\n` +
+            `💎 KAAPAV Fashion Jewellery`
+          );
+
+          try { await generateAndSendInvoice(env, orderId); } catch (e) { console.error('Auto invoice error:', e); }
+        }
+
+await saveOwnerInboxAlert(env, ctx, {
+  type: 'payment',
+  priority: 'high',
+  title: '💰 Razorpay Payment Received',
+  body:
+    `${formatINR(amount)} received\n` +
+    `Order: ${orderId}\n` +
+    `Customer: ${customerName} (${phone})\n` +
+    `Time: ${formatISTDateTime()}\n` +
+    `Payment ID: ${paymentId}\n` +
+    `Source: ${order.source || 'catalogue'}\n\n` +
+    `Items:\n${itemLines}\n\n` +
+    `Next: Book Shiprocket.`,
+  orderId,
+  phone,
+  customerName,
+  amount,
+  source: order.source || 'catalogue',
+  actionType: 'order_detail',
+  actionLabel: 'Open Order',
+  meta: {
+paymentId,
+method: event.payload?.payment?.entity?.method || '',
+    items: itemLines,
+  },
+  dedupeKey: `payment_received:${payment.id || orderId}`,
+});
+  }
+
+  // ── payment.captured ──────────────────────────────────────────
+  // Fires when customer pays via Odoo website Razorpay checkout
+  if (eventType === 'payment.captured') {
+    const payment = event.payload.payment.entity;
+    const orderId = payment.notes?.order_id
+      || payment.description?.match(/KFJW-[0-9A-Z]+/)?.[0];
+
+    if (!orderId) return jsonResponse({ status: 'ok' });
+
+    const order = await env.DB.prepare(
+      `SELECT * FROM orders WHERE order_id = ?`
+    ).bind(orderId).first();
+
+      if (!order) {
+        // Order doesn't exist in D1 — likely from Odoo/website
+        // Create it from payment data
+        try {
+          const amount = payment.amount / 100;
+          const phone = payment.contact || payment.notes?.phone || '';
+          const email = payment.email || payment.notes?.email || '';
+          const name = payment.notes?.customer_name || payment.notes?.name || email || phone || 'Website Customer';
+
+          if (phone || email) {
+            const newOrderId = await generateOrderId(env);
+            await env.DB.prepare(`
+              INSERT INTO orders (
+                order_id, phone, customer_name, items, item_count,
+                subtotal, shipping_cost, total,
+                status, payment_status, payment_id, payment_method,
+                paid_at, source, created_at, updated_at
+              ) VALUES (?, ?, ?, '[]', 0, ?, 0, ?, 'confirmed', 'paid', ?, 'razorpay', datetime('now'), 'website', datetime('now'), datetime('now'))
+            `).bind(newOrderId, phone, name, amount, amount, payment.id).run();
+
+if (phone) {
+
+  const customerId =
+    await getOrCreateCustomerId(env, phone);
+
+  await env.DB.prepare(`
+    INSERT INTO customers (
+      phone,
+      customer_id,
+      name,
+      email,
+      first_seen,
+      last_seen,
+      updated_at
+    )
+    VALUES (
+      ?, ?, ?, ?,
+      datetime('now'),
+      datetime('now'),
+      datetime('now')
+    )
+    ON CONFLICT(phone) DO UPDATE SET
+      customer_id = COALESCE(
+        customers.customer_id,
+        excluded.customer_id
+      ),
+      name = excluded.name,
+      last_seen = datetime('now'),
+      updated_at = datetime('now')
+  `).bind(
+    phone,
+    customerId,
+    name,
+    email
+  ).run();
+}
+
+            await logOrderEvent(env, newOrderId, 'order_created', 'Auto-created from Odoo/website payment.captured', { paymentId: payment.id, amount }, 'razorpay_webhook');
+
+            try {
+              await syncOrderToGoogleSheetsSafe(env, newOrderId);
+              if (phone) {
+                await syncCustomerToGoogleSheetsSafe(env, phone);
+                await syncLeadToGoogleSheetsSafe(env, phone);
+              }
+              await syncSalesToGoogleSheetsSafe(env, newOrderId);
+            } catch (e) { console.error('Sheets sync error (odoo auto-create):', e); }
+
+            if (phone) {
+              await sendWhatsAppText(env, phone,
+                `✅ *Payment Received!*\n\nHi ${name.split(' ')[0]}! 🎉\n\nAmount: ₹${amount}\nPayment ID: ${payment.id}\n\n📦 Your order is confirmed!\nWe'll ship within 24 hours.\n\n💎 KAAPAV Fashion Jewellery`
+              );
+            }
+
+            await saveOwnerInboxAlert(env, ctx, {
+  type: 'payment',
+  priority: 'high',
+  title: 'Website Payment Received',
+  body:
+    `${formatINR(amount)} received\n` +
+    `Order: ${newOrderId}\n` +
+    `Customer: ${name} (${phone})\n` +
+    `Time: ${formatISTDateTime()}\n` +
+    `Payment ID: ${payment.id}\n` +
+    `Source: website\n\n` +
+    `Items unknown — check Odoo dashboard.\n` +
+    `Order auto-created in D1.`,
+  orderId: newOrderId,
+  phone,
+  customerName: name,
+  amount,
+  source: 'website',
+  actionType: 'order_detail',
+  actionLabel: 'Open Order',
+  meta: {
+    paymentId: payment.id,
+    method: payment.method || '',
+    autoCreated: true,
+  },
+  dedupeKey: `payment_received:${payment.id || newOrderId}`,
+});
+          }
+        } catch (e) { console.error('Odoo auto-create error:', e); }
+
+        return jsonResponse({ status: 'ok' });
+      }
+
+// Idempotent — order may already be marked paid by frontend/app.
+// Still create owner inbox alert once.
+if (order.payment_status === 'paid') {
+  const amount = payment.amount / 100;
+
+  await saveOwnerInboxAlert(env, ctx, {
+    type: 'payment',
+    priority: 'high',
+    title: '💰 Razorpay Payment Received',
+    body:
+      `${formatINR(amount)} received\n` +
+      `Order: ${orderId}\n` +
+      `Customer: ${order.customer_name || 'Customer'} (${order.phone || ''})\n` +
+      `Time: ${formatISTDateTime()}\n` +
+      `Payment ID: ${payment.id}\n` +
+      `Method: ${payment.method || 'razorpay'}\n` +
+      `Source: ${order.source || 'catalogue'}`,
+    orderId,
+    phone: order.phone || '',
+    customerName: order.customer_name || 'Customer',
+    amount,
+    source: order.source || 'catalogue',
+    actionType: 'order_detail',
+    actionLabel: 'Open Order',
+    meta: {
+      paymentId: payment.id,
+      method: payment.method || '',
+      alreadyPaid: true,
+    },
+    dedupeKey: `payment_received:${payment.id || orderId}`,
+  });
+
+  return jsonResponse({ status: 'ok', alreadyPaid: true });
+}
+
+      const amount = payment.amount / 100;
+
+    // Update order status
+    await env.DB.prepare(`
+      UPDATE orders SET
+        payment_status = 'paid',
+        status         = 'confirmed',
+        payment_id     = ?,
+        paid_at        = datetime('now'),
+        updated_at     = datetime('now')
+      WHERE order_id = ?
+    `).bind(payment.id, orderId).run();
+    
+    await logOrderEvent(env, orderId, 'payment_confirmed', 'Payment confirmed via payment.captured webhook', {
+  paymentId: payment.id,
+  amount,
+  source: order.source || 'website',
+}, 'razorpay_webhook');
+
+        // Deduct stock
+        await deductStockForOrder(env, orderId);
+
+    const phone = order.phone;
+    try {
+      await syncOrderToGoogleSheetsSafe(env, orderId);
+      await syncCustomerToGoogleSheetsSafe(env, phone);
+      await syncLeadToGoogleSheetsSafe(env, phone);
+      await syncSalesToGoogleSheetsSafe(env, orderId);
+      await rebuildSourcePerformanceSheet(env);
+     } catch (e) {
+      console.error('Google Sheets sync error (payment.captured):', e);
+      await appendSyncFailureToGoogleSheets(env, {
+        destination: 'google_sheets',
+        entity_type: 'order',
+        entity_id: orderId,
+        action: 'payment_captured',
+        error_message: e.message,
+        retry_count: 0,
+        status: 'failed',
+      });
+    }
+
+    const customerName = order.customer_name || 'Customer';
+
+    // Parse items for owner message
+    let itemLines = '';
+    try {
+      const items = JSON.parse(order.items || '[]');
+      itemLines = items.length > 0
+        ? items.map(i => `• ${i.name} x${i.qty || 1} — \u20B9${i.price * (i.qty || 1)}`).join('\n')
+        : '• (items not available)';
+    } catch(e) { itemLines = '• (items not available)'; }
+
+    // Customer WA — payment confirmed
+        // Customer WA — only for WhatsApp/catalogue orders
+        if (isWhatsAppOrder(order.source)) {
+          await sendWhatsAppText(env, phone,
+            `✅ *Payment Confirmed!*\n\n` +
+            `Hi ${customerName.split(' ')[0]}! 🎉\n\n` +
+            `Order ID: *${orderId}*\n` +
+            `Amount Paid: \u20B9${amount}\n` +
+            `Payment ID: ${payment.id}\n\n` +
+            `📦 Your order is confirmed!\n` +
+            `We will pack & ship within *24 hours*.\n` +
+            `You will get your tracking details here on WhatsApp once shipped. 🚚\n\n` +
+            `Questions? Just message us here anytime 😊\n` +
+            `💎 KAAPAV Fashion Jewellery`
+          );
+
+          // Auto-send invoice PDF — only for WA orders
+          try { await generateAndSendInvoice(env, orderId); } catch (e) { console.error('Auto invoice error:', e); }
+        }
+
+await saveOwnerInboxAlert(env, ctx, {
+  type: 'payment',
+  priority: 'high',
+  title: 'Razorpay Payment Received',
+  body:
+    `${formatINR(amount)} received\n` +
+    `Order: ${orderId}\n` +
+    `Customer: ${customerName} (${phone})\n` +
+    `Time: ${formatISTDateTime()}\n` +
+    `Payment ID: ${payment.id}\n` +
+    `Source: ${order.source || 'catalogue'}\n\n` +
+    `Items:\n${itemLines}\n\n` +
+    `Next: Book Shiprocket.`,
+  orderId,
+  phone,
+  customerName,
+  amount,
+  source: order.source || 'catalogue',
+  actionType: 'order_detail',
+  actionLabel: 'Open Order',
+  meta: {
+    paymentId: payment.id,
+    method: payment.method || '',
+    items: itemLines,
+  },
+  dedupeKey: `payment_received:${payment.id || orderId}`,
+});
+
+     }
+
+  return jsonResponse({ status: 'ok' });
+}
+
+ 
+  if (path === '/api/orders/catalogue' && method === 'GET') {
+  return handleGetCatalogueOrders(request, env);
+}
+
+if (path === '/api/orders/catalogue' && method === 'POST') {
+  const body = await request.json();
+
+  const { name, phone, address, city, state, pincode } = body;
+
+  const rawItems = Array.isArray(body.items) ? body.items : [];
+
+  const customerEmail = String(body.email || '').trim().toLowerCase();
+
+  if (!customerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
+    return errorResponse('Valid email required', 400);
+  }
+
+  if (!phone || !rawItems.length) {
+    return errorResponse('phone and items required', 400);
+  }
+
+  // Server-side product pricing. Never trust browser price/subtotal.
+  const priced = await priceCatalogueItems(env, rawItems);
+
+  if (!priced.success) {
+    return errorResponse(priced.error, priced.status || 400);
+  }
+
+  const items = priced.items;
+  const subtotal = priced.subtotal;
+  const itemCount = priced.itemCount;
+
+  const rawCouponCode = String(
+    body.couponCode || body.discountCode || body.coupon || ''
+  ).trim().toUpperCase();
+
+  // Duplicate order check uses server-priced clean items
+  const dupeId = await checkDuplicateOrder(env, phone, items);
+
+  if (dupeId) {
+    return errorResponse(
+      `Duplicate order detected: ${dupeId}. Wait 5 minutes or complete existing order.`,
+      409
+    );
+  }
+
+  const orderId = await generateOrderId(env);
+  const itemsJson = JSON.stringify(items);
+
+
+const shipping = subtotal >= 498 ? 0 : 50;
+
+let discount = 0;
+let discountCode = '';
+
+if (rawCouponCode) {
+  const coupon = await env.DB.prepare(
+    `SELECT * FROM coupons WHERE UPPER(code) = ? AND is_active = 1`
+  ).bind(rawCouponCode).first();
+
+  if (!coupon) return errorResponse('Invalid coupon code', 400);
+
+  const now = new Date().toISOString();
+
+  if (coupon.expires_at && coupon.expires_at < now) {
+    return errorResponse('Coupon expired', 400);
+  }
+
+  if (coupon.starts_at && coupon.starts_at > now) {
+    return errorResponse('Coupon not active yet', 400);
+  }
+
+  if (coupon.usage_limit > 0 && coupon.used_count >= coupon.usage_limit) {
+    return errorResponse('Coupon usage limit reached', 400);
+  }
+
+  if (coupon.min_order > 0 && subtotal < coupon.min_order) {
+    return errorResponse(`Minimum order ₹${coupon.min_order} required`, 400);
+  }
+
+  if (coupon.type === 'percent') {
+    discount = Math.round((subtotal * Number(coupon.value || 0)) / 100);
+
+    if (coupon.max_discount > 0) {
+      discount = Math.min(discount, Number(coupon.max_discount));
+    }
+  } else {
+    discount = Math.round(Number(coupon.value || 0));
+  }
+
+  discount = Math.max(0, Math.min(discount, subtotal));
+  discountCode = coupon.code;
+}
+
+const grandTotal = Math.max(0, subtotal - discount + shipping);
+const total = subtotal; // legacy alias
+
+const customerId = await getOrCreateCustomerId(env, phone);
+
+await env.DB.prepare(`
+  INSERT INTO orders (
+    order_id,
+    customer_id,
+    email,
+    phone,
+    customer_name,
+    items,
+    item_count,
+    subtotal,
+    shipping_cost,
+    discount,
+    discount_code,
+    total,
+    shipping_name,
+    shipping_phone,
+    shipping_address,
+    shipping_city,
+    shipping_state,
+    shipping_pincode,
+    status,
+    payment_status,
+    source,
+    created_at,
+    updated_at
+  )
+  VALUES (
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+    'pending',
+    'unpaid',
+    'catalogue',
+    datetime('now'),
+    datetime('now')
+  )
+`).bind(
+  orderId,
+  customerId,
+  customerEmail,
+  phone,
+  name || phone,
+  itemsJson,
+  itemCount,
+  subtotal,
+  shipping,
+  discount,
+  discountCode,
+  grandTotal,
+  name || '',
+  phone || '',
+  address || '',
+  city || '',
+  state || '',
+  pincode || ''
+).run();
+
+
+await env.DB.prepare(`
+  INSERT INTO customers (
+    phone,
+    customer_id,
+    name,
+    email,
+    address,
+    city,
+    state,
+    pincode,
+    first_seen,
+    last_seen,
+    updated_at
+  )
+  VALUES (
+    ?, ?, ?, ?, ?, ?, ?, ?,
+    datetime('now'),
+    datetime('now'),
+    datetime('now')
+  )
+  ON CONFLICT(phone) DO UPDATE SET
+    customer_id = COALESCE(customers.customer_id, excluded.customer_id),
+    name = CASE WHEN excluded.name != '' THEN excluded.name ELSE customers.name END,
+    email = CASE WHEN excluded.email != '' THEN excluded.email ELSE customers.email END,
+    address = CASE WHEN excluded.address != '' THEN excluded.address ELSE customers.address END,
+    city = CASE WHEN excluded.city != '' THEN excluded.city ELSE customers.city END,
+    state = CASE WHEN excluded.state != '' THEN excluded.state ELSE customers.state END,
+    pincode = CASE WHEN excluded.pincode != '' THEN excluded.pincode ELSE customers.pincode END,
+    last_seen = datetime('now'),
+    updated_at = datetime('now')
+`).bind(
+  phone,
+  customerId,
+  name || '',
+  customerEmail,
+  address || '',
+  city || '',
+  state || '',
+  pincode || ''
+).run();
+
+const itemsText = items
+  .map(i => `• ${i.name} x${i.qty} — ₹${i.price * i.qty}`)
+  .join('\n');
+
+const bgTask = (async () => {
+  try {
+    await logOrderEvent(env, orderId, 'order_created', 'Catalogue order created', {
+      phone,
+      customerName: name || phone,
+      total: grandTotal,
+      itemCount,
+      discount: typeof discount !== 'undefined' ? discount : 0,
+      discountCode: typeof discountCode !== 'undefined' ? discountCode : '',
+    }, 'catalogue');
+
+    await syncOrderToGoogleSheetsSafe(env, orderId);
+    await syncCustomerToGoogleSheetsSafe(env, phone);
+    await syncLeadToGoogleSheetsSafe(env, phone);
+    await syncSalesToGoogleSheetsSafe(env, orderId);
+    await rebuildSourcePerformanceSheet(env);
+
+    // Owner alert only. Customer pays in browser Razorpay.
+await saveOwnerInboxAlert(env, ctx, {
+  type: 'order',
+  priority: 'high',
+  title: '🛒 New Catalogue Order',
+  body:
+    `Order: ${orderId}\n` +
+    `Customer: ${name || 'Customer'} (${phone})\n` +
+    `Total: ${formatINR(grandTotal)}\n` +
+    `Time: ${formatISTDateTime()}\n\n` +
+    `Items:\n${itemsText}\n\n` +
+    `Customer is opening Razorpay checkout.`,
+  orderId,
+  phone,
+  customerName: name || 'Customer',
+  amount: grandTotal,
+  source: 'catalogue',
+  actionType: 'order_detail',
+  actionLabel: 'Open Order',
+  meta: {
+    subtotal,
+    discount: typeof discount !== 'undefined' ? discount : 0,
+    discountCode: typeof discountCode !== 'undefined' ? discountCode : '',
+    shipping,
+    items,
+  },
+  dedupeKey: `order_created:${orderId}`,
+});
+  } catch (e) {
+    console.error('Catalogue order background task error:', e);
+
+    try {
+      await appendSyncFailureToGoogleSheets(env, {
+        destination: 'background',
+        entity_type: 'order',
+        entity_id: orderId,
+        action: 'catalogue_order_background',
+        error_message: e.message,
+        retry_count: 0,
+        status: 'failed',
+      });
+    } catch (_) {}
+  }
+})();
+
+ctx.waitUntil(bgTask);
+
+return jsonResponse({
+  success: true,
+  orderId,
+  subtotal,
+  discount: typeof discount !== 'undefined' ? discount : 0,
+  discountCode: typeof discountCode !== 'undefined' ? discountCode : '',
+  shipping,
+  total: grandTotal
+});
+} 
+
+ 
+  if (path.match(/^\/api\/orders\/[^/]+\/events$/) && method === 'GET') {
+  try {
+    const orderId = decodeURIComponent(path.split('/')[3]);
+
+    const order = await env.DB.prepare(
+      `SELECT order_id FROM orders WHERE order_id = ?`
+    ).bind(orderId).first();
+
+    if (!order) return errorResponse('Order not found', 404);
+
+    let results = [];
+    try {
+      const query = await env.DB.prepare(`
+        SELECT order_id, event_type, event_source, message, meta_json, created_at
+        FROM order_events
+        WHERE order_id = ?
+        ORDER BY created_at DESC
+      `).bind(orderId).all();
+
+      results = query.results || [];
+    } catch (dbErr) {
+      console.error('Order events query error:', dbErr);
+      return jsonResponse({ success: true, events: [] });
+    }
+
+    return jsonResponse({ success: true, events: results });
+  } catch (e) {
+    console.error('Get order events error:', e);
+    return jsonResponse({ success: true, events: [] });
+  }
+}
+    
+    if (path === '/api/orders/confirm' && method === 'POST') {
+  const body = await request.json();
+  const { orderId, paymentId, phone } = body;
+  if (!orderId || !paymentId) return errorResponse('orderId and paymentId required');
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+  if (!order) return errorResponse('Order not found', 404);
+
+  // Idempotent — skip if already confirmed
+  if (order.payment_status === 'paid') return jsonResponse({ success: true, already: true });
+
+  await env.DB.prepare(`
+    UPDATE orders SET payment_status = 'paid', status = 'confirmed',
+      payment_id = ?, updated_at = datetime('now')
+    WHERE order_id = ?
+  `).bind(paymentId, orderId).run();
+   
+   await logOrderEvent(env, orderId, 'payment_confirmed', 'Payment confirmed manually from admin/app', {
+  paymentId,
+  amount: order.total,
+}, 'admin_manual');
+
+  try {
+  await generateAndSendInvoice(env, orderId);
+} catch (e) {
+  console.error('Auto invoice send failed:', e);
+}
+
+  const customerName = order.customer_name || 'Customer';
+  const amount = order.total;
+
+  
+  // WA confirmation to customer
+  await sendWhatsAppText(env, order.phone,
+    `✅ *Payment Confirmed!*\n\n` +
+    `Hi ${customerName}! 🎉\n\n` +
+    `Order ID: *${orderId}*\n` +
+    `Amount Paid: ₹${amount}\n\n` +
+    `📦 Your order is confirmed!\n` +
+    `We'll pack & ship within *24 hours*.\n` +
+    `Tracking details will be sent here on WhatsApp. 🚚\n\n` +
+    `💎 Thank you for shopping with KAAPAV!\n` +
+    `Questions? Just message us here anytime.`
+  );
+
+    // Owner WA — manual payment confirmation
+  await sendWhatsAppTextOnce(
+    env,
+    `owner_paid_manual:${orderId}`,
+    env.OWNER_PHONE,
+    `💰 *Payment Confirmed (Manual)*\n\n` +
+    `Order: *${orderId}*\n` +
+    `Customer: ${customerName} (${order.phone})\n` +
+    `Amount: ₹${amount}\n` +
+    `Payment ID: ${paymentId}\n\n` +
+    `✅ Order confirmed manually.\n` +
+    `➡️ Next: Press Shiprocket button in app.`
+  );
+
+  // FCM push to admin Flutter app
+  ctx.waitUntil(sendFCMNotification(
+    env, order.phone, customerName,
+    `💰 Payment done! Order ${orderId} — ₹${amount}`,
+    `confirm_${paymentId}`
+  ));
+  try {
+    await syncOrderToGoogleSheetsSafe(env, orderId);
+    await syncCustomerToGoogleSheetsSafe(env, order.phone);
+    await syncLeadToGoogleSheetsSafe(env, order.phone);
+    await syncSalesToGoogleSheetsSafe(env, orderId);
+    await rebuildSourcePerformanceSheet(env);
+  } catch (e) {
+    console.error('Google Sheets sync error (manual payment confirm):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'order',
+      entity_id: orderId,
+      action: 'manual_payment_confirm',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
+  return jsonResponse({ success: true, orderId, amount });
+}
+
+
+    if (path === '/api/auth/login' && method === 'POST') return handleLogin(request, env);
+    
+if (path === '/api/debug/last-catalogue-events' && method === 'GET') {
+  const { results } = await env.DB.prepare(`
+    SELECT * FROM catalogue_events ORDER BY created_at DESC LIMIT 10
+  `).all();
+  return jsonResponse({ success: true, events: results });
+}
+
+// ═══ COURIER WEBHOOK HEALTH / VALIDATION ═══
+if (path === '/api/courier/updates' && (method === 'GET' || method === 'HEAD' || method === 'OPTIONS')) {
+  return new Response(method === 'HEAD' ? null : JSON.stringify({
+    success: true,
+    endpoint: 'courier_updates',
+    status: 'ready'
+  }), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key, X-API-Key',
+      'Access-Control-Allow-Methods': 'GET, HEAD, POST, OPTIONS'
+    }
+  });
+}
+
+// ═══ PUBLIC CATALOGUE COUPON VALIDATE ═══
+// Must stay BEFORE authMiddleware. Catalogue visitors do not have admin token.
+if (path === '/api/catalogue/coupons/validate' && method === 'POST') {
+  const body = await request.json().catch(() => ({}));
+
+  const normalizedCode = String(body.code || '')
+    .trim()
+    .toUpperCase();
+
+  const subtotal = Math.max(
+    0,
+    Number(body.subtotal ?? body.orderTotal ?? 0)
+  );
+
+  if (!normalizedCode) return errorResponse('code required', 400);
+
+  const coupon = await env.DB.prepare(
+    `SELECT * FROM coupons WHERE UPPER(code) = ? AND is_active = 1`
+  ).bind(normalizedCode).first();
+
+  if (!coupon) return errorResponse('Invalid coupon code', 404);
+
+  const now = new Date().toISOString();
+
+  if (coupon.expires_at && coupon.expires_at < now) {
+    return errorResponse('Coupon expired', 400);
+  }
+
+  if (coupon.starts_at && coupon.starts_at > now) {
+    return errorResponse('Coupon not active yet', 400);
+  }
+
+  if (coupon.usage_limit > 0 && coupon.used_count >= coupon.usage_limit) {
+    return errorResponse('Coupon usage limit reached', 400);
+  }
+
+  if (coupon.min_order > 0 && subtotal < coupon.min_order) {
+    return errorResponse(`Minimum order ₹${coupon.min_order} required`, 400);
+  }
+
+  let discount = 0;
+
+  if (coupon.type === 'percent') {
+    discount = Math.round((subtotal * Number(coupon.value || 0)) / 100);
+
+    if (coupon.max_discount > 0) {
+      discount = Math.min(discount, Number(coupon.max_discount));
+    }
+  } else {
+    discount = Math.round(Number(coupon.value || 0));
+  }
+
+  discount = Math.max(0, Math.min(discount, subtotal));
+
+  return jsonResponse({
+    success: true,
+    coupon: {
+      code: coupon.code,
+      type: coupon.type,
+      value: Number(coupon.value || 0),
+      discount,
+      maxDiscount: Number(coupon.max_discount || 0),
+    },
+  });
+}
+
+if (path === '/api/customer/link-identity' && method === 'POST') {
+  return handleCustomerLinkIdentity(request, env);
+}
+
+    if (path === '/api/auth/me' && method === 'GET') {
+      const user = await authMiddleware(request, env);
+      if (!user) return errorResponse('Unauthorized', 401);
+      return jsonResponse({ success: true, user: { id: 'admin', email: 'admin@kaapav.com', name: 'KAAPAV Admin', role: 'admin' } });
+    }
+if (
+  path === '/api/auth/refresh' &&
+  method === 'POST'
+) {
+  const currentUser =
+    await authMiddleware(
+      request,
+      env
+    );
+
+  if (
+    !currentUser ||
+    currentUser.role !== 'admin'
+  ) {
+    return errorResponse(
+      'Unauthorized',
+      401
+    );
+  }
+
+  const payload = {
+    userId:
+      currentUser.userId ||
+      currentUser.id ||
+      'admin',
+    role: 'admin',
+    exp:
+      Math.floor(Date.now() / 1000) +
+      7 * 24 * 3600,
+  };
+
+  const token =
+    await generateJWT(
+      payload,
+      env.JWT_SECRET
+    );
+
+  return jsonResponse({
+    success: true,
+    token,
+  });
+}
+
+     // ═══ CUSTOMER PROFILE AUTH — PUBLIC / TOKEN-BASED ═══
+if (path === '/api/customer/auth/send-otp' && method === 'POST') {
+  return handleCustomerSendOtp(request, env);
+}
+
+if (path === '/api/customer/auth/verify-otp' && method === 'POST') {
+  return handleCustomerVerifyOtp(request, env);
+}
+
+if (path === '/api/customer/me' && method === 'GET') {
+  return handleCustomerMe(request, env);
+}
+
+if (
+  path === '/api/customer/orders' &&
+  method === 'GET'
+) {
+  return handleCustomerOrders(
+    request,
+    env
+  );
+}
+
+if (
+  path.match(
+    /^\/api\/customer\/orders\/[^/]+\/return-requests$/
+  ) &&
+  (
+    method === 'GET' ||
+    method === 'POST'
+  )
+) {
+  const orderId =
+    decodeURIComponent(
+      path.split('/')[4]
+    );
+
+  return handleCustomerOrderReturnRequests(
+    request,
+    env,
+    orderId
+  );
+}
+
+if (
+  path === '/api/customer/logout' &&
+  method === 'POST'
+) {
+  return handleCustomerLogout(request, env);
+}
+
+// PUBLIC — no auth needed, must be BEFORE auth wall
+
+// ═══ CUSTOMER PROFILE AUTH — PUBLIC / TOKEN-BASED ═══
+if (path === '/api/customer/auth/send-otp' && method === 'POST') {
+  return handleCustomerSendOtp(request, env);
+}
+
+if (path === '/api/customer/auth/verify-otp' && method === 'POST') {
+  return handleCustomerVerifyOtp(request, env);
+}
+
+if (path === '/api/customer/me' && method === 'GET') {
+  return handleCustomerMe(request, env);
+}
+
+if (path === '/api/customer/orders' && method === 'GET') {
+  return handleCustomerOrders(request, env);
+}
+
+if (path === '/api/customer/logout' && method === 'POST') {
+  return handleCustomerLogout(request, env);
+}
+
+if (path === '/api/push/fcm-register' && method === 'POST') return handleRegisterFCM(request, env);
+
+        const syncKey = request.headers.get('x-sync-key');
+    const hasValidSyncKey = syncKey && syncKey === env.SYNC_API_KEY;
+
+    if (path === '/api/sync/supabase/full-sync' && method === 'POST') {
+  if (!hasValidSyncKey) return errorResponse('Unauthorized', 401);
+  try {
+    if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) {
+      return errorResponse(`Supabase env vars missing | URL:${!!env.SUPABASE_URL} KEY:${!!env.SUPABASE_SERVICE_KEY}`, 500);
+    }
+    const summary = await backfillAllSupabase(env);
+    return jsonResponse({ success: true, summary });
+  } catch (e) {
+    console.error('Supabase full sync error:', e);
+    return errorResponse('Supabase sync failed: ' + e.message, 500);
+  }
+}
+
+    if (path === '/api/sync/google-sheets/full-sync' && method === 'POST') {
+      if (!hasValidSyncKey) return errorResponse('Unauthorized', 401);
+
+      try {
+        const summary = await backfillAllGoogleSheets(env);
+        return jsonResponse({ success: true, summary });
+      } catch (e) {
+        console.error('Google Sheets full sync error:', e);
+        return errorResponse('Full sync failed: ' + e.message, 500);
+      }
+    }
+    
+const user = await authMiddleware(request, env);
+if (!user) return errorResponse('Unauthorized', 401);
+
+if (path === '/api/owner-inbox' && method === 'GET') {
+  return handleGetOwnerInbox(request, env);
+}
+
+if (path.match(/^\/api\/owner-inbox\/\d+\/read$/) && method === 'POST') {
+  return handleMarkOwnerAlertRead(path, env);
+}
+
+if (path === '/api/owner-inbox/read-all' && method === 'POST') {
+  return handleMarkOwnerInboxReadAll(env);
+}
+if (path === '/api/admin/reconcile-unsupported' && method === 'POST') {
+  return handleReconcileUnsupported(request, env, ctx);
+}
+if (path === '/api/admin/backfill-owner-inbox' && method === 'POST') {
+  return handleBackfillOwnerInbox(request, env);
+}
+if (path === '/api/chats' && method === 'GET') return handleGetChats(request, env);
+    if (path.match(/^\/api\/chats\/(.+)\/messages$/) && method === 'GET') {
+      const phone = path.match(/^\/api\/chats\/(.+)\/messages$/)[1];
+      return handleGetMessages(phone, request, env);
+    }
+    if (path.match(/^\/api\/chats\/(.+)\/read$/) && method === 'POST') {
+      const phone = path.match(/^\/api\/chats\/(.+)\/read$/)[1];
+      await env.DB.prepare(`UPDATE chats SET unread_count = 0 WHERE phone = ?`).bind(phone).run();
+      return jsonResponse({ success: true });
+    }
+    if (path.match(/^\/api\/chats\/(.+)$/) && method === 'GET') {
+      const phone = path.match(/^\/api\/chats\/(.+)$/)[1];
+      const chat = await env.DB.prepare(`SELECT * FROM chats WHERE phone = ?`).bind(phone).first();
+      return jsonResponse({ success: true, chat });
+    }
+
+    if (path === '/api/messages/send' && method === 'POST') return handleSendMessage(request, env);
+
+    // ═══ INVOICE — send to customer via WhatsApp ═══
+    if (path.match(/^\/api\/orders\/[^/]+\/invoice$/) && method === 'POST') {
+      const orderId = decodeURIComponent(path.split('/')[3]);
+      try {
+        const sent = await generateAndSendInvoice(env, orderId);
+        if (sent) return jsonResponse({ success: true, message: 'Invoice sent to customer' });
+        return errorResponse('Failed to send invoice', 500);
+      } catch (e) {
+        console.error('Invoice send error:', e);
+        return errorResponse('Invoice error: ' + e.message, 500);
+      }
+    }
+
+    // ═══ INVOICE — download PDF ═══
+    if (path.match(/^\/api\/orders\/[^/]+\/invoice-pdf$/) && method === 'GET') {
+      const orderId = path.split('/')[3];
+      try {
+        const order = await env.DB.prepare(`SELECT * FROM orders WHERE order_id = ?`).bind(orderId).first();
+        if (!order) return errorResponse('Order not found', 404);
+        let items = []; try { items = JSON.parse(order.items || '[]'); } catch { items = []; }
+        const { results: sr } = await env.DB.prepare(`SELECT key, value FROM settings`).all();
+        const settings = {}; (sr || []).forEach(r => { settings[r.key] = r.value; });
+        const logoData = getInvoiceLogoData();
+        const pdfBytes = generateInvoicePDF(order, items, settings, logoData);
+        return new Response(pdfBytes, { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="Invoice_${orderId}.pdf"` } });
+      } catch (e) { return errorResponse('Failed: ' + e.message, 500); }
+    }
+
+    // DELETE message
+if (path.match(/^\/api\/messages\/[^/]+$/) && method === 'DELETE') {
+  const messageId = decodeURIComponent(path.split('/')[3]);
+  await env.DB.prepare('DELETE FROM messages WHERE message_id = ?').bind(messageId).run();
+  return jsonResponse({ success: true });
+}
+
+// SAVE message (bookmark)
+if (path.match(/^\/api\/messages\/[^/]+\/save$/) && method === 'POST') {
+  const messageId = decodeURIComponent(path.split('/')[3]);
+  await env.DB.prepare(
+    `UPDATE messages SET is_saved = 1, updated_at = datetime('now') WHERE message_id = ?`
+  ).bind(messageId).run();
+  return jsonResponse({ success: true });
+}
+
+// GET saved messages
+if (path === '/api/messages/saved' && method === 'GET') {
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM messages WHERE is_saved = 1 ORDER BY timestamp DESC LIMIT 100`
+  ).all();
+  return jsonResponse({ success: true, messages: results });
+}
+    // ═══ ORDER SEARCH ═══
+    if (path === '/api/orders/search' && method === 'GET') {
+      const q = url.searchParams.get('q') || '';
+      const status = url.searchParams.get('status');
+      const from = url.searchParams.get('from');
+      const to = url.searchParams.get('to');
+      
+
+      let where = [];
+      let params = [];
+
+      if (q) {
+        where.push(`(order_id LIKE ? OR phone LIKE ? OR customer_name LIKE ?)`);
+        params.push(`%${q}%`, `%${q}%`, `%${q}%`);
+      }
+      if (status) { where.push(`status = ?`); params.push(status); }
+      if (from) { where.push(`created_at >= ?`); params.push(from); }
+      if (to) { where.push(`created_at <= ?`); params.push(to); }
+
+      const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+      params.push(limit);
+
+      const { results } = await env.DB.prepare(
+        `SELECT * FROM orders ${whereClause} ORDER BY created_at DESC LIMIT ?`
+      ).bind(...params).all();
+
+      return jsonResponse({ success: true, orders: results, total: results.length });
+    }
+
+    // ═══ CUSTOMER SEARCH ═══
+    if (path === '/api/customers/search' && method === 'GET') {
+      const q = url.searchParams.get('q') || '';
+      const limit = parseInt(url.searchParams.get('limit') || '500000');
+
+      if (!q) return jsonResponse({ success: true, customers: [], total: 0 });
+
+      const { results } = await env.DB.prepare(
+        `SELECT * FROM customers WHERE phone LIKE ? OR name LIKE ? OR email LIKE ? ORDER BY last_seen DESC LIMIT ?`
+      ).bind(`%${q}%`, `%${q}%`, `%${q}%`, limit).all();
+
+      return jsonResponse({ success: true, customers: results, total: results.length });
+    }
+
+    // ═══ BOT TOGGLE ═══
+    if (path.match(/^\/api\/chats\/[^/]+\/bot$/) && method === 'POST') {
+      const phone = path.split('/')[3];
+      const { enabled } = await request.json();
+      await env.DB.prepare(
+        `UPDATE chats SET is_bot_enabled = ?, updated_at = datetime('now') WHERE phone = ?`
+      ).bind(enabled ? 1 : 0, phone).run();
+      return jsonResponse({ success: true, is_bot_enabled: enabled });
+    }
+
+    // ═══ COUPON VALIDATE ═══
+    if (path === '/api/coupons/validate' && method === 'POST') {
+const { code, orderTotal } = await request.json();
+const normalizedCode = String(code || '').trim().toUpperCase();
+
+if (!normalizedCode) return errorResponse('code required');
+
+const coupon = await env.DB.prepare(
+  `SELECT * FROM coupons WHERE UPPER(code) = ? AND is_active = 1`
+).bind(normalizedCode).first();
+
+      if (!coupon) return errorResponse('Invalid coupon code', 404);
+
+      const now = new Date().toISOString();
+      if (coupon.expires_at && coupon.expires_at < now) return errorResponse('Coupon expired');
+      if (coupon.starts_at && coupon.starts_at > now) return errorResponse('Coupon not active yet');
+      if (coupon.usage_limit > 0 && coupon.used_count >= coupon.usage_limit) return errorResponse('Coupon usage limit reached');
+      if (coupon.min_order > 0 && (orderTotal || 0) < coupon.min_order) return errorResponse(`Minimum order ₹${coupon.min_order} required`);
+
+      let discount = 0;
+      if (coupon.type === 'percent') {
+        discount = ((orderTotal || 0) * coupon.value) / 100;
+        if (coupon.max_discount > 0) discount = Math.min(discount, coupon.max_discount);
+      } else {
+        discount = coupon.value;
+      }
+      discount = Math.round(discount);
+
+      return jsonResponse({ success: true, coupon: { code: coupon.code, type: coupon.type, value: coupon.value, discount, maxDiscount: coupon.max_discount } });
+    }
+
+// ═══ COUPON ADMIN CRUD ═══
+if (path === '/api/coupons' && method === 'GET') {
+  return handleGetCoupons(env);
+}
+
+if (path === '/api/coupons' && method === 'POST') {
+  return handleCreateCoupon(request, env);
+}
+
+if (
+  /^\/api\/coupons\/\d+$/.test(path) &&
+  method === 'PUT'
+) {
+  const id = Number(path.split('/')[3]);
+
+  return handleUpdateCoupon(
+    id,
+    request,
+    env
+  );
+}
+
+if (
+  /^\/api\/coupons\/\d+$/.test(path) &&
+  method === 'DELETE'
+) {
+  const id = Number(path.split('/')[3]);
+
+  return handleRemoveCoupon(id, env);
+}
+
+    // ═══ BROADCAST CRUD + SEND ═══
+    if (path === '/api/broadcasts' && method === 'GET') {
+      const limit = Math.min(Number(url.searchParams.get('limit') || 500), 1000);
+
+const { results } = await env.DB.prepare(
+  `SELECT * FROM broadcasts ORDER BY created_at DESC LIMIT ?`
+).bind(limit).all();
+      return jsonResponse({ success: true, broadcasts: results });
+    }
+    if (path === '/api/broadcasts' && method === 'POST') {
+      const b = await request.json();
+      const broadcastId = `BC-${Date.now()}`;
+      await env.DB.prepare(`
+        INSERT INTO broadcasts (broadcast_id, name, message_type, message, target_type, target_labels, target_segment, status, created_by, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', 'admin', datetime('now'))
+      `).bind(broadcastId, b.name || '', b.message_type || 'text', b.message || '', b.target_type || 'all', b.target_labels || null, b.target_segment || null).run();
+      return jsonResponse({ success: true, broadcastId });
+    }
+    if (path.match(/^\/api\/broadcasts\/[^/]+\/send$/) && method === 'POST') {
+      const broadcastId = path.split('/')[3];
+      const broadcast = await env.DB.prepare(`SELECT * FROM broadcasts WHERE broadcast_id = ?`).bind(broadcastId).first();
+      if (!broadcast) return errorResponse('Broadcast not found', 404);
+
+      let customerQuery = `SELECT phone, name FROM customers WHERE opted_in = 1`;
+      if (broadcast.target_segment) customerQuery += ` AND segment = '${broadcast.target_segment}'`;
+      const { results: recipients } = await env.DB.prepare(customerQuery + ` LIMIT 500`).all();
+
+      await env.DB.prepare(`UPDATE broadcasts SET status = 'sending', target_count = ?, started_at = datetime('now') WHERE broadcast_id = ?`).bind(recipients.length, broadcastId).run();
+
+      let sent = 0, failed = 0;
+      for (const r of recipients) {
+        try {
+          await sendWhatsAppText(env, r.phone, broadcast.message);
+          sent++;
+          await env.DB.prepare(`
+            INSERT INTO broadcast_recipients (broadcast_id, phone, status, sent_at) VALUES (?, ?, 'sent', datetime('now'))
+          `).bind(broadcastId, r.phone).run();
+          // Rate limit: 30 msgs/sec
+          if (sent % 30 === 0) await new Promise(r => setTimeout(r, 1000));
+        } catch (e) {
+          failed++;
+          await env.DB.prepare(`
+            INSERT INTO broadcast_recipients (broadcast_id, phone, status, error_message, failed_at) VALUES (?, ?, 'failed', ?, datetime('now'))
+          `).bind(broadcastId, r.phone, e.message).run();
+        }
+      }
+
+      await env.DB.prepare(`
+        UPDATE broadcasts SET status = 'completed', sent_count = ?, failed_count = ?, completed_at = datetime('now') WHERE broadcast_id = ?
+      `).bind(sent, failed, broadcastId).run();
+
+      return jsonResponse({ success: true, sent, failed, total: recipients.length });
+    }
+
+
+// ═══ RETURN-LINKED REFUND ═══
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/return-requests\/[^/]+\/refund$/
+  ) &&
+  method === 'POST'
+) {
+  const parts = path.split('/');
+
+  const orderId = decodeURIComponent(
+    parts[3]
+  );
+
+  const requestId = decodeURIComponent(
+    parts[5]
+  );
+
+  return handleProcessReturnRefund(
+    orderId,
+    requestId,
+    request,
+    env
+  );
+}
+
+// Direct order refund endpoint disabled.
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/refund$/
+  ) &&
+  method === 'POST'
+) {
+  return errorResponse(
+    'Direct order refund endpoint disabled. Use the QC-approved return-request refund workflow.',
+    410
+  );
+}
+
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/return-requests\/[^/]+\/qc$/
+  ) &&
+  method === 'PATCH'
+) {
+  const parts = path.split('/');
+
+  const orderId = decodeURIComponent(
+    parts[3]
+  );
+
+  const requestId = decodeURIComponent(
+    parts[5]
+  );
+
+  return handleReviewReturnQc(
+    orderId,
+    requestId,
+    request,
+    env
+  );
+}
+
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/return-requests\/[^/]+\/received$/
+  ) &&
+  method === 'PATCH'
+) {
+  const parts = path.split('/');
+
+  const orderId = decodeURIComponent(
+    parts[3]
+  );
+
+  const requestId = decodeURIComponent(
+    parts[5]
+  );
+
+  return handleMarkReturnReceived(
+    orderId,
+    requestId,
+    request,
+    env
+  );
+}
+
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/return-requests\/[^/]+\/picked-up$/
+  ) &&
+  method === 'PATCH'
+) {
+  const parts = path.split('/');
+
+  const orderId = decodeURIComponent(
+    parts[3]
+  );
+
+  const requestId = decodeURIComponent(
+    parts[5]
+  );
+
+  return handleMarkReturnPickedUp(
+    orderId,
+    requestId,
+    request,
+    env
+  );
+}
+
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/return-requests\/[^/]+\/pickup-scheduled$/
+  ) &&
+  method === 'PATCH'
+) {
+  const parts = path.split('/');
+
+  const orderId = decodeURIComponent(
+    parts[3]
+  );
+
+  const requestId = decodeURIComponent(
+    parts[5]
+  );
+
+  return handleScheduleReturnPickup(
+    orderId,
+    requestId,
+    request,
+    env
+  );
+}
+
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/return-requests\/[^/]+\/decision$/
+  ) &&
+  method === 'PATCH'
+) {
+  const parts = path.split('/');
+
+  const orderId = decodeURIComponent(
+    parts[3]
+  );
+
+  const requestId = decodeURIComponent(
+    parts[5]
+  );
+
+  return handleReviewReturnRequest(
+    orderId,
+    requestId,
+    request,
+    env
+  );
+}
+
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/return-requests$/
+  )
+) {
+  const orderId = decodeURIComponent(
+    path.split('/')[3]
+  );
+
+  if (method === 'POST') {
+    return handleCreateReturnRequest(
+      orderId,
+      request,
+      env
+    );
+  }
+
+  if (method === 'GET') {
+    return handleGetOrderReturnRequests(
+      orderId,
+      env
+    );
+  }
+}
+
+if (
+  path === '/api/orders' &&
+  method === 'GET'
+) {
+  return handleGetOrders(
+    request,
+    env
+  );
+}
+     
+// GET single order
+if (path.match(/^\/api\/orders\/[^/]+$/) && method === 'GET') {
+  const orderId = decodeURIComponent(path.split('/')[3]);
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) return errorResponse('Order not found', 404);
+
+  const packedOrder = await enrichOrderForPacking(env, order);
+
+  return jsonResponse({
+    success: true,
+    order: packedOrder
+  });
+}
+
+ // ── PATCH /api/orders/:id/details — admin edit customer/shipping details ──
+if (path.match(/^\/api\/orders\/[^/]+\/details$/) && method === 'PATCH') {
+  const orderId = path.split('/')[3];
+  const body = await request.json();
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) return errorResponse('Order not found', 404);
+
+  const customerName    = body.customerName ?? order.customer_name ?? '';
+  const phone           = body.phone ?? order.phone ?? '';
+  const shippingName    = body.shippingName ?? order.shipping_name ?? customerName;
+  const shippingAddress = body.shippingAddress ?? order.shipping_address ?? '';
+  const shippingCity    = body.shippingCity ?? order.shipping_city ?? '';
+  const shippingState   = body.shippingState ?? order.shipping_state ?? '';
+  const shippingPincode = body.shippingPincode ?? order.shipping_pincode ?? '';
+
+  await env.DB.prepare(`
+    UPDATE orders SET
+      customer_name = ?,
+      phone = ?,
+      shipping_name = ?,
+      shipping_address = ?,
+      shipping_city = ?,
+      shipping_state = ?,
+      shipping_pincode = ?,
+      updated_at = datetime('now')
+    WHERE order_id = ?
+  `).bind(
+    customerName,
+    phone,
+    shippingName,
+    shippingAddress,
+    shippingCity,
+    shippingState,
+    shippingPincode,
+    orderId
+  ).run();
+
+  await logOrderEvent(
+    env,
+    orderId,
+    'details_updated',
+    'Order customer/shipping details updated by admin',
+    {
+      customerName,
+      phone,
+      shippingName,
+      shippingAddress,
+      shippingCity,
+      shippingState,
+      shippingPincode,
+    },
+    'admin'
+  );
+
+  try {
+    await syncOrderToGoogleSheetsSafe(env, orderId);
+    await syncCustomerToGoogleSheetsSafe(env, phone);
+    await syncLeadToGoogleSheetsSafe(env, phone);
+    await syncSalesToGoogleSheetsSafe(env, orderId);
+   } catch (e) {
+    console.error('Google Sheets sync error (order details update):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'order',
+      entity_id: orderId,
+      action: 'details_updated',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
+
+  return jsonResponse({
+    success: true,
+    orderId,
+    details: {
+      customerName,
+      phone,
+      shippingName,
+      shippingAddress,
+      shippingCity,
+      shippingState,
+      shippingPincode,
+    }
+  });
+}
+
+// ── PATCH /api/orders/:id/payment — admin edit payment info ──
+if (path.match(/^\/api\/orders\/[^/]+\/payment$/) && method === 'PATCH') {
+  const orderId = path.split('/')[3];
+  const body = await request.json();
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) return errorResponse('Order not found', 404);
+
+  const allowedPaymentStatuses = ['paid', 'unpaid', 'refunded'];
+  const paymentStatus = (body.paymentStatus ?? order.payment_status ?? 'unpaid').toLowerCase();
+  const paymentId = body.paymentId ?? order.payment_id ?? '';
+
+  if (!allowedPaymentStatuses.includes(paymentStatus)) {
+    return errorResponse('Invalid paymentStatus', 400);
+  }
+
+  let nextOrderStatus = order.status;
+
+  if (paymentStatus === 'paid' && (order.status === 'pending' || order.status === 'cancelled')) {
+    nextOrderStatus = 'confirmed';
+  }
+  if (paymentStatus === 'unpaid' && order.status === 'confirmed') {
+    nextOrderStatus = 'pending';
+  }
+
+  await env.DB.prepare(`
+    UPDATE orders SET
+      payment_status = ?,
+      payment_id = ?,
+      status = ?,
+      paid_at = CASE WHEN ? = 'paid' THEN COALESCE(paid_at, datetime('now')) ELSE paid_at END,
+      updated_at = datetime('now')
+    WHERE order_id = ?
+  `).bind(
+    paymentStatus,
+    paymentId,
+    nextOrderStatus,
+    paymentStatus,
+    orderId
+  ).run();
+
+  await logOrderEvent(
+    env,
+    orderId,
+    'payment_updated',
+    'Order payment details updated by admin',
+    {
+      paymentStatus,
+      paymentId,
+      orderStatus: nextOrderStatus,
+    },
+    'admin'
+  );
+
+  try {
+    await syncOrderToGoogleSheetsSafe(env, orderId);
+    await syncCustomerToGoogleSheetsSafe(env, order.phone);
+    await syncLeadToGoogleSheetsSafe(env, order.phone);
+    await syncSalesToGoogleSheetsSafe(env, orderId);
+    await rebuildSourcePerformanceSheet(env);
+  } catch (e) {
+    console.error('Google Sheets sync error (order payment update):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'order',
+      entity_id: orderId,
+      action: 'payment_updated',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
+  return jsonResponse({
+    success: true,
+    orderId,
+    paymentStatus,
+    paymentId,
+    status: nextOrderStatus,
+  });
+}
+
+// ── PATCH /api/orders/:id/cancel — admin cancel with reason ──
+if (path.match(/^\/api\/orders\/[^/]+\/cancel$/) && method === 'PATCH') {
+  const orderId = path.split('/')[3];
+  const body = await request.json();
+  const reason = body.reason || 'Cancelled by admin';
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) return errorResponse('Order not found', 404);
+
+  await env.DB.prepare(`
+    UPDATE orders SET
+      status = 'cancelled',
+      cancellation_reason = ?,
+      cancelled_at = datetime('now'),
+      updated_at = datetime('now')
+    WHERE order_id = ?
+  `).bind(reason, orderId).run();
+
+  await logOrderEvent(
+    env,
+    orderId,
+    'order_cancelled',
+    'Order cancelled by admin',
+    { reason },
+    'admin'
+  );
+
+  try {
+    await syncOrderToGoogleSheetsSafe(env, orderId);
+    await syncCustomerToGoogleSheetsSafe(env, order.phone);
+    await syncLeadToGoogleSheetsSafe(env, order.phone);
+    await syncSalesToGoogleSheetsSafe(env, orderId);
+    await rebuildSourcePerformanceSheet(env);
+  } catch (e) {
+    console.error('Google Sheets sync error (order cancel):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'order',
+      entity_id: orderId,
+      action: 'order_cancelled',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
+  return jsonResponse({
+    success: true,
+    orderId,
+    status: 'cancelled',
+    reason,
+  });
+}
+
+
+
+// PUT order status (fixed — moved here after auth, uses proper body read)
+if (path.match(/^\/api\/orders\/[^/]+\/status$/) && method === 'PUT') {
+  const orderId = path.split('/')[3];
+  const bodyData = await request.json();
+  const { status } = bodyData;
+  const allowed = ['pending','confirmed','processing','shipped','delivered','cancelled'];
+  if (!allowed.includes(status)) return errorResponse('Invalid status', 400);
+await env.DB.prepare(`
+  UPDATE orders
+  SET
+    status = ?,
+    delivered_at = CASE
+      WHEN ? = 'delivered'
+        AND delivered_at IS NULL
+      THEN datetime('now')
+      ELSE delivered_at
+    END,
+    updated_at = datetime('now')
+  WHERE order_id = ?
+`).bind(
+  status,
+  status,
+  orderId
+).run();
+
+  try {
+    await syncOrderToGoogleSheetsSafe(env, orderId);
+    await syncShipmentToGoogleSheetsSafe(env, orderId);
+
+    const order = await env.DB.prepare(
+      `SELECT * FROM orders WHERE order_id = ?`
+    ).bind(orderId).first();
+
+    if (order?.phone) {
+      await syncCustomerToGoogleSheetsSafe(env, order.phone);
+      await syncLeadToGoogleSheetsSafe(env, order.phone);
+    }
+
+    await syncSalesToGoogleSheetsSafe(env, orderId);
+    await rebuildSourcePerformanceSheet(env);
+  } catch (e) {
+    console.error('Google Sheets sync error (order status update):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'order',
+      entity_id: orderId,
+      action: 'status_updated',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
+
+  return jsonResponse({ success: true, orderId, status });
+}
+
+// POST manual order (from Flutter admin app — Issue 4)
+if (path === '/api/orders/manual' && method === 'POST') {
+  const b = await request.json();
+  const { name, phone, address, city, state: st, pincode, notes, items, email, source } = b;
+  if (!phone || !name) return errorResponse('name and phone required');
+
+  const itemsArr = Array.isArray(items) && items.length > 0 ? items : [];
+  const subtotal = itemsArr.length > 0
+    ? itemsArr.reduce((s, i) => s + ((i.price || 0) * (i.qty || 1)), 0)
+    : (parseFloat(b.total) || 0);
+  const shipping = subtotal >= 498 ? 0 : 60;
+  const grandTotal = subtotal + shipping;
+  const orderId = await generateOrderId(env);
+
+  await env.DB.prepare(`
+    INSERT INTO orders (
+      order_id, phone, customer_name, items, item_count,
+      subtotal, shipping_cost, total,
+      shipping_name, shipping_address, shipping_city, shipping_state, shipping_pincode,
+      customer_notes, status, payment_status, source, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unpaid', ?, datetime('now'), datetime('now'))
+  `).bind(
+    orderId, phone, name,
+    JSON.stringify(itemsArr),
+    itemsArr.length || 1,
+    subtotal, shipping, grandTotal,
+    name, address || '', city || '', st || '', pincode || '',
+    notes || '',
+    source || 'manual'
+  ).run();
+
+  // Upsert customer
+const customerId =
+  await getOrCreateCustomerId(env, phone);
+
+await env.DB.prepare(`
+  INSERT INTO customers (
+    phone,
+    customer_id,
+    name,
+    first_seen,
+    last_seen,
+    updated_at
+  )
+  VALUES (
+    ?, ?, ?,
+    datetime('now'),
+    datetime('now'),
+    datetime('now')
+  )
+  ON CONFLICT(phone) DO UPDATE SET
+    customer_id = COALESCE(
+      customers.customer_id,
+      excluded.customer_id
+    ),
+    name = excluded.name,
+    last_seen = datetime('now'),
+    updated_at = datetime('now')
+`).bind(
+  phone,
+  customerId,
+  name
+).run();
+
+  return jsonResponse({ success: true, orderId, total: grandTotal });
+}
+
+// POST order notify — send WA message for order/shipping/delivery
+if (path.match(/^\/api\/orders\/[^/]+\/send-notification$/) && method === 'POST') {
+  const orderId = path.split('/')[3];
+  const { type } = await request.json();
+  const order = await env.DB.prepare(`SELECT * FROM orders WHERE order_id = ?`).bind(orderId).first();
+  if (!order) return errorResponse('Order not found', 404);
+  const name = order.customer_name || 'Customer';
+  const msgs = {
+    confirmed: `✅ *Order Confirmed!*\n\nHi ${name}! Your order *${orderId}* is confirmed.\n\n📦 We'll pack & ship within 24 hours.\n💎 KAAPAV Fashion Jewellery`,
+    shipped:   `🚚 *Your Order is Shipped!*\n\nHi ${name}! Order *${orderId}* is on its way!\n\nTracking: ${order.tracking_id || 'Details coming soon'}\n\nDelivery in 2–4 working days. 💎`,
+    delivered: `📦 *Order Delivered!*\n\nHi ${name}! Hope you love your KAAPAV jewellery! ✨\n\nOrder: *${orderId}*\n\nPlease share your unboxing! 💎`,
+  };
+  const msg = msgs[type];
+  if (!msg) return errorResponse('Invalid type — use confirmed/shipped/delivered');
+  await sendWhatsAppText(env, order.phone, msg);
+  return jsonResponse({ success: true });
+}
+    // PATCH /api/orders/:id/notes
+if (path.match(/^\/api\/orders\/[^/]+\/notes$/) && method === 'PATCH') {
+  const orderId = path.split('/')[3];
+  const { notes } = await request.json();
+  await env.DB.prepare(
+    `UPDATE orders SET internal_notes = ?, updated_at = datetime('now') WHERE order_id = ?`
+  ).bind(notes || '', orderId).run();
+  return jsonResponse({ success: true });
+}
+
+// ── POST /api/orders/:id/ship — Book Shiprocket + notify customer + owner ──
+if (path.match(/^\/api\/orders\/[^/]+\/ship$/) && method === 'POST') {
+  const orderId = path.split('/')[3];
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) return errorResponse('Order not found', 404);
+
+  // Guard: only confirmed + paid orders can be shipped
+  if (order.payment_status !== 'paid') {
+    return errorResponse('Order is not paid yet', 400);
+  }
+  if (order.status === 'shipped' || order.status === 'delivered') {
+    return errorResponse('Order already shipped', 400);
+  }
+
+if (order.shiprocket_order_id || order.shipment_id) {
+  return jsonResponse({
+    success: true,
+    alreadyBooked: true,
+    shiprocketOrderId: order.shiprocket_order_id || '',
+    shipmentId: order.shipment_id || '',
+    message: 'Shiprocket order already created',
+  });
+}
+
+  // Parse items
+  let items = [];
+  try { items = JSON.parse(order.items || '[]'); } catch(e) {}
+
+  const customerName = order.customer_name || 'Customer';
+  const phone        = order.phone;
+const customerRow = await env.DB.prepare(
+  `SELECT email FROM customers WHERE phone = ?`
+).bind(phone).first();
+
+const customerEmail = customerRow?.email || '';
+
+if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
+  return errorResponse('Customer email missing. Update customer email before creating Shiprocket order.', 400);
+}
+
+  // Book Shiprocket
+  let srOrderId = null;
+  let srError   = null;
+
+  try {
+console.log(
+  'SHIPROCKET_PAYLOAD_CHECK',
+  JSON.stringify({
+    orderId,
+    customerName,
+    phone,
+    address: order.shipping_address,
+    city: order.shipping_city,
+    state: order.shipping_state,
+    pincode: order.shipping_pincode,
+    itemCount: items.length
+  })
+);
+    const srData = await createShiprocketOrder(env, {
+      order: {
+        orderNumber: orderId,
+        total: order.total,
+      },
+      customer: {
+        name:    customerName,
+        phone:   phone,
+        address: order.shipping_address || '',
+        city:    order.shipping_city    || 'Delhi',
+        state:   order.shipping_state   || 'Delhi',
+        pincode: order.shipping_pincode || '110001',
+      },
+      items: items.map(i => ({
+        name:  i.name,
+        sku:   i.sku,
+        qty:   i.qty   || 1,
+        price: i.price || 0,
+      })),
+    });
+
+if (srData.order_id) {
+  srOrderId = String(srData.order_id);
+
+  const srShipmentId = srData.shipment_id ? String(srData.shipment_id) : '';
+  const srAwbCode = srData.awb_code ? String(srData.awb_code) : '';
+  const srCourier = srData.courier_name || '';
+
+  await env.DB.prepare(`
+    UPDATE orders SET
+      shiprocket_order_id = ?,
+      shipment_id         = ?,
+      awb_code            = ?,
+      awb_number          = CASE WHEN ? != '' THEN ? ELSE awb_number END,
+      courier             = CASE WHEN ? != '' THEN ? ELSE courier END,
+      status              = 'processing',
+      updated_at          = datetime('now')
+    WHERE order_id = ?
+  `).bind(
+    srOrderId,
+    srShipmentId,
+    srAwbCode,
+    srAwbCode, srAwbCode,
+    srCourier, srCourier,
+    orderId
+  ).run();
+
+await logOrderEvent(env, orderId, 'shiprocket_booked', 'Shiprocket booked successfully', {
+  shiprocketOrderId: srOrderId,
+  shipmentId: srShipmentId,
+  awbCode: srAwbCode,
+  courier: srCourier,
+}, 'admin');
+      try {
+        await syncOrderToGoogleSheetsSafe(env, orderId);
+        await syncShipmentToGoogleSheetsSafe(env, orderId);
+        await syncCustomerToGoogleSheetsSafe(env, phone);
+        await syncLeadToGoogleSheetsSafe(env, phone);
+        await syncSalesToGoogleSheetsSafe(env, orderId);
+      } catch (e) {
+        console.error('Google Sheets sync error (shiprocket booked):', e);
+        await appendSyncFailureToGoogleSheets(env, {
+          destination: 'google_sheets',
+          entity_type: 'shipment',
+          entity_id: orderId,
+          action: 'shiprocket_booked',
+          error_message: e.message,
+          retry_count: 0,
+          status: 'failed',
+        });
+      }
+
+      // Build item lines for messages
+      const itemLines = items.length > 0
+        ? items.map(i =>
+            `\u2022 ${i.name} \u00d7${i.qty || 1} \u2014 \u20B9${(i.price || 0) * (i.qty || 1)}`
+          ).join('\n')
+        : '\u2022 (items not available)';
+
+      // Customer WA \u2014 order being packed
+      await sendWhatsAppText(env, phone,
+        `\ud83d\udce6 *Your Order is Being Packed!*\n\n` +
+        `Hi ${customerName.split(' ')[0]}! \ud83c\udf89\n\n` +
+        `Order ID: *${orderId}*\n\n` +
+        `\ud83d\udee0\ufe0f *Items being packed:*\n${itemLines}\n\n` +
+        `\u23f0 Shipping within *24 hours*\n` +
+        `\ud83de\ude9a Delivery in *2\u20134 working days*\n\n` +
+        `You will receive your tracking details here on WhatsApp once shipped! \ud83d\udccd\n\n` +
+        `\ud83d\udcac Questions? Just message us anytime \ud83d\ude0a\n` +
+        `\ud83d\udca0 KAAPAV Fashion Jewellery`
+      );
+
+await saveOwnerInboxAlert(env, ctx, {
+  type: 'shipping',
+  priority: 'normal',
+  title: '📦 Shiprocket Order Created',
+  body:
+    `Order: ${orderId}\n` +
+    `Shiprocket ID: ${srOrderId}\n` +
+    `Customer: ${customerName} (${phone})\n` +
+    `Amount: ${formatINR(order.total)}\n` +
+    `Time: ${formatISTDateTime()}\n\n` +
+    `Items:\n${itemLines}\n\n` +
+    `Next: Assign AWB / tracking.`,
+  orderId,
+  phone,
+  customerName,
+  amount: order.total,
+  source: order.source || 'app',
+  actionType: 'order_detail',
+  actionLabel: 'Open Order',
+  meta: {
+    shiprocketOrderId: srOrderId,
+    shipmentId: srShipmentId,
+    awbCode: srAwbCode,
+    courier: srCourier,
+  },
+  dedupeKey: `shiprocket_booked:${orderId}:${srOrderId}`,
+});
+
+      return jsonResponse({
+        success:       true,
+        shiprocketOrderId: srOrderId,
+        message:       'Shiprocket order created successfully',
+      });
+
+    } else {
+      // Shiprocket returned no order_id — log the error
+      srError = srData.message || srData.error || JSON.stringify(srData);
+console.error('Shiprocket no order_id:', srError);
+
+await notifyOwnerFailure(env, 'Shiprocket Booking Failed', [
+  `Order: *${orderId}*`,
+  `Customer: ${customerName} (${phone})`,
+  `Error: ${srError}`,
+]);
+
+return errorResponse(`Shiprocket booking failed: ${srError}`, 502);
+    }
+
+  } catch(e) {
+  console.error('Shiprocket ship error:', e);
+  
+
+  await notifyOwnerFailure(env, 'Shiprocket Error', [
+    `Order: *${orderId}*`,
+    `Customer: ${customerName} (${phone})`,
+    `Error: ${e.message}`,
+  ]);
+
+  return errorResponse(`Shiprocket error: ${e.message}`, 500);
+}
+}
+
+    // ── PUT /api/orders/:id/awb — save AWB + send tracking WA ──
+if (path.match(/^\/api\/orders\/[^/]+\/awb$/) && method === 'PUT') {
+  const orderId = path.split('/')[3];
+  const { awb, courier } = await request.json();
+  if (!awb) return errorResponse('awb required');
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+  if (!order) return errorResponse('Order not found', 404);
+
+  await env.DB.prepare(`
+    UPDATE orders SET
+      awb_number = ?, courier = ?,
+      tracking_url = ?,
+      status = 'shipped', shipped_at = datetime('now'),
+      updated_at = datetime('now')
+    WHERE order_id = ?
+  `).bind(
+    awb,
+    courier || 'Shiprocket',
+    `https://www.shiprocket.in/shipment-tracking/?id=${awb}`,
+    orderId
+  ).run();
+
+  await logOrderEvent(env, orderId, 'awb_assigned', 'AWB assigned and customer notified', {
+  awb,
+  courier: courier || 'Shiprocket',
+}, 'admin');
+  try {
+    await syncOrderToGoogleSheetsSafe(env, orderId);
+    await syncShipmentToGoogleSheetsSafe(env, orderId);
+    await syncCustomerToGoogleSheetsSafe(env, order.phone);
+    await syncLeadToGoogleSheetsSafe(env, order.phone);
+    await syncSalesToGoogleSheetsSafe(env, orderId);
+  } catch (e) {
+    console.error('Google Sheets sync error (awb assigned):', e);
+    await appendSyncFailureToGoogleSheets(env, {
+      destination: 'google_sheets',
+      entity_type: 'shipment',
+      entity_id: orderId,
+      action: 'awb_assigned',
+      error_message: e.message,
+      retry_count: 0,
+      status: 'failed',
+    });
+  }
+
+  const name = order.customer_name || 'Customer';
+
+  // Customer WA with tracking
+const trackUrl = `https://www.shiprocket.in/shipment-tracking/?id=${awb}`;
+
+await sendWhatsAppCtaUrl(
+  env,
+  order.phone,
+  `🚚 *Your KAAPAV order is on the way!*\n\n` +
+  `Hi ${name.split(' ')[0]}!\n\n` +
+  `Order ID: *${orderId}*\n` +
+  `AWB: *${awb}*\n` +
+  `Courier: ${courier || 'Shiprocket'}\n\n` +
+  `Tap below to track your parcel anytime.\n\n` +
+  `💎 KAAPAV Fashion Jewellery`,
+  'Track Now',
+  trackUrl
+);
+
+  // Owner WA
+await saveOwnerInboxAlert(env, ctx, {
+  type: 'shipping',
+  priority: 'normal',
+  title: '🚚 AWB Updated',
+  body:
+    `Order: ${orderId}\n` +
+    `Customer: ${name} (${order.phone})\n` +
+    `AWB: ${awb}\n` +
+    `Courier: ${courier || 'Shiprocket'}\n` +
+    `Time: ${formatISTDateTime()}\n\n` +
+    `Customer notified on WhatsApp.`,
+  orderId,
+  phone: order.phone,
+  customerName: name,
+  amount: order.total,
+  source: order.source || 'app',
+  actionType: 'order_detail',
+  actionLabel: 'Open Order',
+  actionUrl: trackUrl,
+  meta: {
+    awb,
+    courier: courier || 'Shiprocket',
+    trackingUrl: trackUrl,
+  },
+  dedupeKey: `awb_updated:${orderId}:${awb}`,
+});
+  return jsonResponse({ success: true });
+}
+
+
+// ── POST /api/orders/:id/payment-link — regenerate Razorpay link ──
+if (path.match(/^\/api\/orders\/[^/]+\/payment-link$/) && method === 'POST') {
+  const orderId = path.split('/')[3];
+
+  const order = await env.DB.prepare(
+    `SELECT * FROM orders WHERE order_id = ?`
+  ).bind(orderId).first();
+
+  if (!order) return errorResponse('Order not found', 404);
+
+  try {
+    const cleanPhone = String(order.phone || '').replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      return errorResponse('Invalid customer phone number', 400);
+    }
+
+    const amount = Number(order.total || 0);
+    if (!amount || amount <= 0) {
+      return errorResponse('Invalid order amount', 400);
+    }
+
+    const payLink = await createRazorpayLink(env, {
+      amount,
+      name: order.customer_name || 'Customer',
+      phone: cleanPhone,
+      orderId,
+      description: `KAAPAV Order ${orderId}`
+    });
+
+    await env.DB.prepare(`
+      UPDATE orders SET payment_link = ?, updated_at = datetime('now')
+      WHERE order_id = ?
+    `).bind(payLink, orderId).run();
+
+    await logOrderEvent(
+      env,
+      orderId,
+      'payment_link_generated',
+      'Payment link generated and sent to customer',
+      { paymentLink: payLink },
+      'admin'
+    );
+
+    // Send to customer
+    await sendWhatsAppText(env, order.phone,
+      `💳 *Payment Link*\n\n` +
+      `Hi ${order.customer_name || 'Customer'}!\n\n` +
+      `Order ID: *${orderId}*\n` +
+      `Amount: ₹${order.total}\n\n` +
+      `👉 Pay here (valid 24 hrs):\n${payLink}\n\n` +
+      `💎 KAAPAV Fashion Jewellery`
+    );
+
+    return jsonResponse({ success: true, paymentLink: payLink });
+
+  } catch (e) {
+    console.error('Payment link generation error:', e);
+
+    await notifyOwnerFailure(env, 'Payment Link Generation Failed', [
+      `Order: *${orderId}*`,
+      `Customer: ${order.customer_name || 'Customer'} (${order.phone || '-'})`,
+      `Amount: ₹${order.total || 0}`,
+      `Error: ${e.message}`,
+    ]);
+
+    return errorResponse('Failed to generate link: ' + e.message, 500);
+  }
+}
+
+// Legacy destructive return endpoints
+// are disabled.
+//
+// Production flow uses
+// /return-requests and never cancels
+// an order when a request is created.
+
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/return$/
+  ) &&
+  method === 'POST'
+) {
+  return errorResponse(
+    'Legacy return endpoint disabled. Use the return-request workflow.',
+    410
+  );
+}
+
+if (
+  path.match(
+    /^\/api\/orders\/[^/]+\/item-return$/
+  ) &&
+  method === 'POST'
+) {
+  return errorResponse(
+    'Legacy item-return endpoint disabled. Use the return-request workflow.',
+    410
+  );
+}
+
+// ── GET /api/customers/:phone/orders — customer order history ──
+if (path.match(/^\/api\/customers\/[^/]+\/orders$/) && method === 'GET') {
+  const phone = decodeURIComponent(path.split('/')[3]);
+  const { results } = await env.DB.prepare(`
+    SELECT order_id, status, payment_status, total, items,
+           created_at, shipping_pincode
+    FROM orders WHERE phone = ?
+    ORDER BY created_at DESC LIMIT 20
+  `).bind(phone).all();
+  return jsonResponse({ success: true, orders: results });
+}
+
+if (path === '/api/coupons' && method === 'GET') {
+  return handleGetCoupons(env);
+}
+
+if (path === '/api/coupons' && method === 'POST') {
+  return handleCreateCoupon(request, env);
+}
+
+if (
+  path.match(/^\/api\/coupons\/\d+$/) &&
+  method === 'PUT'
+) {
+  const id = Number(path.split('/')[3]);
+  return handleUpdateCoupon(id, request, env);
+}
+
+if (
+  path.match(/^\/api\/coupons\/\d+$/) &&
+  method === 'DELETE'
+) {
+  const id = Number(path.split('/')[3]);
+  return handleRemoveCoupon(id, env);
+}
+
+if (path === '/api/products' && method === 'GET') {
+  return handleGetProducts(request, env);
+}
+
+if (path === '/api/products' && method === 'POST') {
+  return handleCreateProduct(request, env);
+}
+
+if (
+  path === '/api/products/bulk' &&
+  method === 'PATCH'
+) {
+  return handleBulkUpdateProducts(request, env);
+}
+
+if (
+  path.match(/^\/api\/products\/(.+)\/stock$/) &&
+  (method === 'PATCH' || method === 'POST')
+) {
+  const sku = path.match(
+    /^\/api\/products\/(.+)\/stock$/
+  )[1];
+
+  return handleUpdateStock(
+    sku,
+    request,
+    env
+  );
+}
+    if (path.match(/^\/api\/products\/(.+)$/) && method === 'PUT') {
+      const sku = path.match(/^\/api\/products\/(.+)$/)[1];
+      return handleUpdateProduct(sku, request, env);
+    }
+    if (path.match(/^\/api\/products\/(.+)$/) && method === 'DELETE') {
+      const sku = path.match(/^\/api\/products\/(.+)$/)[1];
+      return handleDeleteProduct(sku, env);
+    }
+    if (path === '/api/products/categories' && method === 'GET') {
+      const { results } = await env.DB.prepare(`SELECT DISTINCT category FROM products WHERE is_active=1 AND category IS NOT NULL`).all();
+      return jsonResponse({ success: true, categories: results.map(r => r.category) });
+    }
+    if (path === '/api/customers' && method === 'GET') return handleGetCustomers(request, env);
+    if (path.match(/^\/api\/customers\/(.+)$/) && method === 'GET') {
+      const phone = path.match(/^\/api\/customers\/(.+)$/)[1];
+      const customer = await env.DB.prepare(`SELECT * FROM customers WHERE phone = ?`).bind(phone).first();
+      return jsonResponse({ success: true, customer });
+    }
+
+    if (path === '/api/stats' && method === 'GET') return handleGetStats(env);
+    if (path === '/api/dashboard/ops' && method === 'GET') return handleGetDashboardOps(env);
+    if (path === '/api/analytics' && method === 'GET') return handleGetAnalytics(env);
+    if (path === '/api/analytics/activities' && method === 'GET') return handleGetActivities(env);
+    if (path === '/api/analytics/pending' && method === 'GET') {
+      const { results } = await env.DB.prepare(`SELECT * FROM orders WHERE status='pending' ORDER BY created_at DESC LIMIT 20`).all();
+      return jsonResponse({ success: true, pending: results });
+    }
+
+    if (path === '/api/settings' && method === 'GET') return handleGetSettings(env);
+    if (path === '/api/settings' && method === 'PUT') {
+      const body = await request.json();
+      for (const [key, value] of Object.entries(body)) {
+        await env.DB.prepare(`INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))`).bind(key, String(value)).run();
+      }
+      return jsonResponse({ success: true });
+    }
+
+    if (path === '/api/quick-replies' && method === 'GET') {
+      const { results } = await env.DB.prepare(`SELECT * FROM quick_replies WHERE is_active=1 ORDER BY use_count DESC`).all();
+      return jsonResponse({ success: true, quickReplies: results });
+    }
+    if (path === '/api/labels' && method === 'GET') {
+      const { results } = await env.DB.prepare(`SELECT * FROM labels WHERE is_active=1`).all();
+      return jsonResponse({ success: true, labels: results });
+    }
+    if (path === '/api/templates' && method === 'GET') {
+      const { results } = await env.DB.prepare(`SELECT * FROM templates ORDER BY created_at DESC`).all();
+      return jsonResponse({ success: true, templates: results });
+    }
+
+    if (path === '/api/sync/check' && method === 'GET') return handleSyncCheck(env);
+    if (path === '/api/settings/test-whatsapp' && method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      const phone = body.phone;
+      if (!phone) return errorResponse('phone required', 400);
+
+      const result = await sendWhatsAppText(env, phone, 'Test message from KAAPAV Worker');
+      if (result?.error) {
+        return errorResponse(result.error.message || 'WhatsApp send failed', 502);
+      }
+
+      return jsonResponse({ success: true, result });
+    }
+
+// ═══ SUPABASE BACKFILL ═══
+if (path === '/api/sync/supabase/backfill' && method === 'POST') {
+  // Auth check with SYNC_API_KEY
+  const authHeader = request.headers.get('Authorization') || '';
+  const apiKey = request.headers.get('X-API-Key') || '';
+  const syncKey = env.SYNC_API_KEY || '';
+  
+  const providedKey = authHeader.replace('Bearer ', '') || apiKey;
+  
+  if (!syncKey || providedKey !== syncKey) {
+    return errorResponse('Unauthorized', 401);
+  }
+
+  try {
+    const result = await backfillAllSupabase(env);
+    return jsonResponse({ success: true, summary: result });
+  } catch (e) {
+    console.error('Supabase backfill error:', e);
+    return errorResponse('Backfill failed: ' + e.message, 500);
+  }
+}
+
+    if (path === '/api/media/upload' && method === 'POST') {
+  try {
+    const formData = await request.formData();
+    const file = formData.get('file');
+    if (!file) return errorResponse('file required', 400);
+    const fileName = `${Date.now()}_${file.name || 'upload'}`;
+    const arrayBuffer = await file.arrayBuffer();
+    await env.MEDIA.put(fileName, arrayBuffer, {
+      httpMetadata: { contentType: file.type || 'application/octet-stream' },
+    });
+    const url = `https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/${fileName}`;
+    return jsonResponse({ success: true, url, mediaUrl: url, fileName });
+  } catch (e) {
+    console.error('Upload error:', e);
+    return errorResponse('Upload failed: ' + e.message, 500);
+  }
+}
+    
+
+    if (path === '/api/media/upload-multiple' && method === 'POST') {
+  try {
+    const formData = await request.formData();
+    const files = formData.getAll('files');
+    if (!files || files.length === 0) return errorResponse('files required', 400);
+    
+    const urls = [];
+    for (const file of files) {
+      const fileName = `${Date.now()}_${Math.random().toString(36).slice(2)}_${file.name}`;
+      await env.MEDIA.put(fileName, await file.arrayBuffer(), {
+        httpMetadata: { contentType: file.type || 'image/jpeg' },
+      });
+      urls.push(`https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/${fileName}`);
+    }
+    
+    return jsonResponse({ success: true, urls, count: urls.length });
+  } catch (e) {
+    console.error('Multiple upload error:', e);
+    return errorResponse('Upload failed: ' + e.message, 500);
+  }
+}
+
+    
+// ═══ PUBLIC PDF SERVE ═══
+    if (path.match(/^\/invoices\/.+\.pdf$/) && method === 'GET') {
+      const key = path.slice(1);
+      const obj = await env.MEDIA.get(key);
+      if (!obj) return new Response('Not found', { status: 404 });
+      return new Response(obj.body, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Cache-Control': 'public, max-age=86400',
+          'Content-Disposition': `inline; filename="${key.split('/').pop()}"`,
+        }
+      });
+    }
+   
+    return errorResponse('Not found', 404);
+   },
+
+  async scheduled(event, env, ctx) {
+  // ── Abandoned payment reminder (30 min after order, unpaid) ─
+try {
+  const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const fortyMinAgo = new Date(Date.now() - 40 * 60 * 1000).toISOString();
+
+  const { results: earlyUnpaidOrders } = await env.DB.prepare(`
+    SELECT * FROM orders
+    WHERE payment_status = 'unpaid'
+    AND status = 'pending'
+    AND payment_link IS NOT NULL
+    AND created_at BETWEEN ? AND ?
+    LIMIT 10
+  `).bind(fortyMinAgo, thirtyMinAgo).all();
+
+      for (const order of earlyUnpaidOrders) {
+        if (!isWhatsAppOrder(order.source)) continue;
+        await sendWhatsAppText(env, order.phone,
+      `💎 *Complete Your KAAPAV Order*\n\n` +
+      `Hi ${order.customer_name || 'there'}! 😊\n\n` +
+      `Order ID: *${order.order_id}*\n` +
+      `Amount: ₹${order.total}\n\n` +
+      `💳 Payment link:\n${order.payment_link}\n\n` +
+      `Your jewellery is waiting for you ✨`
+    );
+  }
+} catch(e) {
+  console.error('30-min payment reminder error:', e);
+}
+try {
+  await autoCancelOldUnpaidCatalogueOrders(env);
+} catch (e) {
+  console.error('AUTO_CANCEL_UNPAID cron error:', e);
+}
+    console.log('Cron running:', new Date().toISOString());
+try {
+  await processCatalogueRetargetingReminders(env);
+} catch (e) {
+  console.error('Catalogue retargeting cron error:', e);
+}
+
+        try {
+      const nowUtc = new Date();
+      const minuteUtc = nowUtc.getUTCMinutes();
+
+      // Google Sheets reconciliation once per hour
+      if (minuteUtc < 5) {
+        await backfillAllGoogleSheets(env);
+        console.log('Google Sheets hourly reconciliation complete');
+      }
+    } catch (e) {
+      console.error('Google Sheets reconciliation error:', e);
+      await appendSyncFailureToGoogleSheets(env, {
+        destination: 'google_sheets',
+        entity_type: 'system',
+        entity_id: 'full_sync',
+        action: 'cron_reconciliation',
+        error_message: e.message,
+        retry_count: 0,
+        status: 'failed',
+      });
+    }
+
+    const now = new Date();
+    const hourIST = (now.getUTCHours() + 5) % 24;
+    const minuteIST = (now.getUTCMinutes() + 30) % 60;
+
+    // ── Daily summary at 9pm IST ──────────────────────────────
+    if (hourIST === 21 && minuteIST < 5) {
+      try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayStr = today.toISOString().slice(0, 10);
+
+        const [todayOrders, pendingOrders, revenue, totalOrders] = await Promise.all([
+          env.DB.prepare(`SELECT COUNT(*) as count FROM orders WHERE date(created_at) = ?`).bind(todayStr).first(),
+          env.DB.prepare(`SELECT COUNT(*) as count FROM orders WHERE status = 'pending'`).first(),
+          env.DB.prepare(`SELECT SUM(total) as total FROM orders WHERE payment_status = 'paid' AND date(created_at) = ?`).bind(todayStr).first(),
+          env.DB.prepare(`SELECT COUNT(*) as count FROM orders`).first(),
+        ]);
+
+        await sendWhatsAppText(env, env.OWNER_PHONE,
+          `📊 *KAAPAV Daily Summary*\n` +
+          `📅 ${todayStr}\n\n` +
+          `🛍️ Today's Orders: *${todayOrders?.count || 0}*\n` +
+          `💰 Today's Revenue: *₹${revenue?.total || 0}*\n` +
+          `⏳ Pending Orders: *${pendingOrders?.count || 0}*\n` +
+          `📦 Total Orders Ever: *${totalOrders?.count || 0}*\n\n` +
+          `💎 KAAPAV Fashion Jewellery`
+        );
+      } catch(e) { console.error('Daily summary error:', e); }
+    }
+
+    // ── Post-delivery review request (3 days after delivered) ─
+    try {
+      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+      const oneDayAgo = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString();
+      const { results: deliveredOrders } = await env.DB.prepare(`
+        SELECT * FROM orders
+        WHERE status = 'delivered'
+        AND review_sent = 0
+        AND delivered_at BETWEEN ? AND ?
+        LIMIT 10
+      `).bind(oneDayAgo, threeDaysAgo).all();
+
+      for (const order of deliveredOrders) {
+        if (!isWhatsAppOrder(order.source)) {
+          await env.DB.prepare(`UPDATE orders SET review_sent = 1 WHERE order_id = ?`).bind(order.order_id).run();
+          continue;
+        }
+        await sendWhatsAppText(env, order.phone,
+          `💎 *How was your KAAPAV order?*\n\n` +
+          `Hi ${order.customer_name || 'there'}! 😊\n\n` +
+          `We hope you love your jewellery! ✨\n\n` +
+          `🌟 *We'd love your feedback:*\n` +
+          `📸 Share your unboxing on Instagram\n` +
+          `🏷️ Tag us: @kaapavfashionjewellery\n\n` +
+          `⭐ Your review helps us grow!\n\n` +
+          `👉 ${env.INSTAGRAM_URL}\n\n` +
+          `💎 Thank you for choosing KAAPAV!`
+        );
+        await env.DB.prepare(
+          `UPDATE orders SET review_sent = 1, updated_at = datetime('now') WHERE order_id = ?`
+        ).bind(order.order_id).run();
+      }
+    } catch(e) { console.error('Review request error:', e); }
+
+    try {
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+      const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+      const { results: unpaidOrders } = await env.DB.prepare(`
+        SELECT * FROM orders
+        WHERE payment_status = 'unpaid'
+        AND status = 'pending'
+        AND payment_link IS NOT NULL
+        AND created_at BETWEEN ? AND ?
+        LIMIT 10
+      `).bind(threeHoursAgo, twoHoursAgo).all();
+
+      for (const order of unpaidOrders) {
+        if (!isWhatsAppOrder(order.source)) continue;
+        await sendWhatsAppText(env, order.phone,
+          `⏰ *Complete your KAAPAV order!*\n\n` +
+          `Hi ${order.customer_name || 'there'}! 😊\n\n` +
+          `You left something behind! 💎\n\n` +
+          `Order ID: *${order.order_id}*\n` +
+          `Amount: ₹${order.total}\n\n` +
+          `💳 *Complete payment here:*\n` +
+          `${order.payment_link}\n\n` +
+          `⚠️ Link expires in a few hours!\n\n` +
+          `Questions? Just reply here 😊\n` +
+          `💎 KAAPAV Fashion Jewellery`
+        );
+      }
+    } catch(e) { console.error('Cart recovery error:', e); }
+  }
+  
+};

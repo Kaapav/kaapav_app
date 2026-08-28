@@ -80,7 +80,7 @@ class OrderApi {
     );
   }
 
-    // ── Update customer/shipping details ─────────────────────────
+  // ── Update customer/shipping details ─────────────────────────
   Future<Response> updateOrderDetails(
     String orderId, {
     required String customerName,
@@ -105,7 +105,7 @@ class OrderApi {
     );
   }
 
-     // ── Update payment info ──────────────────────────────────────
+  // ── Update payment info ──────────────────────────────────────
   Future<Response> updateOrderPayment(
     String orderId, {
     required String paymentStatus,
@@ -171,7 +171,7 @@ class OrderApi {
     );
   }
 
-    // ── Update AWB / courier ─────────────────────────────────────
+  // ── Update AWB / courier ─────────────────────────────────────
   Future<Response> updateAwb(
     String orderId, {
     required String awb,
@@ -191,7 +191,134 @@ class OrderApi {
     return _client.get('/api/orders/$orderId/events');
   }
 
-    // ── Cancel order with reason ─────────────────────────────────
+  // ── Get return/exchange requests ─────────────────────────────
+  // Worker route:
+  // GET /api/orders/:orderId/return-requests
+  Future<Response> getOrderReturnRequests(String orderId) {
+    return _client.get(
+      '/api/orders/$orderId/return-requests',
+    );
+  }
+
+  // ── Approve or reject return/exchange request ────────────────
+  // Worker route:
+  // PATCH /api/orders/:orderId/return-requests/:requestId/decision
+  Future<Response> reviewOrderReturnRequest(
+    String orderId,
+    String requestId, {
+    required String decision,
+    String ownerNote = '',
+  }) {
+    return _client.patch(
+      '/api/orders/$orderId/return-requests/$requestId/decision',
+      data: {
+        'decision': decision,
+        'owner_note': ownerNote,
+      },
+    );
+  }
+
+  // ── Mark approved return pickup as scheduled ────────────────
+  // Worker route:
+  // PATCH /api/orders/:orderId/return-requests/:requestId/pickup-scheduled
+  Future<Response> scheduleOrderReturnPickup(
+    String orderId,
+    String requestId, {
+    String courier = '',
+    String awbNumber = '',
+    String trackingUrl = '',
+    String pickupScheduledDate = '',
+    String ownerNote = '',
+  }) {
+    return _client.patch(
+      '/api/orders/$orderId/return-requests/$requestId/pickup-scheduled',
+      data: {
+        if (courier.trim().isNotEmpty) 'courier': courier.trim(),
+        if (awbNumber.trim().isNotEmpty) 'awb_number': awbNumber.trim(),
+        if (trackingUrl.trim().isNotEmpty) 'tracking_url': trackingUrl.trim(),
+        if (pickupScheduledDate.trim().isNotEmpty)
+          'pickup_scheduled_date': pickupScheduledDate.trim(),
+        'owner_note': ownerNote,
+      },
+    );
+  }
+
+  // ── Mark scheduled return package as picked up ──────────────
+  // Worker route:
+  // PATCH /api/orders/:orderId/return-requests/:requestId/picked-up
+  Future<Response> markOrderReturnPickedUp(
+    String orderId,
+    String requestId, {
+    String ownerNote = '',
+  }) {
+    return _client.patch(
+      '/api/orders/$orderId/return-requests/$requestId/picked-up',
+      data: {
+        'owner_note': ownerNote,
+      },
+    );
+  }
+
+  // ── Mark picked-up return package as received ───────────────
+  // Worker route:
+  // PATCH /api/orders/:orderId/return-requests/:requestId/received
+  Future<Response> markOrderReturnReceived(
+    String orderId,
+    String requestId, {
+    String ownerNote = '',
+  }) {
+    return _client.patch(
+      '/api/orders/$orderId/return-requests/$requestId/received',
+      data: {
+        'owner_note': ownerNote,
+      },
+    );
+  }
+
+  // ── Complete return quality inspection ──────────────────────
+  // Worker route:
+  // PATCH /api/orders/:orderId/return-requests/:requestId/qc
+  Future<Response> reviewOrderReturnQc(
+    String orderId,
+    String requestId, {
+    required String decision,
+    String ownerNote = '',
+    bool deductReverseShippingFee = true,
+    bool autoRefund = true,
+  }) {
+    return _client.patch(
+      '/api/orders/$orderId/return-requests/$requestId/qc',
+      data: {
+        'decision': decision,
+        'owner_note': ownerNote,
+        'deduct_reverse_shipping_fee': deductReverseShippingFee,
+        'auto_refund': autoRefund,
+      },
+    );
+  }
+
+  // ── Preview or process QC-approved return refund ─────────────
+  // Worker route:
+  // POST /api/orders/:orderId/return-requests/:requestId/refund
+  Future<Response> processOrderReturnRefund(
+    String orderId,
+    String requestId, {
+    required bool deductReverseShippingFee,
+    bool previewOnly = false,
+    String ownerNote = '',
+  }) {
+    return _client.post(
+      '/api/orders/$orderId/return-requests/$requestId/refund',
+      data: {
+        'deduct_reverse_shipping_fee':
+            deductReverseShippingFee,
+        'preview_only': previewOnly,
+        'owner_note': ownerNote,
+      },
+    );
+  }
+
+  // ── Cancel order with reason ─────────────────────────────────
   Future<Response> cancelOrder(String orderId, {String? reason}) {
     return _client.patch(
       '/api/orders/$orderId/cancel',
@@ -211,7 +338,6 @@ class OrderApi {
     return _client.post('/api/orders/$orderId/invoice', data: {});
   }
 
- 
   // ── Send WhatsApp notification ───────────────────────────────
   // Worker route:
   // POST /api/orders/:id/send-notification

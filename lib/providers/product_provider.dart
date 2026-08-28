@@ -234,6 +234,44 @@ class ProductNotifier extends StateNotifier<ProductListState> {
     }
   }
 
+Future<bool> bulkUpdateProducts(
+  List<String> skus,
+  Map<String, dynamic> changes,
+) async {
+  if (skus.isEmpty || changes.isEmpty) {
+    state = state.copyWith(
+      error: 'Select products and changes first',
+    );
+    return false;
+  }
+
+  try {
+    final response = await _productApi.bulkUpdate(
+      skus,
+      changes,
+    );
+
+    final body = response.data;
+
+    if (body is Map && body['success'] != true) {
+      state = state.copyWith(
+        error: body['error']?.toString() ??
+            body['message']?.toString() ??
+            'Bulk update failed',
+      );
+      return false;
+    }
+
+    await loadProducts(refresh: true);
+    return true;
+  } catch (e) {
+    state = state.copyWith(
+      error: 'Bulk update failed: $e',
+    );
+    return false;
+  }
+}
+
   // Mirrors getProductBySku
   Product? getProduct(String sku) {
     try {

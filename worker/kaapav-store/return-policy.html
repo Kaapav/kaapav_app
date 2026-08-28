@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#FAF7F2">
+  <title>Return & Refund Policy: | KAAPAV</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Jost:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="./assets/kaapav-live-sync.js"></script>
+  <style>
+    :root {
+      --bg-mesh: radial-gradient(at 0% 0%, rgba(247, 239, 227, 0.95) 0, transparent 55%),
+                 radial-gradient(at 100% 0%, rgba(238, 220, 190, 0.85) 0, transparent 50%),
+                 radial-gradient(at 50% 40%, rgba(253, 250, 245, 1) 0, transparent 100%),
+                 #FAF7F2;
+      --glass-card: rgba(255, 255, 255, 0.88);
+      --glass-border: rgba(196, 148, 50, 0.24);
+      --gold: #C49432;
+      --gold-l: #E2B755;
+      --gold-d: #9A7424;
+      --ink: #1C1917;
+      --muted: #78716C;
+      --serif: "Cormorant Garamond", Georgia, serif;
+      --sans: "Jost", -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body {
+      background: var(--bg-mesh);
+      background-attachment: fixed;
+      color: var(--ink);
+      font-family: var(--sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    a { color: inherit; text-decoration: none; cursor: pointer; }
+    button { font: inherit; cursor: pointer; }
+    img { display: block; max-width: 100%; }
+    .shell { width: min(960px, calc(100% - 32px)); margin: auto; }
+
+    /* Header */
+    .kaapav-main-header {
+      background: #FAF7F2;
+      border-bottom: 1px solid rgba(196, 148, 50, 0.2);
+      position: sticky;
+      top: 0;
+      z-index: 999;
+      box-shadow: 0 2px 14px rgba(60, 40, 20, 0.04);
+    }
+    .header-shell {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 74px;
+    }
+    .header-brand-wrap { display: flex; align-items: center; text-decoration: none; }
+    .header-logo-img { height: 54px; width: auto; object-fit: contain; }
+    .header-nav-menu { display: flex; align-items: center; gap: clamp(16px, 2.2vw, 32px); list-style: none; margin: 0; padding: 0; }
+    .nav-link-item { font-family: var(--sans); font-size: 13px; letter-spacing: 0.1em; font-weight: 600; text-transform: uppercase; color: #C49432; text-decoration: none; padding: 8px 0; display: inline-flex; align-items: center; gap: 4px; }
+    .nav-dropdown-wrap { position: relative; }
+    .nav-dropdown-menu { position: absolute; top: 100%; left: 0; background: #fff; border: 1px solid rgba(196,148,50,0.25); border-radius: 14px; padding: 10px 0; min-width: 200px; box-shadow: 0 16px 36px rgba(60,40,20,0.12); display: none; flex-direction: column; z-index: 1000; }
+    .nav-dropdown-wrap:hover .nav-dropdown-menu { display: flex; }
+    .nav-dropdown-menu a { padding: 9px 18px; font-size: 12.5px; color: #37302A; text-decoration: none; font-weight: 500; }
+    .nav-dropdown-menu a:hover { background: #FAF5EB; color: #9A7424; }
+    .header-actions-wrap { display: flex; align-items: center; gap: 12px; }
+    .hdr-btn-circle { width: 40px; height: 40px; border-radius: 50%; background: #F1ECE4; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .hdr-btn-signin { background: #F1ECE4; color: #1C1917; font-family: var(--sans); font-size: 13px; font-weight: 600; padding: 9px 20px; border-radius: 30px; text-decoration: none; }
+    @media(max-width:992px){ .header-nav-menu { display:none!important; } }
+
+    /* Policy Box */
+    .policy-box {
+      background: var(--glass-card);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border);
+      border-radius: 24px;
+      padding: clamp(24px, 5vw, 44px);
+      box-shadow: 0 14px 40px rgba(60,40,20,0.06);
+      margin: 40px auto 60px;
+      text-align: left;
+    }
+    .policy-header-block {
+      border-bottom: 1px solid var(--glass-border);
+      padding-bottom: 20px;
+      margin-bottom: 24px;
+    }
+    .policy-badge {
+      display: inline-block;
+      font-size: 10px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--gold-d);
+      font-weight: 700;
+      background: #FAF5EB;
+      border: 1px solid rgba(196,148,50,0.25);
+      padding: 4px 14px;
+      border-radius: 20px;
+      margin-bottom: 10px;
+    }
+    .policy-title {
+      font-family: var(--serif);
+      font-size: clamp(28px, 4.5vw, 42px);
+      font-weight: 600;
+      color: #1C1917;
+      line-height: 1.2;
+    }
+
+    /* Content Typography */
+    .policy-body {
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.75;
+      color: #38302A;
+    }
+    .policy-body p { margin-bottom: 16px; }
+    .policy-body a { color: var(--gold-d); font-weight: 600; text-decoration: underline; }
+    .policy-body ul { margin: 10px 0 18px 24px; }
+    .policy-body li { margin-bottom: 6px; }
+    
+    .highlight-card {
+      background: #FAF5EB;
+      border: 1px solid rgba(196,148,50,0.25);
+      border-radius: 14px;
+      padding: 16px 20px;
+      margin: 20px 0;
+    }
+    .sec-heading {
+      font-family: var(--serif);
+      font-size: 22px;
+      font-weight: 600;
+      color: #1C1917;
+      margin: 28px 0 14px;
+      padding-top: 14px;
+      border-top: 1px solid #EDE8DF;
+    }
+    .sub-heading {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1C1917;
+      margin: 20px 0 8px;
+    }
+    .point-card, .section-card {
+      background: rgba(255,255,255,0.7);
+      border: 1px solid rgba(196,148,50,0.2);
+      border-radius: 14px;
+      padding: 18px 20px;
+      margin-bottom: 14px;
+    }
+    .point-title, .section-card-title {
+      font-weight: 700;
+      color: #1C1917;
+      font-size: 15px;
+      margin-bottom: 8px;
+      display: block;
+    }
+    .def-item { margin-bottom: 12px; }
+    .def-term { font-weight: 700; color: #1C1917; }
+    
+    .story-card {
+      background: rgba(255,255,255,0.85);
+      border: 1px solid rgba(196,148,50,0.25);
+      border-radius: 16px;
+      padding: 22px 26px;
+      margin: 26px 0;
+    }
+    .story-card-title { font-family: var(--serif); font-size: 22px; font-weight: 700; color: #1C1917; margin-bottom: 10px; }
+    .quote-highlight { border-left: 3px solid var(--gold); padding-left: 18px; font-family: var(--serif); font-size: 20px; font-style: italic; color: #1C1917; margin: 20px 0; line-height: 1.5; }
+    .pillars-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 24px 0; }
+    .pillar-card { background: #FAF6EF; border: 1px solid rgba(196,148,50,0.2); border-radius: 12px; padding: 18px 14px; text-align: center; }
+    .pillar-icon { font-size: 22px; margin-bottom: 6px; }
+    .pillar-title { font-family: var(--serif); font-size: 16px; font-weight: 700; color: #1C1917; margin-bottom: 4px; }
+    .pillar-desc { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+
+    /* Footer */
+    .site-footer {
+      background: #FAF7F2;
+      border-top: 1px solid rgba(196,148,50,0.2);
+      padding: 40px 0 20px;
+      font-size: 12px;
+      margin-top: auto;
+    }
+    .footer-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 30px; margin-bottom: 24px; }
+    .footer-col h5 { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: #1C1917; font-weight: 700; margin-bottom: 12px; }
+    .footer-col a { display: block; color: #665C51; margin-bottom: 8px; font-size: 12px; }
+    .footer-col a:hover { color: var(--gold-d); }
+    .footer-bottom-bar { border-top: 1px solid rgba(196,148,50,0.15); padding-top: 16px; font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; }
+    @media(max-width: 768px) {
+      .footer-grid { grid-template-columns: 1fr 1fr; }
+      .pillars-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+
+
+
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header class="kaapav-main-header">
+    <div class="header-shell">
+      <a href="./index.html" class="header-brand-wrap">
+        <img src="./assets/kaapav-logo.png" onerror="this.src='assets/kaapav-logo.png'" alt="KAAPAV" class="header-logo-img">
+      </a>
+      <nav class="header-nav-menu">
+        <div class="nav-dropdown-wrap">
+          <a href="./shop/index.html" class="nav-link-item has-dropdown">
+            ALL JEWELLERY <span class="dropdown-caret">&#9662;</span>
+          </a>
+          <div class="nav-dropdown-menu">
+            <a href="./shop/index.html">All Jewellery</a>
+            <a href="./category/earrings/index.html">Earrings</a>
+            <a href="./category/necklaces/index.html">Necklaces</a>
+            <a href="./category/bracelets/index.html">Bracelets</a>
+            <a href="./category/rings/index.html">Rings</a>
+            <a href="./category/pendants/index.html">Pendants</a>
+            <a href="./category/sets/index.html">Jewellery Sets</a>
+            <a href="./category/bestsellers/index.html">Bestsellers</a>
+          </div>
+        </div>
+        <a href="./shop/index.html?style=elegant" class="nav-link-item">ELEGANT</a>
+        <a href="./shop/index.html?style=colourful" class="nav-link-item">COLOURFUL</a>
+        <a href="./shop/index.html?style=contemporary" class="nav-link-item">CONTEMPORARY</a>
+        <a href="./shop/index.html?style=subtle" class="nav-link-item">SUBTLE</a>
+        <a href="./shop/index.html?style=fashion" class="nav-link-item">FASHION</a>
+        <a href="./shop/index.html?style=modern" class="nav-link-item">MODERN</a>
+      </nav>
+      <div class="header-actions-wrap">
+        <button class="hdr-btn-circle" onclick="window.location.href='./shop/index.html'" title="Search">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#2B2620" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        </button>
+        <a href="./admin/index.html" class="hdr-btn-signin">Sign in</a>
+        <button class="hdr-btn-circle" onclick="window.location.href='./shop/index.html'" title="Bag">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#2B2620" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Body -->
+  <main class="shell">
+    <div class="policy-box">
+      <div class="policy-header-block">
+        <span class="policy-badge">Customer Care • 7-Day Window</span>
+        <h1 class="policy-title">Return & Refund Policy:</h1>
+      </div>
+      <div class="policy-body">
+        
+        <p>
+          We have established a <strong>7-Day Return policy</strong>, which permits you to initiate a return within 7 days from the date your order is delivered. Please be advised that the return period will automatically close after 7 days.
+        </p>
+
+        <p>
+          This Return &amp; Refund Policy applies to purchases made through <a href="https://www.kaapav.com" target="_blank">www.kaapav.com</a> and <a href="https://catalogue.kaapav.com" target="_blank">catalogue.kaapav.com</a>.
+        </p>
+
+        <div class="highlight-card">
+          <p style="margin-bottom:6px">
+            To commence the return process, please send us an Email: <a href="mailto:care.kaapav@gmail.com"><strong>care.kaapav@gmail.com</strong></a> &amp; WhatsApp: <a href="https://wa.me/919148330016" target="_blank"><strong>+91 9148330016</strong></a> within 7 working days, including your order ID and the reason for the return.
+          </p>
+          <p style="margin-bottom:0;color:#9A7424;font-weight:700">
+            An unboxing video is required for all return requests.
+          </p>
+        </div>
+
+        <p>
+          The cost of reverse shipping, which is <strong>INR 60 per order</strong>, will be the customer's responsibility. This amount will be deducted from your total refund once we receive the returned items.
+        </p>
+
+        <h2 class="sec-heading">Key Points to Keep in Mind:</h2>
+
+        <div class="point-card">
+          <span class="point-title">1. Damaged &amp; Missing Products:</span>
+          <p>We implement a thorough 3-layer inspection process to minimize errors. If you receive a damaged product, you must report it within 7 days of delivery, providing an unboxing video that clearly shows the damage. Failure to provide this evidence may result in the rejection of your return/exchange request. If you ordered multiple items, only the damaged item will be eligible for return.</p>
+          <p style="margin-bottom:0">Refunds for damaged items will be processed within 7 days after we receive the product. Ensure that the video is clear and highlights the damaged or missing parts. <strong>A complete 360-degree unpacking video of the parcel is required.</strong> Insufficient evidence or signs of tampering may lead to denial of your claim. The brand reserves the right to make the final decision.</p>
+        </div>
+
+        <div class="point-card">
+          <span class="point-title">2. Dislike:</span>
+          <p>If you are not satisfied with a product upon delivery, you can request a reverse pickup within 7 days. Please note that a shipping fee of <strong>INR 60</strong> will be deducted.</p>
+          <p>You will receive your refund amount within 7 days after we receive the product, provided it is unused and in good condition. If your return is rejected, the refund will not be issued.</p>
+          <p style="margin-bottom:0">Once you have submitted your return request, please be available for the reverse pickup and respond to calls from the delivery partner. If you are unavailable, the pickup may be canceled, and you will need to restart the process, which may extend the timeline. Some pin codes may only allow forward service and not reverse service; in such cases, you may need to return the product via an alternate courier service.</p>
+        </div>
+
+        <div class="point-card">
+          <span class="point-title">3. Returns and Exchanges:</span>
+          <p style="margin-bottom:0">Returns and exchanges are generally processed for the affected product(s) only. KAAPAV reserves the right to process returns or exchanges at the order level in cases involving combo products, gift boxes, promotional bundles or special offers.</p>
+        </div>
+
+        <div class="point-card">
+          <span class="point-title">4. Individual Jewelry Items:</span>
+          <p style="margin-bottom:0">Individual jewelry items in a combo or gift box cannot be returned or exchanged.</p>
+        </div>
+
+        <div class="point-card">
+          <span class="point-title">5. Promotional Items:</span>
+          <p style="margin-bottom:0">Products purchased during special promotions, contests, clearance sales, or any special schemes are not eligible for return or exchange.</p>
+        </div>
+
+        <div class="point-card">
+          <span class="point-title">6. Jurisdiction:</span>
+          <p style="margin-bottom:0">Disputes if any, are subject to the Jurisdiction of the Courts in Bangalore only.</p>
+        </div>
+
+        <div class="point-card">
+          <span class="point-title">7. Terms Modification:</span>
+          <p style="margin-bottom:0">Above terms and conditions can be modified by KAAPAV at any time.</p>
+        </div>
+
+        <h2 class="sec-heading">Cancellation Policy:</h2>
+        <div class="highlight-card">
+          <p style="margin-bottom:0">
+            Orders cannot be cancelled once they have been processed or dispatched. If you need assistance regarding an order, please contact us at Email: <a href="mailto:care.kaapav@gmail.com"><strong>care.kaapav@gmail.com</strong></a> &amp; WhatsApp: <a href="https://wa.me/919148330016" target="_blank"><strong>+91 9148330016</strong></a> as soon as possible.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  
+
+
+
+
+
+
+
+
+<style id="kaapav-maroon-footer-css">
+/* ========================================================
+   KAAPAV LUXURY MAROON WINE FOOTER (3 VERTICAL, 1 HORIZONTAL)
+   ======================================================== */
+.kaapav-footer {
+  --gold: #f2cf87;
+  --gold-hover: #ffffff;
+  --ink: #fff8ed;
+  --muted: rgba(255, 248, 237, 0.75);
+  background: radial-gradient(circle at 10% 8%, rgba(239, 202, 123, 0.18), transparent 22%),
+              radial-gradient(circle at 91% 77%, rgba(193, 91, 121, 0.16), transparent 25%),
+              linear-gradient(133deg, #310713 0%, #5c1329 55%, #3b0a18 100%) !important;
+  border-top: none !important;
+  padding: 60px 20px 28px !important;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  color: var(--ink) !important;
+  width: 100% !important;
+  margin-top: auto !important;
+  box-sizing: border-box !important;
+}
+.kaapav-footer * {
+  box-sizing: border-box;
+}
+.kaapav-footer-grid {
+  max-width: 1180px;
+  margin: 0 auto 32px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  border-top: none !important;
+  border-bottom: none !important;
+  padding: 0 0 36px;
+  align-items: stretch !important;
+  position: relative;
+}
+/* The 1 Horizontal Line at the bottom of the grid */
+.kaapav-footer-grid::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--gold);
+  border-radius: 2px;
+}
+.kaapav-footer-grid > div {
+  padding: 8px 16px;
+  border-right: none !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  justify-content: flex-start;
+  height: 100% !important;
+  position: relative;
+}
+/* The 3 Vertical Lines dividing the 4 columns */
+.kaapav-footer-grid > div:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 2px;
+  background: var(--gold);
+  border-radius: 2px;
+}
+.kaapav-footer-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center !important;
+  text-align: center !important;
+  justify-content: flex-start;
+  gap: 10px;
+  height: 100%;
+}
+.kaapav-footer-brand img {
+  max-width: 130px;
+  height: auto;
+  margin-bottom: 4px;
+  display: block;
+}
+.kaapav-footer-contact { word-break: break-word;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.75;
+  text-align: center;
+}
+.kaapav-footer-contact a {
+  color: #fff8ed;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.25s ease;
+}
+.kaapav-footer-contact a:hover {
+  color: var(--gold);
+}
+.kaapav-footer h4 {
+  font-size: 12.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 16px;
+  position: relative;
+  font-weight: 700;
+  display: inline-block;
+  padding-bottom: 8px;
+  text-align: center;
+}
+/* The exact underline format */
+.kaapav-footer h4::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 32px;
+  height: 2px;
+  background: var(--gold);
+  border-radius: 2px;
+  transform: translateX(-50%);
+}
+.kaapav-footer ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  width: 100%;
+}
+.kaapav-footer li {
+  width: 100%;
+  text-align: center;
+  margin: 0;
+}
+.kaapav-footer ul a {
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.25s ease;
+  display: block;
+  text-align: center;
+  width: 100%;
+}
+.kaapav-footer ul a:hover {
+  color: var(--gold);
+}
+.kaapav-social {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+  justify-content: center;
+  align-items: center;
+}
+.kaapav-social a {
+  width: 38px;
+  height: 38px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid var(--gold);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+.kaapav-social a:hover {
+  transform: translateY(-3px);
+  background: rgba(255, 255, 255, 0.2);
+}
+.kaapav-social svg {
+  width: 17px;
+  height: 17px;
+}
+.kaapav-seo-footer {
+  max-width: 1180px;
+  margin: 28px auto 0;
+  padding-top: 0;
+  border-top: none !important;
+  font-size: 12px;
+  color: rgba(255, 248, 237, 0.65);
+  text-align: center;
+}
+.kaapav-seo-footer h5 {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 6px;
+  font-weight: 700;
+  text-align: center;
+}
+.kaapav-seo-footer p {
+  line-height: 1.75;
+  margin-bottom: 18px;
+  text-align: center;
+}
+.kaapav-seo-footer a {
+  color: rgba(255, 248, 237, 0.68);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+.kaapav-seo-footer a:hover {
+  color: var(--gold);
+}
+.kaapav-footer-bottom {
+  border-top: 2px solid var(--gold); 
+  padding-top: 18px;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 248, 237, 0.6);
+  margin-top: 20px;
+}
+@media (max-width: 860px) {
+  .kaapav-footer-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+  .kaapav-footer-grid::after {
+    display: none;
+  }
+  .kaapav-footer-grid > div:not(:last-child)::after {
+    display: none;
+  }
+  .kaapav-footer-grid > div:nth-child(1),
+  .kaapav-footer-grid > div:nth-child(2) {
+    border-bottom: 2px solid var(--gold);
+    padding-bottom: 20px;
+  }
+  .kaapav-footer-grid > div:nth-child(1) {
+    border-right: 2px solid var(--gold) !important;
+  }
+  .kaapav-footer-grid > div:nth-child(3) {
+    border-right: 2px solid var(--gold) !important;
+  }
+}
+@media (max-width: 520px) {
+  .kaapav-footer {
+    padding: 44px 16px 24px !important;
+  }
+  .kaapav-footer-grid {
+    grid-template-columns: 1fr;
+  }
+  .kaapav-footer-grid > div {
+    border-right: none !important;
+    border-bottom: 2px solid var(--gold);
+    padding: 18px 10px;
+  }
+  .kaapav-footer-grid > div:last-child {
+    border-bottom: none;
+  }
+}
+</style>
+
+<footer class="kaapav-footer" role="contentinfo">
+  <div class="kaapav-footer-grid">
+    
+    <!-- Brand & Contact -->
+    <div class="kaapav-footer-brand">
+      <img src="./assets/kaapav-logo.png" onerror="this.src='https://kaapav1.odoo.com/web/image/website/3/logo/KAAPAV?unique=7206b26'" alt="KAAPAV" loading="lazy">
+      <div class="kaapav-footer-contact">
+        <div>Mobile: <a href="https://wa.me/919148330016" target="_blank">+91 91483 30016</a> (WhatsApp Only)</div>
+        <div style="margin-top:4px">Email: <a href="mailto:care.kaapav@gmail.com">care.kaapav@gmail.com</a></div>
+      </div>
+    </div>
+
+    <!-- Jewellery Column (Centered in Line Border) -->
+    <div>
+      <h4>Jewellery</h4>
+      <ul>
+        <li><a href="./category/earrings/index.html">Earrings</a></li>
+        <li><a href="./category/necklaces/index.html">Necklaces</a></li>
+        <li><a href="./category/bracelets/index.html">Bracelets</a></li>
+        <li><a href="./category/rings/index.html">Rings</a></li>
+        <li><a href="./category/pendants/index.html">Pendants</a></li>
+        <li><a href="./category/sets/index.html">Jewellery Sets</a></li>
+        <li><a href="./shop/index.html">All Jewellery</a></li>
+      </ul>
+    </div>
+
+    <!-- Policies Column (Centered in Line Border) -->
+    <div>
+      <h4>Policies</h4>
+      <ul>
+        <li><a href="./about-us/index.html">About Us</a></li>
+        <li><a href="./return-policy/index.html">Return &amp; Refund Policy</a></li>
+        <li><a href="./shipping-policy/index.html">Shipping &amp; Delivery</a></li>
+        <li><a href="./privacy-policy/index.html">Privacy Policy</a></li>
+        <li><a href="./terms-of-service/index.html">Terms of Service</a></li>
+      </ul>
+    </div>
+
+    <!-- Follow Us Column -->
+    <div>
+      <h4>Follow Us</h4>
+      <div class="kaapav-social">
+        <a class="ig" href="https://www.instagram.com/kaapavfashionjewellery/" target="_blank" title="Instagram">
+          <svg viewbox="0 0 24 24">
+            <defs>
+              <lineargradient id="igGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#f58529"></stop>
+                <stop offset="50%" stop-color="#dd2a7b"></stop>
+                <stop offset="100%" stop-color="#515bd4"></stop>
+              </lineargradient>
+            </defs>
+            <path fill="url(#igGradient)" d="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5zm5 5a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm6.5-.9a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2z"></path>
+          </svg>
+        </a>
+        <a class="fb" href="https://www.facebook.com/kaapavfashionjewellery" target="_blank" title="Facebook">
+          <svg viewbox="0 0 320 512">
+            <path fill="#1877F2" d="M279.14 288l14.22-92.66h-88.91V127.41c0-25.35 12.42-50.06 52.24-50.06h40.42V6.26S260.43 0 225.36 0c-73.22 0-121.08 44.38-121.08 124.72v70.62H22.89V288h81.39v224h100.2V288z"></path>
+          </svg>
+        </a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Popular Searches SEO Cluster -->
+  <div class="kaapav-seo-footer"> 
+    <h5>Popular Searches</h5>
+    <p>
+      <a href="./category/bracelets/index.html">Bracelets</a> |
+      <a href="./category/earrings/index.html">Earrings</a> |
+      <a href="./category/rings/index.html">Rings</a> |
+      <a href="./category/necklaces/index.html">Necklaces</a> |
+      <a href="./category/pendants/index.html">Pendants</a> |
+      <a href="./shop/index.html">All Jewellery</a>
+    </p>
+
+    <h5>Women’s Artificial Jewellery</h5>
+    <p>
+      <a href="./category/earrings/index.html">Earrings for Women</a> |
+      <a href="./category/rings/index.html">Rings for Women</a> |
+      <a href="./category/bracelets/index.html">Bracelets for Women</a> |
+      <a href="./category/necklaces/index.html">Necklaces for Women</a> |
+      <a href="./category/pendants/index.html">Pendants for Women</a>
+    </p>
+
+    <h5>Jewellery by Occasion</h5>
+    <p>
+      <a href="./category/rings/index.html">Engagement Rings</a> |
+      <a href="./category/earrings/index.html">Party Wear Earrings</a> |
+      <a href="./category/bracelets/index.html">Gift Bracelets</a> |
+      <a href="./category/necklaces/index.html">Festive Necklaces</a>
+    </p>
+
+    <h5>Gifting Jewellery</h5>
+    <p>
+      <a href="./category/rings/index.html">Gifting Rings</a> |
+      <a href="./category/necklaces/index.html">Gifting Necklaces</a> |
+      <a href="./category/bracelets/index.html">Gifting Bracelets</a> |
+      <a href="./category/pendants/index.html">Gifting Pendants</a>
+    </p>
+
+    <h5>Trending Jewellery</h5>
+    <p>
+      <a href="./category/earrings/index.html">Minimal Earrings</a> |
+      <a href="./category/rings/index.html">Dailywear Rings</a> |
+      <a href="./category/bracelets/index.html">Lightweight Bracelets</a> |
+      <a href="./category/necklaces/index.html">Modern Necklaces</a>
+    </p>
+  </div>
+
+  <div class="kaapav-footer-bottom">
+    Copyright &copy; 2026 KAAPAV Fashion Jewellery. All Rights Reserved.
+  </div>
+</footer>
+</body>
+</html>

@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kaapav_app/config/theme.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../providers/product_provider.dart';
 import '../products/product_detail_screen.dart';
 
@@ -34,8 +35,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   bool _isLoadingOrder = false;
   bool _isUpdatingAwb = false;
   bool _isLoadingEvents = false;
+  bool _isLoadingReturnRequests = false;
+
+  String? _reviewingReturnRequestId;
 
   List<Map<String, dynamic>> _events = [];
+  List<Map<String, dynamic>> _returnRequests = [];
 
   static const _statuses = [
     'pending',
@@ -55,67 +60,67 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     'cancelled': Color(0xFFEF4444),
   };
 
-static const _statusEmojis = {
-  'pending': '⏳',
-  'confirmed': '✅',
-  'processing': '📦',
-  'shipped': '🚚',
-  'delivered': '🎉',
-  'cancelled': '❌',
-};
+  static const _statusEmojis = {
+    'pending': '⏳',
+    'confirmed': '✅',
+    'processing': '📦',
+    'shipped': '🚚',
+    'delivered': '🎉',
+    'cancelled': '❌',
+  };
 
-bool _hasActiveShipment(dynamic order) {
-  return (order.shiprocketOrderId ?? '').toString().isNotEmpty ||
-      (order.shipmentId ?? '').toString().isNotEmpty ||
-      (order.awbNumber ?? '').toString().isNotEmpty ||
-      (order.awbCode ?? '').toString().isNotEmpty ||
-      (order.trackingId ?? '').toString().isNotEmpty ||
-      (order.trackingUrl ?? '').toString().isNotEmpty ||
-      order.status == 'shipped' ||
-      order.status == 'delivered';
-}
+  bool _hasActiveShipment(dynamic order) {
+    return (order.shiprocketOrderId ?? '').toString().isNotEmpty ||
+        (order.shipmentId ?? '').toString().isNotEmpty ||
+        (order.awbNumber ?? '').toString().isNotEmpty ||
+        (order.awbCode ?? '').toString().isNotEmpty ||
+        (order.trackingId ?? '').toString().isNotEmpty ||
+        (order.trackingUrl ?? '').toString().isNotEmpty ||
+        order.status == 'shipped' ||
+        order.status == 'delivered';
+  }
 
-bool _canBookShiprocket(dynamic order) {
-  return order.paymentStatus == 'paid' &&
-      (order.status == 'confirmed' || order.status == 'processing') &&
-      !_hasActiveShipment(order);
-}
+  bool _canBookShiprocket(dynamic order) {
+    return order.paymentStatus == 'paid' &&
+        (order.status == 'confirmed' || order.status == 'processing') &&
+        !_hasActiveShipment(order);
+  }
 
-@override
-void initState() {
+  @override
+  void initState() {
     super.initState();
     Future.microtask(() async {
       final orders = ref.read(orderProvider).orders;
       if (orders.isEmpty) {
         await ref.read(orderProvider.notifier).loadOrders();
       }
-await _ensureOrderLoaded();
+      await _ensureOrderLoaded();
 
-final products = ref.read(productProvider).products;
-if (products.isEmpty) {
-  await ref.read(productProvider.notifier).loadProducts();
-}
+      final products = ref.read(productProvider).products;
+      if (products.isEmpty) {
+        await ref.read(productProvider.notifier).loadProducts();
+      }
 
-await _loadEvents();
+      await _loadEvents();
+      await _loadReturnRequests();
     });
   }
 
-Future<void> _ensureOrderLoaded() async {
-  if (mounted) setState(() => _isLoadingOrder = true);
+  Future<void> _ensureOrderLoaded() async {
+    if (mounted) setState(() => _isLoadingOrder = true);
 
-  try {
-    await ref.read(orderProvider.notifier).fetchOrderById(widget.orderId);
-  } finally {
-    if (mounted) setState(() => _isLoadingOrder = false);
+    try {
+      await ref.read(orderProvider.notifier).fetchOrderById(widget.orderId);
+    } finally {
+      if (mounted) setState(() => _isLoadingOrder = false);
+    }
   }
-}
 
   Future<void> _loadEvents() async {
     if (mounted) setState(() => _isLoadingEvents = true);
     try {
-      final list = await ref
-          .read(orderProvider.notifier)
-          .getOrderEvents(widget.orderId);
+      final list =
+          await ref.read(orderProvider.notifier).getOrderEvents(widget.orderId);
       if (mounted) {
         setState(() => _events = list);
       }
@@ -126,6 +131,2052 @@ Future<void> _ensureOrderLoaded() async {
     } finally {
       if (mounted) setState(() => _isLoadingEvents = false);
     }
+  }
+
+  Future<void> _loadReturnRequests() async {
+    if (mounted) {
+      setState(
+        () => _isLoadingReturnRequests = true,
+      );
+    }
+
+    try {
+      final requests =
+          await ref.read(orderProvider.notifier).getOrderReturnRequests(
+                widget.orderId,
+              );
+
+      if (!mounted) return;
+
+      setState(
+        () => _returnRequests = requests,
+      );
+    } finally {
+      if (mounted) {
+        setState(
+          () => _isLoadingReturnRequests = false,
+        );
+      }
+    }
+  }
+
+  Future<void> _reviewReturnRequest(
+    Map<String, dynamic> returnRequest,
+    String decision,
+  ) async {
+    if (_reviewingReturnRequestId != null) {
+      return;
+    }
+
+    final requestId = (returnRequest['request_id'] ?? '').toString().trim();
+
+    if (requestId.isEmpty) {
+      KaapavToast.error(
+        context,
+        'Return request ID is missing',
+      );
+      return;
+    }
+
+    final isApproval = decision == 'approved';
+
+    final noteController = TextEditingController();
+
+    String? dialogError;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (
+            context,
+            setDialogState,
+          ) {
+            return AlertDialog(
+              title: Text(
+                isApproval ? 'Approve request?' : 'Reject request?',
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isApproval
+                          ? 'This records the approval and attempts to notify the customer on WhatsApp. It does not start a refund, pickup, or exchange shipment.'
+                          : 'Enter the rejection reason. The decision will be recorded and the customer notification will be attempted.',
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: noteController,
+                      autofocus: !isApproval,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        labelText: isApproval
+                            ? 'Owner note (optional)'
+                            : 'Rejection reason',
+                        hintText: isApproval
+                            ? 'Add an internal approval note'
+                            : 'Explain why the request is rejected',
+                        errorText: dialogError,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(
+                      dialogContext,
+                      false,
+                    );
+                  },
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    final note = noteController.text.trim();
+
+                    if (!isApproval && note.isEmpty) {
+                      setDialogState(
+                        () {
+                          dialogError = 'Rejection reason is required';
+                        },
+                      );
+                      return;
+                    }
+
+                    Navigator.pop(
+                      dialogContext,
+                      true,
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isApproval
+                        ? const Color(
+                            0xFF10B981,
+                          )
+                        : const Color(
+                            0xFFEF4444,
+                          ),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: Text(
+                    isApproval ? 'Approve' : 'Reject',
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    final ownerNote = noteController.text.trim();
+
+    noteController.dispose();
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(
+      () {
+        _reviewingReturnRequestId = requestId;
+      },
+    );
+
+    try {
+      final success =
+          await ref.read(orderProvider.notifier).reviewOrderReturnRequest(
+                widget.orderId,
+                requestId,
+                decision: decision,
+                ownerNote: ownerNote,
+              );
+
+      if (!mounted) return;
+
+      if (success) {
+        KaapavToast.success(
+          context,
+          isApproval
+              ? 'Request approved. Customer notification attempted.'
+              : 'Request rejected. Customer notification attempted.',
+        );
+
+        await _loadReturnRequests();
+        await _loadEvents();
+      } else {
+        final providerError = ref.read(orderProvider).error;
+
+        KaapavToast.error(
+          context,
+          providerError ?? 'Failed to review return request',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(
+          () {
+            _reviewingReturnRequestId = null;
+          },
+        );
+      }
+    }
+  }
+
+  Future<void> _scheduleReturnPickup(
+    Map<String, dynamic> returnRequest,
+  ) async {
+    if (_reviewingReturnRequestId != null) {
+      return;
+    }
+
+    final requestId = (returnRequest['request_id'] ?? '').toString().trim();
+
+    if (requestId.isEmpty) {
+      KaapavToast.error(
+        context,
+        'Return request ID is missing',
+      );
+      return;
+    }
+
+    final courierController = TextEditingController(
+      text: (returnRequest['return_courier'] ?? '').toString(),
+    );
+    final awbController = TextEditingController(
+      text: (returnRequest['return_awb_number'] ?? '').toString(),
+    );
+    final dateController = TextEditingController(
+      text: (returnRequest['pickup_scheduled_date'] ?? '').toString(),
+    );
+    final noteController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Schedule Return Pickup'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Enter reverse logistics details. The customer will receive tracking links via WhatsApp.',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: courierController,
+                      decoration: const InputDecoration(
+                        labelText: 'Courier Partner',
+                        hintText: 'e.g. Delhivery, Shiprocket, Blue Dart, DTDC',
+                        prefixIcon: Icon(Icons.local_shipping_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: awbController,
+                      decoration: const InputDecoration(
+                        labelText: 'Return AWB / Tracking No.',
+                        hintText: 'e.g. 14238920192',
+                        prefixIcon: Icon(Icons.qr_code_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: dateController,
+                      decoration: const InputDecoration(
+                        labelText: 'Pickup Date',
+                        hintText: 'e.g. 28 Aug 2026',
+                        prefixIcon: Icon(Icons.calendar_today_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: noteController,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Owner note (optional)',
+                        hintText: 'e.g. Scheduled for afternoon slot',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  icon: const Icon(Icons.local_shipping_outlined),
+                  label: const Text('Save & Schedule'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF7C3AED),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    final courier = courierController.text.trim();
+    final awb = awbController.text.trim();
+    final pickupDate = dateController.text.trim();
+    final ownerNote = noteController.text.trim();
+
+    courierController.dispose();
+    awbController.dispose();
+    dateController.dispose();
+    noteController.dispose();
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _reviewingReturnRequestId = requestId;
+    });
+
+    try {
+      final success = await ref
+          .read(orderProvider.notifier)
+          .scheduleOrderReturnPickup(
+            widget.orderId,
+            requestId,
+            courier: courier,
+            awbNumber: awb,
+            pickupScheduledDate: pickupDate,
+            ownerNote: ownerNote,
+          );
+
+      if (!mounted) return;
+
+      if (success) {
+        KaapavToast.success(
+          context,
+          'Pickup scheduled with tracking. Customer notified on WhatsApp.',
+        );
+        await _loadReturnRequests();
+        await _loadEvents();
+      } else {
+        KaapavToast.error(
+          context,
+          ref.read(orderProvider).error ?? 'Failed to schedule return pickup',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _reviewingReturnRequestId = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _markReturnPickedUp(
+    Map<String, dynamic> returnRequest,
+  ) async {
+    if (_reviewingReturnRequestId != null) {
+      return;
+    }
+
+    final requestId = (returnRequest['request_id'] ?? '').toString().trim();
+
+    if (requestId.isEmpty) {
+      KaapavToast.error(
+        context,
+        'Return request ID is missing',
+      );
+      return;
+    }
+
+    final noteController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text(
+            'Confirm package picked up?',
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Use this only after the customer package has actually been collected. This records the status and attempts to notify the customer on WhatsApp.',
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'This does not verify the pickup with Shiprocket and does not start a refund or exchange shipment.',
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: noteController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Owner note (optional)',
+                    hintText: 'Example: Courier pickup confirmed',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  false,
+                );
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  true,
+                );
+              },
+              icon: const Icon(
+                Icons.inventory_2_outlined,
+              ),
+              label: const Text(
+                'Confirm Picked Up',
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(
+                  0xFF2563EB,
+                ),
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    final ownerNote = noteController.text.trim();
+
+    noteController.dispose();
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(
+      () {
+        _reviewingReturnRequestId = requestId;
+      },
+    );
+
+    try {
+      final success =
+          await ref.read(orderProvider.notifier).markOrderReturnPickedUp(
+                widget.orderId,
+                requestId,
+                ownerNote: ownerNote,
+              );
+
+      if (!mounted) return;
+
+      if (success) {
+        KaapavToast.success(
+          context,
+          'Package marked as picked up. Customer notification attempted.',
+        );
+
+        await _loadReturnRequests();
+        await _loadEvents();
+      } else {
+        final providerError = ref.read(orderProvider).error;
+
+        KaapavToast.error(
+          context,
+          providerError ?? 'Failed to confirm return pickup',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(
+          () {
+            _reviewingReturnRequestId = null;
+          },
+        );
+      }
+    }
+  }
+
+  Future<void> _markReturnReceived(
+    Map<String, dynamic> returnRequest,
+  ) async {
+    if (_reviewingReturnRequestId != null) {
+      return;
+    }
+
+    final requestId = (returnRequest['request_id'] ?? '').toString().trim();
+
+    if (requestId.isEmpty) {
+      KaapavToast.error(
+        context,
+        'Return request ID is missing',
+      );
+      return;
+    }
+
+    final noteController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text(
+            'Confirm package received?',
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Use this only after the returned package has physically reached the return facility.',
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'This records the received status and attempts to notify the customer. It does not complete quality inspection, initiate a refund, or ship an exchange.',
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: noteController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Owner note (optional)',
+                    hintText: 'Example: Package received at warehouse',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  false,
+                );
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  true,
+                );
+              },
+              icon: const Icon(
+                Icons.move_to_inbox_outlined,
+              ),
+              label: const Text(
+                'Confirm Received',
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(
+                  0xFF0F766E,
+                ),
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    final ownerNote = noteController.text.trim();
+
+    noteController.dispose();
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(
+      () {
+        _reviewingReturnRequestId = requestId;
+      },
+    );
+
+    try {
+      final success =
+          await ref.read(orderProvider.notifier).markOrderReturnReceived(
+                widget.orderId,
+                requestId,
+                ownerNote: ownerNote,
+              );
+
+      if (!mounted) return;
+
+      if (success) {
+        KaapavToast.success(
+          context,
+          'Package marked as received. Customer notification attempted.',
+        );
+
+        await _loadReturnRequests();
+        await _loadEvents();
+      } else {
+        final providerError = ref.read(orderProvider).error;
+
+        KaapavToast.error(
+          context,
+          providerError ?? 'Failed to mark return package as received',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(
+          () {
+            _reviewingReturnRequestId = null;
+          },
+        );
+      }
+    }
+  }
+
+  Future<void> _reviewReturnQc(
+    Map<String, dynamic> returnRequest,
+    String decision,
+  ) async {
+    if (_reviewingReturnRequestId != null) {
+      return;
+    }
+
+    final requestId = (returnRequest['request_id'] ?? '').toString().trim();
+
+    if (requestId.isEmpty) {
+      KaapavToast.error(
+        context,
+        'Return request ID is missing',
+      );
+      return;
+    }
+
+    final isPassed = decision == 'passed';
+    final requestType = (returnRequest['request_type'] ?? 'return').toString().toLowerCase();
+    final isReturn = requestType == 'return';
+
+    var autoRefund = isReturn;
+    var deductFee = false;
+    final noteController = TextEditingController();
+    String? dialogError;
+
+    final confirmed = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(
+                isPassed
+                    ? (isReturn ? 'Pass QC & Process Refund?' : 'Pass QC inspection?')
+                    : 'Fail QC inspection?',
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isPassed
+                          ? (isReturn
+                              ? 'Returned items have passed inspection. You can auto-trigger Razorpay refund and choose whether to deduct the ₹60 reverse shipping fee.'
+                              : 'Confirm that the returned exchange items are in acceptable condition.')
+                          : 'Record why the returned items failed quality inspection.',
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    if (isPassed && isReturn) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0FDF4),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFBBF7D0)),
+                        ),
+                        child: Column(
+                          children: [
+                            CheckboxListTile(
+                              value: autoRefund,
+                              contentPadding: EdgeInsets.zero,
+                              controlAffinity: ListTileControlAffinity.leading,
+                              title: const Text(
+                                '⚡ 1-Click Auto Refund via Razorpay',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  color: Color(0xFF047857),
+                                ),
+                              ),
+                              subtitle: const Text(
+                                'Immediately issues refund & sends WhatsApp receipt with Refund ID.',
+                                style: TextStyle(fontSize: 11),
+                              ),
+                              onChanged: (val) {
+                                setDialogState(() {
+                                  autoRefund = val == true;
+                                });
+                              },
+                            ),
+                            const Divider(height: 16),
+                            CheckboxListTile(
+                              value: deductFee,
+                              contentPadding: EdgeInsets.zero,
+                              controlAffinity: ListTileControlAffinity.leading,
+                              title: const Text(
+                                'Deduct ₹60 reverse shipping fee',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              subtitle: const Text(
+                                'Uncheck for full product value refund.',
+                                style: TextStyle(fontSize: 11),
+                              ),
+                              onChanged: (val) {
+                                setDialogState(() {
+                                  deductFee = val == true;
+                                });
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: noteController,
+                      autofocus: !isPassed,
+                      maxLines: 2,
+                      decoration: InputDecoration(
+                        labelText: isPassed
+                            ? 'Inspection note (optional)'
+                            : 'QC failure reason *',
+                        hintText: isPassed
+                            ? 'Example: Verified tags & original jewelry condition'
+                            : 'Explain the damage or issue',
+                        errorText: dialogError,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, null),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    final ownerNote = noteController.text.trim();
+                    if (!isPassed && ownerNote.isEmpty) {
+                      setDialogState(() {
+                        dialogError = 'QC failure reason is required';
+                      });
+                      return;
+                    }
+                    Navigator.pop(dialogContext, {
+                      'confirmed': true,
+                      'autoRefund': autoRefund,
+                      'deductFee': deductFee,
+                      'ownerNote': ownerNote,
+                    });
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isPassed
+                        ? const Color(0xFF10B981)
+                        : const Color(0xFFEF4444),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: Text(
+                    isPassed
+                        ? (isReturn && autoRefund ? 'Approve & Auto-Refund' : 'Confirm QC Passed')
+                        : 'Confirm QC Failed',
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    noteController.dispose();
+
+    if (confirmed == null || confirmed['confirmed'] != true || !mounted) {
+      return;
+    }
+
+    final ownerNote = (confirmed['ownerNote'] ?? '').toString();
+    final shouldAutoRefund = confirmed['autoRefund'] == true;
+    final shouldDeductFee = confirmed['deductFee'] == true;
+
+    setState(() {
+      _reviewingReturnRequestId = requestId;
+    });
+
+    try {
+      final result = await ref.read(orderProvider.notifier).reviewOrderReturnQc(
+            widget.orderId,
+            requestId,
+            decision: decision,
+            ownerNote: ownerNote,
+            deductReverseShippingFee: shouldDeductFee,
+            autoRefund: shouldAutoRefund,
+          );
+
+      if (!mounted) return;
+
+      if (result != null) {
+        if (isPassed) {
+          if (result['refundResult'] != null && result['refundResult']['success'] == true) {
+            final refData = result['refundResult'];
+            final amt = refData['amount'] ?? 0;
+            final refId = refData['refundId'] ?? '';
+            KaapavToast.success(
+              context,
+              'QC Passed! Razorpay auto-refund of ₹$amt processed (${refId.isNotEmpty ? refId : 'Success'}). WhatsApp sent.',
+            );
+          } else if (result['isCod'] == true) {
+            KaapavToast.success(
+              context,
+              'QC Passed! COD order marked for manual bank/UPI refund.',
+            );
+          } else {
+            KaapavToast.success(
+              context,
+              'Quality inspection passed. WhatsApp notification sent.',
+            );
+          }
+        } else {
+          KaapavToast.success(
+            context,
+            'Quality inspection failed. Customer notified on WhatsApp.',
+          );
+        }
+
+        await _loadReturnRequests();
+        await _loadEvents();
+      } else {
+        final providerError = ref.read(orderProvider).error;
+        KaapavToast.error(
+          context,
+          providerError ?? 'Failed to complete quality inspection',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _reviewingReturnRequestId = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _processReturnRefund(
+    Map<String, dynamic> returnRequest,
+  ) async {
+    if (_reviewingReturnRequestId != null) {
+      return;
+    }
+
+    final requestId = (returnRequest['request_id'] ?? '').toString().trim();
+
+    if (requestId.isEmpty) {
+      KaapavToast.error(
+        context,
+        'Return request ID is missing',
+      );
+      return;
+    }
+
+    var deductFee = false;
+
+    final noteController = TextEditingController();
+
+    final options = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (
+            context,
+            setDialogState,
+          ) {
+            return AlertDialog(
+              title: const Text(
+                'Prepare Razorpay refund',
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'The exact refundable amount will be calculated by the server using the returned items and allocated order discount.',
+                    ),
+                    const SizedBox(height: 14),
+                    CheckboxListTile(
+                      value: deductFee,
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: const Text(
+                        'Deduct ₹60 reverse-shipping fee',
+                      ),
+                      subtitle: const Text(
+                        'Leave unchecked to refund without the ₹60 deduction.',
+                      ),
+                      onChanged: (value) {
+                        setDialogState(
+                          () {
+                            deductFee = value == true;
+                          },
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: noteController,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Owner note (optional)',
+                        hintText: 'Example: QC approved and refund confirmed',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(
+                      dialogContext,
+                    );
+                  },
+                  child: const Text(
+                    'Cancel',
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(
+                      dialogContext,
+                      {
+                        'deductFee': deductFee,
+                        'ownerNote': noteController.text.trim(),
+                      },
+                    );
+                  },
+                  icon: const Icon(
+                    Icons.calculate_outlined,
+                  ),
+                  label: const Text(
+                    'Preview Refund',
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    final ownerNote = noteController.text.trim();
+
+    noteController.dispose();
+
+    if (options == null || !mounted) {
+      return;
+    }
+
+    deductFee = options['deductFee'] == true;
+
+    setState(
+      () {
+        _reviewingReturnRequestId = requestId;
+      },
+    );
+
+    double numberValue(
+      dynamic value,
+    ) {
+      return double.tryParse(
+            value?.toString() ?? '',
+          ) ??
+          0;
+    }
+
+    try {
+      final preview = await ref
+          .read(
+            orderProvider.notifier,
+          )
+          .processOrderReturnRefund(
+            widget.orderId,
+            requestId,
+            deductReverseShippingFee: deductFee,
+            previewOnly: true,
+            ownerNote: ownerNote,
+          );
+
+      if (!mounted) return;
+
+      if (preview == null) {
+        KaapavToast.error(
+          context,
+          ref.read(orderProvider).error ?? 'Failed to calculate refund',
+        );
+        return;
+      }
+
+      final selectedGross = numberValue(
+        preview['selectedGross'],
+      );
+
+      final allocatedDiscount = numberValue(
+        preview['allocatedDiscount'],
+      );
+
+      final refundableItemValue = numberValue(
+        preview['refundableItemValue'],
+      );
+
+      final deductionAmount = numberValue(
+        preview['deductionAmount'],
+      );
+
+      final refundAmount = numberValue(
+        preview['amount'],
+      );
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text(
+              'Confirm Razorpay refund',
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Review the final amount carefully. Confirming will send the refund to the original Razorpay payment method.',
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    'Returned-item value: '
+                    '₹${selectedGross.toStringAsFixed(2)}',
+                  ),
+                  if (allocatedDiscount > 0) ...[
+                    const SizedBox(
+                      height: 6,
+                    ),
+                    Text(
+                      'Allocated order discount: '
+                      '-₹${allocatedDiscount.toStringAsFixed(2)}',
+                    ),
+                  ],
+                  const SizedBox(height: 6),
+                  Text(
+                    'Refundable item value: '
+                    '₹${refundableItemValue.toStringAsFixed(2)}',
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Reverse-shipping deduction: '
+                    '-₹${deductionAmount.toStringAsFixed(2)}',
+                  ),
+                  const Divider(
+                    height: 28,
+                  ),
+                  Text(
+                    'Final refund: '
+                    '₹${refundAmount.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF10B981),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'This action can create a real Razorpay refund. Do not confirm unless the amount and return request are correct.',
+                    style: TextStyle(
+                      color: Color(0xFFEF4444),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(
+                    dialogContext,
+                    false,
+                  );
+                },
+                child: const Text(
+                  'Cancel',
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(
+                    dialogContext,
+                    true,
+                  );
+                },
+                icon: const Icon(
+                  Icons.currency_rupee,
+                ),
+                label: Text(
+                  'Refund ₹${refundAmount.toStringAsFixed(2)}',
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(
+                    0xFF10B981,
+                  ),
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (confirmed != true || !mounted) {
+        return;
+      }
+
+      final result = await ref
+          .read(
+            orderProvider.notifier,
+          )
+          .processOrderReturnRefund(
+            widget.orderId,
+            requestId,
+            deductReverseShippingFee: deductFee,
+            ownerNote: ownerNote,
+          );
+
+      if (!mounted) return;
+
+      if (result == null) {
+        KaapavToast.error(
+          context,
+          ref.read(orderProvider).error ?? 'Razorpay refund failed',
+        );
+        return;
+      }
+
+      final refundStatus = (result['refundStatus'] ?? '').toString();
+
+      final processedAmount = numberValue(
+        result['amount'],
+      );
+
+      KaapavToast.success(
+        context,
+        refundStatus == 'processed'
+            ? 'Refund of ₹${processedAmount.toStringAsFixed(2)} processed.'
+            : 'Refund of ₹${processedAmount.toStringAsFixed(2)} initiated.',
+      );
+
+      await _loadReturnRequests();
+      await _loadEvents();
+      await _ensureOrderLoaded();
+    } finally {
+      if (mounted) {
+        setState(
+          () {
+            _reviewingReturnRequestId = null;
+          },
+        );
+      }
+    }
+  }
+
+  String _formatReturnLabel(
+    dynamic value,
+  ) {
+    final text = (value ?? '').toString().trim().replaceAll('_', ' ');
+
+    if (text.isEmpty) {
+      return '-';
+    }
+
+    return text
+        .split(' ')
+        .where(
+          (part) => part.isNotEmpty,
+        )
+        .map(
+          (part) => '${part[0].toUpperCase()}${part.substring(1)}',
+        )
+        .join(' ');
+  }
+
+  Color _returnStatusColor(
+    String status,
+  ) {
+    switch (status) {
+      case 'approved':
+        return const Color(0xFF10B981);
+
+      case 'rejected':
+        return const Color(0xFFEF4444);
+
+      case 'requested':
+        return const Color(0xFFF59E0B);
+
+      default:
+        return const Color(0xFF6B7280);
+    }
+  }
+
+  Widget _buildReturnRequestsCard(
+    bool isDark,
+  ) {
+    final backgroundColor = isDark ? const Color(0xFF1F1F1F) : Colors.white;
+
+    final borderColor = isDark
+        ? Colors.white.withValues(
+            alpha: 0.06,
+          )
+        : const Color(0xFFE5E7EB);
+
+    if (_isLoadingReturnRequests) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: borderColor,
+          ),
+        ),
+        child: const Center(
+          child: CircularProgressIndicator(
+            color: KaapavTheme.gold,
+          ),
+        ),
+      );
+    }
+
+    if (_returnRequests.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: borderColor,
+          ),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.assignment_return_outlined,
+              color: Color(0xFF6B7280),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'No return or exchange requests for this order.',
+                style: TextStyle(
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Refresh requests',
+              onPressed: _loadReturnRequests,
+              icon: const Icon(
+                Icons.refresh_rounded,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: _returnRequests.map(
+        (returnRequest) {
+          final requestId = (returnRequest['request_id'] ?? '').toString();
+
+          final status =
+              (returnRequest['status'] ?? 'requested').toString().toLowerCase();
+
+          final statusColor = _returnStatusColor(
+            status,
+          );
+
+          final requestType = _formatReturnLabel(
+            returnRequest['request_type'],
+          );
+
+          final requestScope = _formatReturnLabel(
+            returnRequest['request_scope'],
+          );
+
+          final reasonText =
+              (returnRequest['reason_text'] ?? '').toString().trim();
+
+          final customerNote =
+              (returnRequest['customer_note'] ?? '').toString().trim();
+
+          final ownerNote =
+              (returnRequest['owner_note'] ?? '').toString().trim();
+
+          final requestedAt = (returnRequest['requested_at'] ??
+                  returnRequest['created_at'] ??
+                  '')
+              .toString();
+
+          final rawItems = returnRequest['items'];
+
+          final itemCount = rawItems is List ? rawItems.length : 0;
+
+          final canReview = status == 'requested';
+
+          final canSchedulePickup = status == 'approved';
+
+          final canMarkPickedUp = status == 'pickup_scheduled';
+
+          final canMarkReceived = status == 'picked_up';
+
+          final canReviewQc = status == 'received';
+
+          final requestTypeKey =
+              (returnRequest['request_type'] ?? '').toString().toLowerCase();
+
+          final refundStatus = (returnRequest['refund_status'] ?? 'not_started')
+              .toString()
+              .toLowerCase();
+
+          final canProcessRefund = requestTypeKey == 'return' &&
+              status == 'qc_passed' &&
+              refundStatus != 'processing' &&
+              refundStatus != 'pending' &&
+              refundStatus != 'processed';
+
+          final isReviewing = _reviewingReturnRequestId == requestId;
+
+          final reviewLocked = _reviewingReturnRequestId != null;
+
+          return Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(
+              bottom: 10,
+            ),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: borderColor,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      requestType.toLowerCase() == 'exchange'
+                          ? Icons.swap_horiz_rounded
+                          : Icons.assignment_return_outlined,
+                      color: statusColor,
+                    ),
+                    const SizedBox(
+                      width: 10,
+                    ),
+                    Expanded(
+                      child: Text(
+                        '$requestType Request',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(
+                          alpha: 0.12,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        _formatReturnLabel(
+                          status,
+                        ),
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(
+                  height: 8,
+                ),
+                _buildReturnProgressStepper(status, requestTypeKey),
+                const SizedBox(
+                  height: 10,
+                ),
+                Text(
+                  'Request ID: $requestId',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF6B7280),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Scope: $requestScope',
+                  style: const TextStyle(
+                    fontSize: 12,
+                  ),
+                ),
+                if (itemCount > 0) ...[
+                  const SizedBox(
+                    height: 4,
+                  ),
+                  Text(
+                    'Selected items: $itemCount',
+                    style: const TextStyle(
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+                if (requestedAt.isNotEmpty) ...[
+                  const SizedBox(
+                    height: 4,
+                  ),
+                  Text(
+                    'Requested: ${_formatDate(requestedAt)}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                ],
+                if (reasonText.isNotEmpty) ...[
+                  const SizedBox(
+                    height: 10,
+                  ),
+                  Text(
+                    'Reason: $reasonText',
+                    style: const TextStyle(
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+                if (customerNote.isNotEmpty) ...[
+                  const SizedBox(
+                    height: 6,
+                  ),
+                  Text(
+                    'Customer note: $customerNote',
+                    style: const TextStyle(
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+                if (ownerNote.isNotEmpty) ...[
+                  const SizedBox(
+                    height: 6,
+                  ),
+                  Text(
+                    'Owner note: $ownerNote',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+                () {
+                  final returnCourier = (returnRequest['return_courier'] ?? '').toString().trim();
+                  final returnAwb = (returnRequest['return_awb_number'] ?? '').toString().trim();
+                  final returnTrackUrl = (returnRequest['return_tracking_url'] ?? '').toString().trim();
+                  final pickupScheduledDate = (returnRequest['pickup_scheduled_date'] ?? '').toString().trim();
+
+                  if (returnCourier.isEmpty && returnAwb.isEmpty && pickupScheduledDate.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+
+                  return Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(top: 10),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF9FAFB),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isDark ? Colors.white12 : const Color(0xFFE5E7EB),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.local_shipping_outlined, size: 16, color: Color(0xFF7C3AED)),
+                            SizedBox(width: 6),
+                            Text(
+                              'Reverse Logistics Tracking',
+                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        if (returnCourier.isNotEmpty)
+                          Text('Courier: $returnCourier', style: const TextStyle(fontSize: 12)),
+                        if (returnAwb.isNotEmpty)
+                          Text('AWB: $returnAwb', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                        if (pickupScheduledDate.isNotEmpty)
+                          Text('Pickup Date: $pickupScheduledDate', style: const TextStyle(fontSize: 12)),
+                        if (returnTrackUrl.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          InkWell(
+                            onTap: () async {
+                              final uri = Uri.tryParse(returnTrackUrl);
+                              if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+                            },
+                            child: Text(
+                              'Track Return Package ➔',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: KaapavTheme.gold,
+                                fontWeight: FontWeight.w700,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                }(),
+                () {
+                  final refundAmount = double.tryParse((returnRequest['refund_amount'] ?? '').toString()) ?? 0;
+                  final refundId = (returnRequest['refund_id'] ?? '').toString().trim();
+                  final acquirerRef = (returnRequest['refund_acquirer_reference'] ?? '').toString().trim();
+                  final reverseFee = double.tryParse((returnRequest['reverse_shipping_fee'] ?? '').toString()) ?? 0;
+
+                  if (refundAmount <= 0 && refundId.isEmpty && refundStatus != 'processed' && refundStatus != 'pending' && refundStatus != 'processing' && refundStatus != 'manual_pending') {
+                    return const SizedBox.shrink();
+                  }
+
+                  final isProcessed = refundStatus == 'processed' || status == 'refunded';
+                  final isFailed = refundStatus == 'failed';
+                  final isManual = refundStatus == 'manual_pending';
+
+                  return Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(top: 10),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: isFailed
+                          ? (isDark ? const Color(0xFF3B1F1F) : const Color(0xFFFEF2F2))
+                          : isManual
+                              ? (isDark ? const Color(0xFF3B2F1F) : const Color(0xFFFFFBEB))
+                              : (isDark ? const Color(0xFF1E3A2B) : const Color(0xFFF0FDF4)),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isFailed
+                            ? const Color(0xFFFCA5A5)
+                            : isManual
+                                ? const Color(0xFFFCD34D)
+                                : const Color(0xFF86EFAC),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              isFailed
+                                  ? Icons.error_outline
+                                  : isManual
+                                      ? Icons.account_balance_wallet_outlined
+                                      : Icons.check_circle_outline,
+                              size: 16,
+                              color: isFailed
+                                  ? const Color(0xFFEF4444)
+                                  : isManual
+                                      ? const Color(0xFFD97706)
+                                      : const Color(0xFF10B981),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              isProcessed
+                                  ? 'Refund Processed'
+                                  : isFailed
+                                      ? 'Refund Failed'
+                                      : isManual
+                                          ? 'Manual COD Refund Pending'
+                                          : 'Refund Initiated',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                                color: isFailed
+                                    ? const Color(0xFFEF4444)
+                                    : isManual
+                                        ? const Color(0xFFB45309)
+                                        : const Color(0xFF047857),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        if (refundAmount > 0)
+                          Text(
+                            'Refund Amount: ₹${refundAmount.toStringAsFixed(2)}${reverseFee > 0 ? ' (₹${reverseFee.toStringAsFixed(0)} reverse fee deducted)' : ''}',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                          ),
+                        if (refundId.isNotEmpty)
+                          Text('Razorpay Refund ID: $refundId', style: const TextStyle(fontSize: 11)),
+                        if (acquirerRef.isNotEmpty)
+                          Text('Bank Ref (ARN/RRN/UTR): $acquirerRef', style: const TextStyle(fontSize: 11)),
+                      ],
+                    ),
+                  );
+                }(),
+                if (canReview) ...[
+                  const SizedBox(
+                    height: 14,
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: reviewLocked
+                              ? null
+                              : () {
+                                  _reviewReturnRequest(
+                                    returnRequest,
+                                    'rejected',
+                                  );
+                                },
+                          icon: const Icon(
+                            Icons.close_rounded,
+                          ),
+                          label: Text(
+                            isReviewing ? 'Saving...' : 'Reject',
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(
+                              0xFFEF4444,
+                            ),
+                            side: const BorderSide(
+                              color: Color(
+                                0xFFEF4444,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(
+                        width: 10,
+                      ),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: reviewLocked
+                              ? null
+                              : () {
+                                  _reviewReturnRequest(
+                                    returnRequest,
+                                    'approved',
+                                  );
+                                },
+                          icon: isReviewing
+                              ? const SizedBox(
+                                  width: 15,
+                                  height: 15,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.check_rounded,
+                                ),
+                          label: Text(
+                            isReviewing ? 'Saving...' : 'Approve',
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(
+                              0xFF10B981,
+                            ),
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (canSchedulePickup) ...[
+                  const SizedBox(
+                    height: 14,
+                  ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: reviewLocked
+                          ? null
+                          : () {
+                              _scheduleReturnPickup(
+                                returnRequest,
+                              );
+                            },
+                      icon: isReviewing
+                          ? const SizedBox(
+                              width: 15,
+                              height: 15,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.local_shipping_outlined,
+                            ),
+                      label: Text(
+                        isReviewing ? 'Saving...' : 'Mark Pickup Scheduled',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(
+                          0xFF7C3AED,
+                        ),
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+                if (canMarkPickedUp) ...[
+                  const SizedBox(
+                    height: 14,
+                  ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: reviewLocked
+                          ? null
+                          : () {
+                              _markReturnPickedUp(
+                                returnRequest,
+                              );
+                            },
+                      icon: isReviewing
+                          ? const SizedBox(
+                              width: 15,
+                              height: 15,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.inventory_2_outlined,
+                            ),
+                      label: Text(
+                        isReviewing ? 'Saving...' : 'Confirm Package Picked Up',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(
+                          0xFF2563EB,
+                        ),
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+                if (canMarkReceived) ...[
+                  const SizedBox(
+                    height: 14,
+                  ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: reviewLocked
+                          ? null
+                          : () {
+                              _markReturnReceived(
+                                returnRequest,
+                              );
+                            },
+                      icon: isReviewing
+                          ? const SizedBox(
+                              width: 15,
+                              height: 15,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.move_to_inbox_outlined,
+                            ),
+                      label: Text(
+                        isReviewing ? 'Saving...' : 'Confirm Package Received',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(
+                          0xFF0F766E,
+                        ),
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+                if (canReviewQc) ...[
+                  const SizedBox(
+                    height: 14,
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: reviewLocked
+                              ? null
+                              : () {
+                                  _reviewReturnQc(
+                                    returnRequest,
+                                    'passed',
+                                  );
+                                },
+                          icon: const Icon(
+                            Icons.verified_outlined,
+                          ),
+                          label: Text(
+                            isReviewing ? 'Saving...' : 'QC Pass',
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF10B981),
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(
+                        width: 10,
+                      ),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: reviewLocked
+                              ? null
+                              : () {
+                                  _reviewReturnQc(
+                                    returnRequest,
+                                    'failed',
+                                  );
+                                },
+                          icon: const Icon(
+                            Icons.report_problem_outlined,
+                          ),
+                          label: const Text(
+                            'QC Fail',
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(
+                              0xFFEF4444,
+                            ),
+                            side: const BorderSide(
+                              color: Color(
+                                0xFFEF4444,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (canProcessRefund) ...[
+                  const SizedBox(
+                    height: 14,
+                  ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: reviewLocked
+                          ? null
+                          : () {
+                              _processReturnRefund(
+                                returnRequest,
+                              );
+                            },
+                      icon: isReviewing
+                          ? const SizedBox(
+                              width: 15,
+                              height: 15,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.currency_rupee,
+                            ),
+                      label: Text(
+                        isReviewing
+                            ? 'Processing...'
+                            : refundStatus == 'failed'
+                                ? 'Retry Razorpay Refund'
+                                : 'Process Razorpay Refund',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(
+                          0xFF10B981,
+                        ),
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
+      ).toList(),
+    );
+  }
+
+  Widget _buildReturnProgressStepper(String status, String requestType) {
+    final isReturn = requestType != 'exchange';
+    final steps = [
+      'Requested',
+      'Approved',
+      'Pickup',
+      'QC Pass',
+      isReturn ? 'Refunded' : 'Completed',
+    ];
+
+    int activeIdx = 0;
+    if (status == 'requested') {
+      activeIdx = 0;
+    } else if (status == 'approved') {
+      activeIdx = 1;
+    } else if (status == 'pickup_scheduled' || status == 'picked_up') {
+      activeIdx = 2;
+    } else if (status == 'received' || status == 'qc_passed') {
+      activeIdx = 3;
+    } else if (status == 'refund_pending' ||
+        status == 'refunded' ||
+        status == 'completed') {
+      activeIdx = 4;
+    } else if (status == 'rejected' || status == 'qc_failed') {
+      activeIdx = -1;
+    }
+
+    final isFailed = status == 'rejected' || status == 'qc_failed';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: List.generate(steps.length * 2 - 1, (i) {
+          if (i.isOdd) {
+            final stepIdx = i ~/ 2;
+            final isDone = !isFailed && stepIdx < activeIdx;
+            return Expanded(
+              child: Container(
+                height: 2,
+                color: isDone
+                    ? const Color(0xFF10B981)
+                    : const Color(0xFFE5E7EB),
+              ),
+            );
+          }
+          final stepIdx = i ~/ 2;
+          final isDone = !isFailed && stepIdx < activeIdx;
+          final isActive = !isFailed && stepIdx == activeIdx;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 18,
+                height: 18,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isDone
+                      ? const Color(0xFF10B981)
+                      : isActive
+                          ? KaapavTheme.gold
+                          : isFailed && stepIdx == 0
+                              ? const Color(0xFFEF4444)
+                              : const Color(0xFFE5E7EB),
+                ),
+                child: Center(
+                  child: isDone
+                      ? const Icon(Icons.check, size: 12, color: Colors.white)
+                      : Text(
+                          '${stepIdx + 1}',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: (isActive || isDone)
+                                ? Colors.white
+                                : const Color(0xFF6B7280),
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                steps[stepIdx],
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                  color: isActive
+                      ? KaapavTheme.gold
+                      : isDone
+                          ? const Color(0xFF10B981)
+                          : const Color(0xFF6B7280),
+                ),
+              ),
+            ],
+          );
+        }),
+      ),
+    );
   }
 
   Future<void> _changeStatus(String newStatus) async {
@@ -178,9 +2229,8 @@ Future<void> _ensureOrderLoaded() async {
     setState(() => _isBookingShiprocket = true);
 
     try {
-      final result = await ref
-          .read(orderProvider.notifier)
-          .bookShiprocket(widget.orderId);
+      final result =
+          await ref.read(orderProvider.notifier).bookShiprocket(widget.orderId);
 
       if (!mounted) return;
 
@@ -302,7 +2352,9 @@ Future<void> _ensureOrderLoaded() async {
       final dir = await getTemporaryDirectory();
       final path = '${dir.path}/Invoice_$orderId.pdf';
 
-      final ok = await ref.read(orderProvider.notifier).downloadInvoicePdf(orderId, path);
+      final ok = await ref
+          .read(orderProvider.notifier)
+          .downloadInvoicePdf(orderId, path);
       if (!ok) {
         if (mounted) KaapavToast.error(context, 'Failed to download');
         return;
@@ -343,15 +2395,17 @@ Future<void> _ensureOrderLoaded() async {
     }
   }
 
-    Future<void> _editCustomerDetails(order) async {
+  Future<void> _editCustomerDetails(order) async {
     final nameCtrl = TextEditingController(text: order.customerName ?? '');
     final phoneCtrl = TextEditingController(text: order.phone);
-    final shippingNameCtrl =
-        TextEditingController(text: order.shippingName ?? order.customerName ?? '');
-    final addressCtrl = TextEditingController(text: order.shippingAddress ?? '');
+    final shippingNameCtrl = TextEditingController(
+        text: order.shippingName ?? order.customerName ?? '');
+    final addressCtrl =
+        TextEditingController(text: order.shippingAddress ?? '');
     final cityCtrl = TextEditingController(text: order.shippingCity ?? '');
     final stateCtrl = TextEditingController(text: order.shippingState ?? '');
-    final pincodeCtrl = TextEditingController(text: order.shippingPincode ?? '');
+    final pincodeCtrl =
+        TextEditingController(text: order.shippingPincode ?? '');
 
     final saved = await showDialog<bool>(
       context: context,
@@ -435,7 +2489,7 @@ Future<void> _ensureOrderLoaded() async {
     }
   }
 
-    Future<void> _editPaymentDetails(order) async {
+  Future<void> _editPaymentDetails(order) async {
     String selectedPaymentStatus = order.paymentStatus;
     final paymentIdCtrl = TextEditingController(text: order.paymentId ?? '');
 
@@ -453,7 +2507,8 @@ Future<void> _ensureOrderLoaded() async {
                   items: const [
                     DropdownMenuItem(value: 'paid', child: Text('Paid')),
                     DropdownMenuItem(value: 'unpaid', child: Text('Unpaid')),
-                    DropdownMenuItem(value: 'refunded', child: Text('Refunded')),
+                    DropdownMenuItem(
+                        value: 'refunded', child: Text('Refunded')),
                   ],
                   onChanged: (value) {
                     if (value != null) {
@@ -527,7 +2582,8 @@ Future<void> _ensureOrderLoaded() async {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, paymentIdController.text.trim()),
+            onPressed: () =>
+                Navigator.pop(ctx, paymentIdController.text.trim()),
             child: const Text('Confirm'),
           ),
         ],
@@ -556,7 +2612,7 @@ Future<void> _ensureOrderLoaded() async {
     }
   }
 
-    Future<void> _cancelOrder() async {
+  Future<void> _cancelOrder() async {
     final reasonCtrl = TextEditingController();
 
     final confirmed = await showDialog<bool>(
@@ -612,11 +2668,12 @@ Future<void> _ensureOrderLoaded() async {
     }
   }
 
-    Future<void> _generatePaymentLink() async {
+  Future<void> _generatePaymentLink() async {
     debugPrint('PAYMENT LINK BUTTON CLICKED for ${widget.orderId}');
 
-    final link =
-        await ref.read(orderProvider.notifier).generatePaymentLink(widget.orderId);
+    final link = await ref
+        .read(orderProvider.notifier)
+        .generatePaymentLink(widget.orderId);
 
     debugPrint('PAYMENT LINK RESULT => $link');
 
@@ -647,7 +2704,8 @@ Future<void> _ensureOrderLoaded() async {
       '💳 Payment: ${order.paymentStatus.toUpperCase()}',
       '',
       '💰 Total: ₹${order.total.toStringAsFixed(0)}',
-      if (order.fullShippingAddress.isNotEmpty) '📍 ${order.fullShippingAddress}',
+      if (order.fullShippingAddress.isNotEmpty)
+        '📍 ${order.fullShippingAddress}',
       if ((order.awbNumber ?? '').isNotEmpty) '🚚 AWB: ${order.awbNumber}',
       '',
       '📅 ${_formatDate(order.createdAt ?? '')}',
@@ -714,7 +2772,8 @@ Future<void> _ensureOrderLoaded() async {
                       },
                       child: Column(
                         children: _statuses.map((status) {
-                          final color = _statusColors[status] ?? KaapavTheme.gold;
+                          final color =
+                              _statusColors[status] ?? KaapavTheme.gold;
                           return Theme(
                             data: Theme.of(context).copyWith(
                               radioTheme: RadioThemeData(
@@ -762,7 +2821,7 @@ Future<void> _ensureOrderLoaded() async {
                         child: const Text('Save Status'),
                       ),
                     ),
-        if (_canBookShiprocket(order)) ...[
+                    if (_canBookShiprocket(order)) ...[
                       const SizedBox(height: 10),
                       SizedBox(
                         width: double.infinity,
@@ -850,11 +2909,11 @@ Future<void> _ensureOrderLoaded() async {
     final statusEmoji = _statusEmojis[order.status] ?? '📋';
     final items = _parseItems(order);
 
-final products = ref.watch(productProvider).products;
-final productImageBySku = {
-  for (final p in products)
-    if (p.sku.isNotEmpty) p.sku: p.imageUrl ?? '',
-};
+    final products = ref.watch(productProvider).products;
+    final productImageBySku = {
+      for (final p in products)
+        if (p.sku.isNotEmpty) p.sku: p.imageUrl ?? '',
+    };
 
     return Scaffold(
       backgroundColor:
@@ -1006,28 +3065,27 @@ final productImageBySku = {
                   final i = entry.key;
                   final item = entry.value;
                   final isLast = i == items.length - 1;
-final sku = item['sku']?.toString().trim() ?? '';
+                  final sku = item['sku']?.toString().trim() ?? '';
 
-return _OrderItemRow(
-  item: item,
-  isLast: isLast,
-  isDark: isDark,
-  fallbackImageUrl: productImageBySku[sku] ?? '',
-  onTap: () {
-    if (sku.isEmpty) {
-      KaapavToast.error(context, 'Product SKU missing');
-      return;
-    }
+                  return _OrderItemRow(
+                    item: item,
+                    isLast: isLast,
+                    isDark: isDark,
+                    fallbackImageUrl: productImageBySku[sku] ?? '',
+                    onTap: () {
+                      if (sku.isEmpty) {
+                        KaapavToast.error(context, 'Product SKU missing');
+                        return;
+                      }
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ProductDetailScreen(sku: sku),
-      ),
-    );
-  },
-);
-
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ProductDetailScreen(sku: sku),
+                        ),
+                      );
+                    },
+                  );
                 }).toList(),
               ),
             ),
@@ -1107,9 +3165,11 @@ return _OrderItemRow(
                     : const Color(0xFFF59E0B),
               ),
               if ((order.paymentId ?? '').isNotEmpty)
-                _InfoRowData('Payment ID', order.paymentId ?? '', copyable: true),
+                _InfoRowData('Payment ID', order.paymentId ?? '',
+                    copyable: true),
               if ((order.paymentLink ?? '').isNotEmpty)
-                _InfoRowData('Payment Link', order.paymentLink ?? '', copyable: true),
+                _InfoRowData('Payment Link', order.paymentLink ?? '',
+                    copyable: true),
             ],
           ),
 
@@ -1127,11 +3187,20 @@ return _OrderItemRow(
                 _InfoRowData('AWB', order.awbNumber ?? '-', copyable: true),
                 _InfoRowData('Courier', order.courier ?? '-'),
                 if ((order.trackingUrl ?? '').isNotEmpty)
-                  _InfoRowData('Track', order.trackingUrl ?? '', copyable: true),
+                  _InfoRowData('Track', order.trackingUrl ?? '',
+                      copyable: true),
               ],
             ),
             const SizedBox(height: 12),
           ],
+
+          _SectionHeader(
+            title: 'Return & Refund Requests',
+            icon: Icons.assignment_return_outlined,
+          ),
+          const SizedBox(height: 8),
+          _buildReturnRequestsCard(isDark),
+          const SizedBox(height: 12),
 
           _SectionHeader(title: 'Order Info', icon: Icons.info_outline_rounded),
           const SizedBox(height: 8),
@@ -1144,7 +3213,7 @@ return _OrderItemRow(
                 'Items',
                 '${order.itemCount > 0 ? order.itemCount : items.length} item(s)',
               ),
-	                      if ((order.cancellationReason ?? '').isNotEmpty)
+              if ((order.cancellationReason ?? '').isNotEmpty)
                 _InfoRowData(
                   'Cancel Reason',
                   order.cancellationReason ?? '',
@@ -1173,7 +3242,7 @@ return _OrderItemRow(
 
           const SizedBox(height: 10),
 
-                    Row(
+          Row(
             children: [
               Expanded(
                 child: OutlinedButton.icon(
@@ -1204,7 +3273,7 @@ return _OrderItemRow(
           ),
           const SizedBox(height: 10),
 
-                    if (order.status == 'confirmed' && order.paymentStatus == 'paid') ...[
+          if (order.status == 'confirmed' && order.paymentStatus == 'paid') ...[
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
@@ -1262,7 +3331,7 @@ return _OrderItemRow(
             const SizedBox(height: 10),
           ],
 
-            Row(
+          Row(
             children: [
               if (order.paymentStatus != 'paid')
                 Expanded(
@@ -1321,39 +3390,41 @@ return _OrderItemRow(
 
           const SizedBox(height: 12),
           // ── INVOICE ────────────────────────────────────────────────
-_SectionHeader(title: 'Invoice', icon: Icons.receipt_long_rounded),
-const SizedBox(height: 8),
-Row(children: [
-  Expanded(
-    child: OutlinedButton.icon(
-      onPressed: () => _downloadInvoice(order.orderId),
-      icon: const Icon(Icons.download_rounded, size: 16),
-      label: const Text('Download PDF', style: TextStyle(fontSize: 12)),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: KaapavTheme.gold,
-        side: const BorderSide(color: KaapavTheme.gold),
-        padding: const EdgeInsets.symmetric(vertical: 10),
-      ),
-    ),
-  ),
-  const SizedBox(width: 8),
-  Expanded(
-    child: OutlinedButton.icon(
-      onPressed: () => _sendInvoiceToCustomer(order.orderId),
-      icon: const Icon(Icons.send_rounded, size: 16),
-      label: const Text('Send to Customer', style: TextStyle(fontSize: 12)),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: const Color(0xFF10B981),
-        side: const BorderSide(color: Color(0xFF10B981)),
-        padding: const EdgeInsets.symmetric(vertical: 10),
-      ),
-    ),
-  ),
-]),
-const SizedBox(height: 12),
+          _SectionHeader(title: 'Invoice', icon: Icons.receipt_long_rounded),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _downloadInvoice(order.orderId),
+                icon: const Icon(Icons.download_rounded, size: 16),
+                label:
+                    const Text('Download PDF', style: TextStyle(fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: KaapavTheme.gold,
+                  side: const BorderSide(color: KaapavTheme.gold),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _sendInvoiceToCustomer(order.orderId),
+                icon: const Icon(Icons.send_rounded, size: 16),
+                label: const Text('Send to Customer',
+                    style: TextStyle(fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF10B981),
+                  side: const BorderSide(color: Color(0xFF10B981)),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 12),
 
 // ── WHATSAPP RESEND ────────────────────────────────────────
-_SectionHeader(title: 'WhatsApp', icon: Icons.chat_rounded),
+          _SectionHeader(title: 'WhatsApp', icon: Icons.chat_rounded),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -1375,8 +3446,9 @@ _SectionHeader(title: 'WhatsApp', icon: Icons.chat_rounded),
               const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed:
-                      order.hasTracking ? () => _resendWhatsApp('shipped') : null,
+                  onPressed: order.hasTracking
+                      ? () => _resendWhatsApp('shipped')
+                      : null,
                   icon: const Icon(Icons.local_shipping_outlined, size: 16),
                   label: const Text(
                     'Tracking',
@@ -1471,7 +3543,8 @@ _SectionHeader(title: 'WhatsApp', icon: Icons.chat_rounded),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         type.replaceAll('_', ' '),
@@ -1629,9 +3702,8 @@ class _OrderTimeline extends StatelessWidget {
                   return Expanded(
                     child: Container(
                       height: 2,
-                      color: filled
-                          ? KaapavTheme.gold
-                          : const Color(0xFFE5E7EB),
+                      color:
+                          filled ? KaapavTheme.gold : const Color(0xFFE5E7EB),
                     ),
                   );
                 }
@@ -1639,8 +3711,7 @@ class _OrderTimeline extends StatelessWidget {
                 final idx = i ~/ 2;
                 final done = idx <= currentIdx;
                 final active = idx == currentIdx;
-                final color =
-                    done ? KaapavTheme.gold : const Color(0xFFD1D5DB);
+                final color = done ? KaapavTheme.gold : const Color(0xFFD1D5DB);
 
                 return Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1674,11 +3745,9 @@ class _OrderTimeline extends StatelessWidget {
                       _labels[idx],
                       style: TextStyle(
                         fontSize: 8,
-                        fontWeight:
-                            active ? FontWeight.w700 : FontWeight.w400,
-                        color: active
-                            ? KaapavTheme.gold
-                            : const Color(0xFF9CA3AF),
+                        fontWeight: active ? FontWeight.w700 : FontWeight.w400,
+                        color:
+                            active ? KaapavTheme.gold : const Color(0xFF9CA3AF),
                       ),
                     ),
                   ],
@@ -1739,7 +3808,8 @@ class _OrderItemRow extends StatelessWidget {
     return urls;
   }
 
-  void _openImagePreview(BuildContext context, List<String> images, String name) {
+  void _openImagePreview(
+      BuildContext context, List<String> images, String name) {
     if (images.isEmpty) {
       KaapavToast.error(context, 'Product image not available');
       return;
@@ -1780,7 +3850,6 @@ class _OrderItemRow extends StatelessWidget {
                   );
                 },
               ),
-
               Positioned(
                 top: 42,
                 left: 16,
@@ -1796,7 +3865,6 @@ class _OrderItemRow extends StatelessWidget {
                   ),
                 ),
               ),
-
               Positioned(
                 top: 36,
                 right: 12,
@@ -1809,7 +3877,6 @@ class _OrderItemRow extends StatelessWidget {
                   ),
                 ),
               ),
-
               if (images.length > 1)
                 Positioned(
                   bottom: 28,
@@ -1845,25 +3912,25 @@ class _OrderItemRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = _text(item['name']).isNotEmpty ? _text(item['name']) : 'Product';
+    final name =
+        _text(item['name']).isNotEmpty ? _text(item['name']) : 'Product';
     final category = _text(item['category']);
     final sku = _text(item['sku']);
     final qty = _qty(item['qty'] ?? item['quantity']);
     final price = _num(item['price']);
     final images = _images();
-    final rawImageUrl =
-    item['image_url']?.toString().trim() ??
-    item['image']?.toString().trim() ??
-    item['imageUrl']?.toString().trim() ??
-    item['thumbnail']?.toString().trim() ??
-    item['product_image']?.toString().trim() ??
-    '';
+    final rawImageUrl = item['image_url']?.toString().trim() ??
+        item['image']?.toString().trim() ??
+        item['imageUrl']?.toString().trim() ??
+        item['thumbnail']?.toString().trim() ??
+        item['product_image']?.toString().trim() ??
+        '';
 
-final imageUrl = rawImageUrl.isNotEmpty ? rawImageUrl : fallbackImageUrl;
+    final imageUrl = rawImageUrl.isNotEmpty ? rawImageUrl : fallbackImageUrl;
     final lineTotal = price * qty;
 
     return InkWell(
-  onTap: onTap,
+      onTap: onTap,
       onLongPress: sku.isEmpty
           ? null
           : () {
@@ -1885,75 +3952,73 @@ final imageUrl = rawImageUrl.isNotEmpty ? rawImageUrl : fallbackImageUrl;
         ),
         child: Row(
           children: [
-GestureDetector(
-  onTap: () => _openImagePreview(context, images, name),
-  child: Stack(
-    children: [
-                Container(
-                  width: 58,
-                  height: 58,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    color: isDark
-                        ? const Color(0xFF2C2C2C)
-                        : const Color(0xFFF5F0E8),
-                    border: Border.all(
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.06)
-                          : const Color(0xFFE5E7EB),
-                    ),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: imageUrl.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: imageUrl,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) => const Center(
-                            child: Icon(
-                              Icons.diamond_outlined,
-                              size: 22,
-                              color: Color(0xFFC49432),
-                            ),
-                          ),
-                          errorWidget: (_, __, ___) => const Center(
-                            child: Icon(
-                              Icons.diamond_outlined,
-                              size: 22,
-                              color: Color(0xFFC49432),
-                            ),
-                          ),
-                        )
-                      : const Center(
-                          child: Icon(
-                            Icons.diamond_outlined,
-                            size: 22,
-                            color: Color(0xFFC49432),
-                          ),
-                        ),
-                ),
-
-                Positioned(
-                  right: 3,
-                  bottom: 3,
-                  child: Container(
-                    width: 19,
-                    height: 19,
+            GestureDetector(
+              onTap: () => _openImagePreview(context, images, name),
+              child: Stack(
+                children: [
+                  Container(
+                    width: 58,
+                    height: 58,
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.62),
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(10),
+                      color: isDark
+                          ? const Color(0xFF2C2C2C)
+                          : const Color(0xFFF5F0E8),
+                      border: Border.all(
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.06)
+                            : const Color(0xFFE5E7EB),
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.zoom_in_rounded,
-                      color: Colors.white,
-                      size: 13,
+                    clipBehavior: Clip.antiAlias,
+                    child: imageUrl.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: imageUrl,
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) => const Center(
+                              child: Icon(
+                                Icons.diamond_outlined,
+                                size: 22,
+                                color: Color(0xFFC49432),
+                              ),
+                            ),
+                            errorWidget: (_, __, ___) => const Center(
+                              child: Icon(
+                                Icons.diamond_outlined,
+                                size: 22,
+                                color: Color(0xFFC49432),
+                              ),
+                            ),
+                          )
+                        : const Center(
+                            child: Icon(
+                              Icons.diamond_outlined,
+                              size: 22,
+                              color: Color(0xFFC49432),
+                            ),
+                          ),
+                  ),
+                  Positioned(
+                    right: 3,
+                    bottom: 3,
+                    child: Container(
+                      width: 19,
+                      height: 19,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.62),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.zoom_in_rounded,
+                        color: Colors.white,
+                        size: 13,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-),
             const SizedBox(width: 11),
-
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1968,9 +4033,7 @@ GestureDetector(
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-
                   const SizedBox(height: 3),
-
                   if (sku.isNotEmpty)
                     Text(
                       'SKU: $sku',
@@ -1981,7 +4044,6 @@ GestureDetector(
                         letterSpacing: 0.2,
                       ),
                     ),
-
                   if (category.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
@@ -1992,9 +4054,7 @@ GestureDetector(
                       ),
                     ),
                   ],
-
                   const SizedBox(height: 4),
-
                   Text(
                     '₹${price.toStringAsFixed(0)} × $qty • Tap image for packing',
                     style: const TextStyle(
@@ -2006,9 +4066,7 @@ GestureDetector(
                 ],
               ),
             ),
-
             const SizedBox(width: 8),
-
             Text(
               '₹${lineTotal.toStringAsFixed(0)}',
               style: TextStyle(
@@ -2118,8 +4176,9 @@ class _InfoCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
-        crossAxisAlignment:
-            row.multiline ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+        crossAxisAlignment: row.multiline
+            ? CrossAxisAlignment.start
+            : CrossAxisAlignment.center,
         children: [
           Text(
             row.label,

@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#FAF7F2">
+  <title>Privacy Policy | KAAPAV</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Jost:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="./assets/kaapav-live-sync.js"></script>
+  <style>
+    :root {
+      --bg-mesh: radial-gradient(at 0% 0%, rgba(247, 239, 227, 0.95) 0, transparent 55%),
+                 radial-gradient(at 100% 0%, rgba(238, 220, 190, 0.85) 0, transparent 50%),
+                 radial-gradient(at 50% 40%, rgba(253, 250, 245, 1) 0, transparent 100%),
+                 #FAF7F2;
+      --glass-card: rgba(255, 255, 255, 0.88);
+      --glass-border: rgba(196, 148, 50, 0.24);
+      --gold: #C49432;
+      --gold-l: #E2B755;
+      --gold-d: #9A7424;
+      --ink: #1C1917;
+      --muted: #78716C;
+      --serif: "Cormorant Garamond", Georgia, serif;
+      --sans: "Jost", -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body {
+      background: var(--bg-mesh);
+      background-attachment: fixed;
+      color: var(--ink);
+      font-family: var(--sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    a { color: inherit; text-decoration: none; cursor: pointer; }
+    button { font: inherit; cursor: pointer; }
+    img { display: block; max-width: 100%; }
+    .shell { width: min(960px, calc(100% - 32px)); margin: auto; }
+
+    /* Header */
+    .kaapav-main-header {
+      background: #FAF7F2;
+      border-bottom: 1px solid rgba(196, 148, 50, 0.2);
+      position: sticky;
+      top: 0;
+      z-index: 999;
+      box-shadow: 0 2px 14px rgba(60, 40, 20, 0.04);
+    }
+    .header-shell {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 74px;
+    }
+    .header-brand-wrap { display: flex; align-items: center; text-decoration: none; }
+    .header-logo-img { height: 54px; width: auto; object-fit: contain; }
+    .header-nav-menu { display: flex; align-items: center; gap: clamp(16px, 2.2vw, 32px); list-style: none; margin: 0; padding: 0; }
+    .nav-link-item { font-family: var(--sans); font-size: 13px; letter-spacing: 0.1em; font-weight: 600; text-transform: uppercase; color: #C49432; text-decoration: none; padding: 8px 0; display: inline-flex; align-items: center; gap: 4px; }
+    .nav-dropdown-wrap { position: relative; }
+    .nav-dropdown-menu { position: absolute; top: 100%; left: 0; background: #fff; border: 1px solid rgba(196,148,50,0.25); border-radius: 14px; padding: 10px 0; min-width: 200px; box-shadow: 0 16px 36px rgba(60,40,20,0.12); display: none; flex-direction: column; z-index: 1000; }
+    .nav-dropdown-wrap:hover .nav-dropdown-menu { display: flex; }
+    .nav-dropdown-menu a { padding: 9px 18px; font-size: 12.5px; color: #37302A; text-decoration: none; font-weight: 500; }
+    .nav-dropdown-menu a:hover { background: #FAF5EB; color: #9A7424; }
+    .header-actions-wrap { display: flex; align-items: center; gap: 12px; }
+    .hdr-btn-circle { width: 40px; height: 40px; border-radius: 50%; background: #F1ECE4; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .hdr-btn-signin { background: #F1ECE4; color: #1C1917; font-family: var(--sans); font-size: 13px; font-weight: 600; padding: 9px 20px; border-radius: 30px; text-decoration: none; }
+    @media(max-width:992px){ .header-nav-menu { display:none!important; } }
+
+    /* Policy Box */
+    .policy-box {
+      background: var(--glass-card);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border);
+      border-radius: 24px;
+      padding: clamp(24px, 5vw, 44px);
+      box-shadow: 0 14px 40px rgba(60,40,20,0.06);
+      margin: 40px auto 60px;
+      text-align: left;
+    }
+    .policy-header-block {
+      border-bottom: 1px solid var(--glass-border);
+      padding-bottom: 20px;
+      margin-bottom: 24px;
+    }
+    .policy-badge {
+      display: inline-block;
+      font-size: 10px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--gold-d);
+      font-weight: 700;
+      background: #FAF5EB;
+      border: 1px solid rgba(196,148,50,0.25);
+      padding: 4px 14px;
+      border-radius: 20px;
+      margin-bottom: 10px;
+    }
+    .policy-title {
+      font-family: var(--serif);
+      font-size: clamp(28px, 4.5vw, 42px);
+      font-weight: 600;
+      color: #1C1917;
+      line-height: 1.2;
+    }
+
+    /* Content Typography */
+    .policy-body {
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.75;
+      color: #38302A;
+    }
+    .policy-body p { margin-bottom: 16px; }
+    .policy-body a { color: var(--gold-d); font-weight: 600; text-decoration: underline; }
+    .policy-body ul { margin: 10px 0 18px 24px; }
+    .policy-body li { margin-bottom: 6px; }
+    
+    .highlight-card {
+      background: #FAF5EB;
+      border: 1px solid rgba(196,148,50,0.25);
+      border-radius: 14px;
+      padding: 16px 20px;
+      margin: 20px 0;
+    }
+    .sec-heading {
+      font-family: var(--serif);
+      font-size: 22px;
+      font-weight: 600;
+      color: #1C1917;
+      margin: 28px 0 14px;
+      padding-top: 14px;
+      border-top: 1px solid #EDE8DF;
+    }
+    .sub-heading {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1C1917;
+      margin: 20px 0 8px;
+    }
+    .point-card, .section-card {
+      background: rgba(255,255,255,0.7);
+      border: 1px solid rgba(196,148,50,0.2);
+      border-radius: 14px;
+      padding: 18px 20px;
+      margin-bottom: 14px;
+    }
+    .point-title, .section-card-title {
+      font-weight: 700;
+      color: #1C1917;
+      font-size: 15px;
+      margin-bottom: 8px;
+      display: block;
+    }
+    .def-item { margin-bottom: 12px; }
+    .def-term { font-weight: 700; color: #1C1917; }
+    
+    .story-card {
+      background: rgba(255,255,255,0.85);
+      border: 1px solid rgba(196,148,50,0.25);
+      border-radius: 16px;
+      padding: 22px 26px;
+      margin: 26px 0;
+    }
+    .story-card-title { font-family: var(--serif); font-size: 22px; font-weight: 700; color: #1C1917; margin-bottom: 10px; }
+    .quote-highlight { border-left: 3px solid var(--gold); padding-left: 18px; font-family: var(--serif); font-size: 20px; font-style: italic; color: #1C1917; margin: 20px 0; line-height: 1.5; }
+    .pillars-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 24px 0; }
+    .pillar-card { background: #FAF6EF; border: 1px solid rgba(196,148,50,0.2); border-radius: 12px; padding: 18px 14px; text-align: center; }
+    .pillar-icon { font-size: 22px; margin-bottom: 6px; }
+    .pillar-title { font-family: var(--serif); font-size: 16px; font-weight: 700; color: #1C1917; margin-bottom: 4px; }
+    .pillar-desc { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+
+    /* Footer */
+    .site-footer {
+      background: #FAF7F2;
+      border-top: 1px solid rgba(196,148,50,0.2);
+      padding: 40px 0 20px;
+      font-size: 12px;
+      margin-top: auto;
+    }
+    .footer-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 30px; margin-bottom: 24px; }
+    .footer-col h5 { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: #1C1917; font-weight: 700; margin-bottom: 12px; }
+    .footer-col a { display: block; color: #665C51; margin-bottom: 8px; font-size: 12px; }
+    .footer-col a:hover { color: var(--gold-d); }
+    .footer-bottom-bar { border-top: 1px solid rgba(196,148,50,0.15); padding-top: 16px; font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; }
+    @media(max-width: 768px) {
+      .footer-grid { grid-template-columns: 1fr 1fr; }
+      .pillars-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+
+
+
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header class="kaapav-main-header">
+    <div class="header-shell">
+      <a href="./index.html" class="header-brand-wrap">
+        <img src="./assets/kaapav-logo.png" onerror="this.src='assets/kaapav-logo.png'" alt="KAAPAV" class="header-logo-img">
+      </a>
+      <nav class="header-nav-menu">
+        <div class="nav-dropdown-wrap">
+          <a href="./shop/index.html" class="nav-link-item has-dropdown">
+            ALL JEWELLERY <span class="dropdown-caret">&#9662;</span>
+          </a>
+          <div class="nav-dropdown-menu">
+            <a href="./shop/index.html">All Jewellery</a>
+            <a href="./category/earrings/index.html">Earrings</a>
+            <a href="./category/necklaces/index.html">Necklaces</a>
+            <a href="./category/bracelets/index.html">Bracelets</a>
+            <a href="./category/rings/index.html">Rings</a>
+            <a href="./category/pendants/index.html">Pendants</a>
+            <a href="./category/sets/index.html">Jewellery Sets</a>
+            <a href="./category/bestsellers/index.html">Bestsellers</a>
+          </div>
+        </div>
+        <a href="./shop/index.html?style=elegant" class="nav-link-item">ELEGANT</a>
+        <a href="./shop/index.html?style=colourful" class="nav-link-item">COLOURFUL</a>
+        <a href="./shop/index.html?style=contemporary" class="nav-link-item">CONTEMPORARY</a>
+        <a href="./shop/index.html?style=subtle" class="nav-link-item">SUBTLE</a>
+        <a href="./shop/index.html?style=fashion" class="nav-link-item">FASHION</a>
+        <a href="./shop/index.html?style=modern" class="nav-link-item">MODERN</a>
+      </nav>
+      <div class="header-actions-wrap">
+        <button class="hdr-btn-circle" onclick="window.location.href='./shop/index.html'" title="Search">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#2B2620" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        </button>
+        <a href="./admin/index.html" class="hdr-btn-signin">Sign in</a>
+        <button class="hdr-btn-circle" onclick="window.location.href='./shop/index.html'" title="Bag">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#2B2620" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Body -->
+  <main class="shell">
+    <div class="policy-box">
+      <div class="policy-header-block">
+        <span class="policy-badge">Customer Trust • Data Protection</span>
+        <h1 class="policy-title">Privacy Policy</h1>
+      </div>
+      <div class="policy-body">
+        
+        <p>
+          This Privacy Policy describes Our policies and procedures on the collection, use and disclosure of Your information when You use the Service and tells You about Your privacy rights and how the law protects You.
+        </p>
+        <p>
+          We use Your Personal data to provide and improve the Service. By using the Service, You agree to the collection and use of information in accordance with this Privacy Policy.
+        </p>
+
+        <h2 class="sec-heading">Interpretation and Definitions</h2>
+        
+        <div class="sub-heading">Interpretation</div>
+        <p>
+          The words of which the initial letter is capitalized have meanings defined under the following conditions. The following definitions shall have the same meaning regardless of whether they appear in singular or in plural.
+        </p>
+
+        <div class="sub-heading">Definitions</div>
+        <p>For the purposes of this Privacy Policy:</p>
+        
+        <div class="point-card">
+          <div class="def-item"><span class="def-term">Account</span> means a unique account created for You to access our Service or parts of our Service.</div>
+          <div class="def-item"><span class="def-term">Company</span> (referred to as either "the Company", "We", "Us" or "Our" in this Agreement) refers to KAAPAV, chikkalasandra,.</div>
+          <div class="def-item"><span class="def-term">Cookies</span> are small files that are placed on Your computer, mobile device or any other device by a website, containing the details of Your browsing history on that website among its many uses.</div>
+          <div class="def-item"><span class="def-term">Country</span> refers to: karnataka, India</div>
+          <div class="def-item"><span class="def-term">Device</span> means any device that can access the Service such as a computer, a cellphone or a digital tablet.</div>
+          <div class="def-item"><span class="def-term">Personal Data</span> is any information that relates to an identified or identifiable individual.</div>
+          <div class="def-item"><span class="def-term">Service</span> refers to the Website.</div>
+          <div class="def-item"><span class="def-term">Service Provider</span> means any natural or legal person who processes the data on behalf of the Company. It refers to third-party companies or individuals employed by the Company to facilitate the Service, to provide the Service on behalf of the Company, to perform services related to the Service or to assist the Company in analyzing how the Service is used.</div>
+          <div class="def-item"><span class="def-term">Third-party Social Media Service</span> refers to any website or any social network website through which a User can log in or create an account to use the Service.</div>
+          <div class="def-item"><span class="def-term">Usage Data</span> refers to data collected automatically, either generated by the use of the Service or from the Service infrastructure itself (for example, the duration of a page visit).</div>
+          <div class="def-item"><span class="def-term">Website</span> refers to KAAPAV and its related digital properties, including but not limited to: <a href="https://www.kaapav.com" target="_blank">www.kaapav.com</a> and <a href="https://catalogue.kaapav.com" target="_blank">catalogue.kaapav.com</a>.</div>
+          <div class="def-item" style="margin-bottom:0"><span class="def-term">You</span> means the individual accessing or using the Service, or the company, or other legal entity on behalf of which such individual is accessing or using the Service, as applicable.</div>
+        </div>
+
+        <p>This Privacy Policy applies to information collected through these digital properties and services operated by KAAPAV.</p>
+
+        <h2 class="sec-heading">Collecting and Using Your Personal Data</h2>
+        
+        <div class="sub-heading">Types of Data Collected</div>
+        
+        <div class="point-card">
+          <span class="def-term" style="display:block;margin-bottom:8px">Personal Data</span>
+          <p>While using Our Service, We may ask You to provide Us with certain personally identifiable information that can be used to contact or identify You. Personally identifiable information may include, but is not limited to:</p>
+          <ul>
+            <li>Email address</li>
+            <li>First name and last name</li>
+            <li>Phone number</li>
+            <li>Address, State, Province, ZIP/Postal code, City</li>
+          </ul>
+        </div>
+
+        <div class="point-card">
+          <span class="def-term" style="display:block;margin-bottom:8px">Usage Data</span>
+          <p>Usage Data is collected automatically when using the Service.</p>
+          <p>Usage Data may include information such as Your Device's Internet Protocol address (e.g. IP address), browser type, browser version, the pages of our Service that You visit, the time and date of Your visit, the time spent on those pages, unique device identifiers and other diagnostic data.</p>
+          <p>When You access the Service by or through a mobile device, We may collect certain information automatically, including, but not limited to, the type of mobile device You use, Your mobile device unique ID, the IP address of Your mobile device, Your mobile operating system, the type of mobile Internet browser You use, unique device identifiers and other diagnostic data.</p>
+          <p>We may also collect information that Your browser sends whenever You visit our Service or when You access the Service by or through a mobile device.</p>
+          
+          <p>We may also collect information regarding how visitors interact with our products and services, including:</p>
+          <ul>
+            <li>Product views</li>
+            <li>Wishlist activity</li>
+            <li>Add-to-cart activity</li>
+            <li>Checkout activity</li>
+            <li>Purchase activity</li>
+            <li>Website interactions</li>
+            <li>Catalogue interactions</li>
+          </ul>
+          <p style="margin-bottom:0">This information may be used to improve customer experience, analyze business performance, provide customer support, personalize services and improve our products and offerings.</p>
+        </div>
+
+        <h2 class="sec-heading">Tracking Technologies and Cookies</h2>
+        <p>
+          We use Cookies and similar tracking technologies to track the activity on Our Service and store certain information. Tracking technologies used are beacons, tags, and scripts to collect and track information and to improve and analyze Our Service. The technologies We use may include:
+        </p>
+
+        <div class="point-card">
+          <div class="def-item"><span class="def-term">Cookies or Browser Cookies.</span> A cookie is a small file placed on Your Device. You can instruct Your browser to refuse all Cookies or to indicate when a Cookie is being sent. However, if You do not accept Cookies, You may not be able to use some parts of our Service. Unless you have adjusted Your browser setting so that it will refuse Cookies, our Service may use Cookies.</div>
+          <div class="def-item"><span class="def-term">Flash Cookies.</span> Certain features of our Service may use local stored objects (or Flash Cookies) to collect and store information about Your preferences or Your activity on our Service. Flash Cookies are not managed by the same browser settings as those used for Browser Cookies. For more information on how You can delete Flash Cookies, please read "Where can I change the settings for disabling, or deleting local shared objects?" available at <a href="https://helpx.adobe.com/flash-player/kb/disable-local-shared-objects-flash.html#main_Where_can_I_change_the_settings_for_disabling__or_deleting_local_shared_objects_" target="_blank">Adobe Flash Help</a>.</div>
+          <div class="def-item" style="margin-bottom:0"><span class="def-term">Web Beacons.</span> Certain sections of our Service and our emails may contain small electronic files known as web beacons (also referred to as clear gifs, pixel tags, and single-pixel gifs) that permit the Company, for example, to count users who have visited those pages or opened an email and for other related website statistics (for example, recording the popularity of a certain section and verifying system and server integrity).</div>
+        </div>
+
+        <p>We may use analytics and measurement technologies to understand customer engagement with our website, catalogue and products, including interactions such as product views, cart activity, checkout activity and purchase activity.</p>
+        <p>Cookies can be "Persistent" or "Session" Cookies. Persistent Cookies remain on Your personal computer or mobile device when You go offline, while Session Cookies are deleted as soon as You close Your web browser.</p>
+
+        <p>We use both Session and Persistent Cookies for the purposes set out below:</p>
+
+        <div class="point-card">
+          <div class="def-item">
+            <span class="def-term">Necessary / Essential Cookies</span><br>
+            <span style="font-size:12px;color:var(--muted)">Type: Session Cookies &bull; Administered by: Us</span>
+            <p style="margin-top:4px">Purpose: These Cookies are essential to provide You with services available through the Website and to enable You to use some of its features. They help to authenticate users and prevent fraudulent use of user accounts. Without these Cookies, the services that You have asked for cannot be provided, and We only use these Cookies to provide You with those services.</p>
+          </div>
+          <div class="def-item">
+            <span class="def-term">Cookies Policy / Notice Acceptance Cookies</span><br>
+            <span style="font-size:12px;color:var(--muted)">Type: Persistent Cookies &bull; Administered by: Us</span>
+            <p style="margin-top:4px">Purpose: These Cookies identify if users have accepted the use of cookies on the Website.</p>
+          </div>
+          <div class="def-item" style="margin-bottom:0">
+            <span class="def-term">Functionality Cookies</span><br>
+            <span style="font-size:12px;color:var(--muted)">Type: Persistent Cookies &bull; Administered by: Us</span>
+            <p style="margin-top:4px">Purpose: These Cookies allow us to remember choices You make when You use the Website, such as remembering your login details or language preference. The purpose of these Cookies is to provide You with a more personal experience and to avoid You having to re-enter your preferences every time You use the Website.</p>
+          </div>
+        </div>
+
+        <h2 class="sec-heading">Use of Your Personal Data</h2>
+        <p>The Company may use Personal Data for the following purposes:</p>
+        <ul>
+          <li><strong>To provide and maintain our Service:</strong> including to monitor the usage of our Service. To analyze customer engagement with products and services, understand purchasing behaviour, improve our catalogue experience and measure the effectiveness of our marketing and promotional activities.</li>
+          <li><strong>To manage Your Account:</strong> to manage Your registration as a user of the Service. The Personal Data You provide can give You access to different functionalities of the Service that are available to You as a registered user.</li>
+          <li><strong>For the performance of a contract:</strong> the development, compliance and undertaking of the purchase contract for the products, items or services You have purchased or of any other contract with Us through the Service.</li>
+          <li><strong>To contact You:</strong> To contact You by email, telephone calls, SMS, or other equivalent forms of electronic communication, such as a mobile application's push notifications regarding updates or informative communications related to the functionalities, products or contracted services, including the security updates, when necessary or reasonable for their implementation.</li>
+          <li><strong>To provide You with news, special offers and general information:</strong> about other goods, services and events which we offer that are similar to those that you have already purchased or enquired about unless You have opted not to receive such information.</li>
+          <li><strong>To manage Your requests:</strong> To attend and manage Your requests to Us.</li>
+          <li><strong>For business transfers:</strong> We may use Your information to evaluate or conduct a merger, divestiture, restructuring, reorganization, dissolution, or other sale or transfer of some or all of Our assets, whether as a going concern or as part of bankruptcy, liquidation, or similar proceeding, in which Personal Data held by Us about our Service users is among the assets transferred.</li>
+          <li><strong>For other purposes:</strong> We may use Your information for other purposes, such as data analysis, identifying usage trends, determining the effectiveness of our promotional campaigns and to evaluate and improve our Service, products, services, marketing and your experience.</li>
+        </ul>
+
+        <p>We may share Your personal information in the following situations:</p>
+        <ul>
+          <li><strong>With Service Providers:</strong> We may share Your personal information with Service Providers to monitor and analyze the use of our Service, to contact You.</li>
+          <li><strong>For business transfers:</strong> We may share or transfer Your personal information in connection with, or during negotiations of, any merger, sale of Company assets, financing, or acquisition of all or a portion of Our business to another company.</li>
+          <li><strong>With Affiliates:</strong> We may share Your information with Our affiliates, in which case we will require those affiliates to honor this Privacy Policy. Affiliates include Our parent company and any other subsidiaries, joint venture partners or other companies that We control or that are under common control with Us.</li>
+          <li><strong>With business partners:</strong> We may share Your information with Our business partners to offer You certain products, services or promotions.</li>
+          <li><strong>With other users:</strong> when You share personal information or otherwise interact in the public areas with other users, such information may be viewed by all users and may be publicly distributed outside. If You interact with other users or register through a Third-Party Social Media Service, Your contacts on the Third-Party Social Media Service may see Your name, profile, pictures and description of Your activity. Similarly, other users will be able to view descriptions of Your activity, communicate with You and view Your profile.</li>
+          <li><strong>With Your consent:</strong> We may disclose Your personal information for any other purpose with Your consent.</li>
+        </ul>
+
+        <h2 class="sec-heading">Retention of Your Personal Data</h2>
+        <p>
+          The Company will retain Your Personal Data only for as long as is necessary for the purposes set out in this Privacy Policy. We will retain and use Your Personal Data to the extent necessary to comply with our legal obligations (for example, if we are required to retain your data to comply with applicable laws), resolve disputes, and enforce our legal agreements and policies.
+        </p>
+        <p>
+          The Company will also retain Usage Data for internal analysis purposes. Usage Data is generally retained for a shorter period of time, except when this data is used to strengthen the security or to improve the functionality of Our Service, or We are legally obligated to retain this data for longer time periods.
+        </p>
+
+        <h2 class="sec-heading">Transfer of Your Personal Data</h2>
+        <p>
+          Your information, including Personal Data, is processed at the Company's operating offices and in any other places where the parties involved in the processing are located. It means that this information may be transferred to — and maintained on — computers located outside of Your state, province, country or other governmental jurisdiction where the data protection laws may differ than those from Your jurisdiction.
+        </p>
+        <p>
+          Your consent to this Privacy Policy followed by Your submission of such information represents Your agreement to that transfer.
+        </p>
+        <p>
+          The Company will take all steps reasonably necessary to ensure that Your data is treated securely and in accordance with this Privacy Policy and no transfer of Your Personal Data will take place to an organization or a country unless there are adequate controls in place including the security of Your data and other personal information.
+        </p>
+
+        <h2 class="sec-heading">Disclosure of Your Personal Data</h2>
+        
+        <div class="sub-heading">Business Transactions</div>
+        <p>
+          If the Company is involved in a merger, acquisition or asset sale, Your Personal Data may be transferred. We will provide notice before Your Personal Data is transferred and becomes subject to a different Privacy Policy.
+        </p>
+
+        <div class="sub-heading">Law enforcement</div>
+        <p>
+          Under certain circumstances, the Company may be required to disclose Your Personal Data if required to do so by law or in response to valid requests by public authorities (e.g. a court or a government agency).
+        </p>
+
+        <div class="sub-heading">Other legal requirements</div>
+        <p>The Company may disclose Your Personal Data in the good faith belief that such action is necessary to:</p>
+        <ul>
+          <li>Comply with a legal obligation</li>
+          <li>Protect and defend the rights or property of the Company</li>
+          <li>Prevent or investigate possible wrongdoing in connection with the Service</li>
+          <li>Protect the personal safety of Users of the Service or the public</li>
+          <li>Protect against legal liability</li>
+        </ul>
+
+        <h2 class="sec-heading">Security of Your Personal Data</h2>
+        <p>
+          The security of Your Personal Data is important to Us, but remember that no method of transmission over the Internet, or method of electronic storage is 100% secure. While We strive to use commercially acceptable means to protect Your Personal Data, We cannot guarantee its absolute security.
+        </p>
+
+        <h2 class="sec-heading">Children's Privacy</h2>
+        <p>
+          Our Service does not address anyone under the age of 13. We do not knowingly collect personally identifiable information from anyone under the age of 13. If You are a parent or guardian and You are aware that Your child has provided Us with Personal Data, please contact Us. If We become aware that We have collected Personal Data from anyone under the age of 13 without verification of parental consent, We take steps to remove that information from Our servers.
+        </p>
+        <p>
+          If We need to rely on consent as a legal basis for processing Your information and Your country requires consent from a parent, We may require Your parent's consent before We collect and use that information.
+        </p>
+
+        <h2 class="sec-heading">Links to Other Websites</h2>
+        <p>
+          Our Service may contain links to other websites that are not operated by Us. If You click on a third party link, You will be directed to that third party's site. We strongly advise You to review the Privacy Policy of every site You visit.
+        </p>
+        <p>
+          We have no control over and assume no responsibility for the content, privacy policies or practices of any third party sites or services.
+        </p>
+
+        <h2 class="sec-heading">Changes to this Privacy Policy</h2>
+        <p>
+          We may update Our Privacy Policy from time to time. We will notify You of any changes by posting the new Privacy Policy on this page.
+        </p>
+        <p>
+          We will let You know via email and/or a prominent notice on Our Service, prior to the change becoming effective and update the "Last updated" date at the top of this Privacy Policy.
+        </p>
+        <p>
+          You are advised to review this Privacy Policy periodically for any changes. Changes to this Privacy Policy are effective when they are posted on this page.
+        </p>
+
+        <h2 class="sec-heading">Contact Us</h2>
+        <div class="highlight-card">
+          <p>If you have any questions about this Privacy Policy, you can contact us:</p>
+          <p>By email: <a href="mailto:care.kaapav@gmail.com"><strong>care.kaapav@gmail.com</strong></a></p>
+          <p style="margin-bottom:0">By Whatsapp: <a href="https://wa.me/919148330016" target="_blank"><strong>+91 9148330016</strong></a></p>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  
+
+
+
+
+
+
+
+
+<style id="kaapav-maroon-footer-css">
+/* ========================================================
+   KAAPAV LUXURY MAROON WINE FOOTER (3 VERTICAL, 1 HORIZONTAL)
+   ======================================================== */
+.kaapav-footer {
+  --gold: #f2cf87;
+  --gold-hover: #ffffff;
+  --ink: #fff8ed;
+  --muted: rgba(255, 248, 237, 0.75);
+  background: radial-gradient(circle at 10% 8%, rgba(239, 202, 123, 0.18), transparent 22%),
+              radial-gradient(circle at 91% 77%, rgba(193, 91, 121, 0.16), transparent 25%),
+              linear-gradient(133deg, #310713 0%, #5c1329 55%, #3b0a18 100%) !important;
+  border-top: none !important;
+  padding: 60px 20px 28px !important;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  color: var(--ink) !important;
+  width: 100% !important;
+  margin-top: auto !important;
+  box-sizing: border-box !important;
+}
+.kaapav-footer * {
+  box-sizing: border-box;
+}
+.kaapav-footer-grid {
+  max-width: 1180px;
+  margin: 0 auto 32px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  border-top: none !important;
+  border-bottom: none !important;
+  padding: 0 0 36px;
+  align-items: stretch !important;
+  position: relative;
+}
+/* The 1 Horizontal Line at the bottom of the grid */
+.kaapav-footer-grid::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--gold);
+  border-radius: 2px;
+}
+.kaapav-footer-grid > div {
+  padding: 8px 16px;
+  border-right: none !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  justify-content: flex-start;
+  height: 100% !important;
+  position: relative;
+}
+/* The 3 Vertical Lines dividing the 4 columns */
+.kaapav-footer-grid > div:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 2px;
+  background: var(--gold);
+  border-radius: 2px;
+}
+.kaapav-footer-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center !important;
+  text-align: center !important;
+  justify-content: flex-start;
+  gap: 10px;
+  height: 100%;
+}
+.kaapav-footer-brand img {
+  max-width: 130px;
+  height: auto;
+  margin-bottom: 4px;
+  display: block;
+}
+.kaapav-footer-contact { word-break: break-word;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.75;
+  text-align: center;
+}
+.kaapav-footer-contact a {
+  color: #fff8ed;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.25s ease;
+}
+.kaapav-footer-contact a:hover {
+  color: var(--gold);
+}
+.kaapav-footer h4 {
+  font-size: 12.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 16px;
+  position: relative;
+  font-weight: 700;
+  display: inline-block;
+  padding-bottom: 8px;
+  text-align: center;
+}
+/* The exact underline format */
+.kaapav-footer h4::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 32px;
+  height: 2px;
+  background: var(--gold);
+  border-radius: 2px;
+  transform: translateX(-50%);
+}
+.kaapav-footer ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  width: 100%;
+}
+.kaapav-footer li {
+  width: 100%;
+  text-align: center;
+  margin: 0;
+}
+.kaapav-footer ul a {
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.25s ease;
+  display: block;
+  text-align: center;
+  width: 100%;
+}
+.kaapav-footer ul a:hover {
+  color: var(--gold);
+}
+.kaapav-social {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+  justify-content: center;
+  align-items: center;
+}
+.kaapav-social a {
+  width: 38px;
+  height: 38px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid var(--gold);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+.kaapav-social a:hover {
+  transform: translateY(-3px);
+  background: rgba(255, 255, 255, 0.2);
+}
+.kaapav-social svg {
+  width: 17px;
+  height: 17px;
+}
+.kaapav-seo-footer {
+  max-width: 1180px;
+  margin: 28px auto 0;
+  padding-top: 0;
+  border-top: none !important;
+  font-size: 12px;
+  color: rgba(255, 248, 237, 0.65);
+  text-align: center;
+}
+.kaapav-seo-footer h5 {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 6px;
+  font-weight: 700;
+  text-align: center;
+}
+.kaapav-seo-footer p {
+  line-height: 1.75;
+  margin-bottom: 18px;
+  text-align: center;
+}
+.kaapav-seo-footer a {
+  color: rgba(255, 248, 237, 0.68);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+.kaapav-seo-footer a:hover {
+  color: var(--gold);
+}
+.kaapav-footer-bottom {
+  border-top: 2px solid var(--gold); 
+  padding-top: 18px;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 248, 237, 0.6);
+  margin-top: 20px;
+}
+@media (max-width: 860px) {
+  .kaapav-footer-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+  .kaapav-footer-grid::after {
+    display: none;
+  }
+  .kaapav-footer-grid > div:not(:last-child)::after {
+    display: none;
+  }
+  .kaapav-footer-grid > div:nth-child(1),
+  .kaapav-footer-grid > div:nth-child(2) {
+    border-bottom: 2px solid var(--gold);
+    padding-bottom: 20px;
+  }
+  .kaapav-footer-grid > div:nth-child(1) {
+    border-right: 2px solid var(--gold) !important;
+  }
+  .kaapav-footer-grid > div:nth-child(3) {
+    border-right: 2px solid var(--gold) !important;
+  }
+}
+@media (max-width: 520px) {
+  .kaapav-footer {
+    padding: 44px 16px 24px !important;
+  }
+  .kaapav-footer-grid {
+    grid-template-columns: 1fr;
+  }
+  .kaapav-footer-grid > div {
+    border-right: none !important;
+    border-bottom: 2px solid var(--gold);
+    padding: 18px 10px;
+  }
+  .kaapav-footer-grid > div:last-child {
+    border-bottom: none;
+  }
+}
+</style>
+
+<footer class="kaapav-footer" role="contentinfo">
+  <div class="kaapav-footer-grid">
+    
+    <!-- Brand & Contact -->
+    <div class="kaapav-footer-brand">
+      <img src="./assets/kaapav-logo.png" onerror="this.src='https://kaapav1.odoo.com/web/image/website/3/logo/KAAPAV?unique=7206b26'" alt="KAAPAV" loading="lazy">
+      <div class="kaapav-footer-contact">
+        <div>Mobile: <a href="https://wa.me/919148330016" target="_blank">+91 91483 30016</a> (WhatsApp Only)</div>
+        <div style="margin-top:4px">Email: <a href="mailto:care.kaapav@gmail.com">care.kaapav@gmail.com</a></div>
+      </div>
+    </div>
+
+    <!-- Jewellery Column (Centered in Line Border) -->
+    <div>
+      <h4>Jewellery</h4>
+      <ul>
+        <li><a href="./category/earrings/index.html">Earrings</a></li>
+        <li><a href="./category/necklaces/index.html">Necklaces</a></li>
+        <li><a href="./category/bracelets/index.html">Bracelets</a></li>
+        <li><a href="./category/rings/index.html">Rings</a></li>
+        <li><a href="./category/pendants/index.html">Pendants</a></li>
+        <li><a href="./category/sets/index.html">Jewellery Sets</a></li>
+        <li><a href="./shop/index.html">All Jewellery</a></li>
+      </ul>
+    </div>
+
+    <!-- Policies Column (Centered in Line Border) -->
+    <div>
+      <h4>Policies</h4>
+      <ul>
+        <li><a href="./about-us/index.html">About Us</a></li>
+        <li><a href="./return-policy/index.html">Return &amp; Refund Policy</a></li>
+        <li><a href="./shipping-policy/index.html">Shipping &amp; Delivery</a></li>
+        <li><a href="./privacy-policy/index.html">Privacy Policy</a></li>
+        <li><a href="./terms-of-service/index.html">Terms of Service</a></li>
+      </ul>
+    </div>
+
+    <!-- Follow Us Column -->
+    <div>
+      <h4>Follow Us</h4>
+      <div class="kaapav-social">
+        <a class="ig" href="https://www.instagram.com/kaapavfashionjewellery/" target="_blank" title="Instagram">
+          <svg viewbox="0 0 24 24">
+            <defs>
+              <lineargradient id="igGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#f58529"></stop>
+                <stop offset="50%" stop-color="#dd2a7b"></stop>
+                <stop offset="100%" stop-color="#515bd4"></stop>
+              </lineargradient>
+            </defs>
+            <path fill="url(#igGradient)" d="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5zm5 5a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm6.5-.9a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2z"></path>
+          </svg>
+        </a>
+        <a class="fb" href="https://www.facebook.com/kaapavfashionjewellery" target="_blank" title="Facebook">
+          <svg viewbox="0 0 320 512">
+            <path fill="#1877F2" d="M279.14 288l14.22-92.66h-88.91V127.41c0-25.35 12.42-50.06 52.24-50.06h40.42V6.26S260.43 0 225.36 0c-73.22 0-121.08 44.38-121.08 124.72v70.62H22.89V288h81.39v224h100.2V288z"></path>
+          </svg>
+        </a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Popular Searches SEO Cluster -->
+  <div class="kaapav-seo-footer"> 
+    <h5>Popular Searches</h5>
+    <p>
+      <a href="./category/bracelets/index.html">Bracelets</a> |
+      <a href="./category/earrings/index.html">Earrings</a> |
+      <a href="./category/rings/index.html">Rings</a> |
+      <a href="./category/necklaces/index.html">Necklaces</a> |
+      <a href="./category/pendants/index.html">Pendants</a> |
+      <a href="./shop/index.html">All Jewellery</a>
+    </p>
+
+    <h5>Women’s Artificial Jewellery</h5>
+    <p>
+      <a href="./category/earrings/index.html">Earrings for Women</a> |
+      <a href="./category/rings/index.html">Rings for Women</a> |
+      <a href="./category/bracelets/index.html">Bracelets for Women</a> |
+      <a href="./category/necklaces/index.html">Necklaces for Women</a> |
+      <a href="./category/pendants/index.html">Pendants for Women</a>
+    </p>
+
+    <h5>Jewellery by Occasion</h5>
+    <p>
+      <a href="./category/rings/index.html">Engagement Rings</a> |
+      <a href="./category/earrings/index.html">Party Wear Earrings</a> |
+      <a href="./category/bracelets/index.html">Gift Bracelets</a> |
+      <a href="./category/necklaces/index.html">Festive Necklaces</a>
+    </p>
+
+    <h5>Gifting Jewellery</h5>
+    <p>
+      <a href="./category/rings/index.html">Gifting Rings</a> |
+      <a href="./category/necklaces/index.html">Gifting Necklaces</a> |
+      <a href="./category/bracelets/index.html">Gifting Bracelets</a> |
+      <a href="./category/pendants/index.html">Gifting Pendants</a>
+    </p>
+
+    <h5>Trending Jewellery</h5>
+    <p>
+      <a href="./category/earrings/index.html">Minimal Earrings</a> |
+      <a href="./category/rings/index.html">Dailywear Rings</a> |
+      <a href="./category/bracelets/index.html">Lightweight Bracelets</a> |
+      <a href="./category/necklaces/index.html">Modern Necklaces</a>
+    </p>
+  </div>
+
+  <div class="kaapav-footer-bottom">
+    Copyright &copy; 2026 KAAPAV Fashion Jewellery. All Rights Reserved.
+  </div>
+</footer>
+</body>
+</html>

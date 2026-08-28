@@ -134,6 +134,19 @@ class ProductApi {
     );
   }
 
+Future<Response> bulkUpdate(
+  List<String> skus,
+  Map<String, dynamic> changes,
+) {
+  return _client.patch(
+    '/api/products/bulk',
+    data: {
+      'skus': skus,
+      'changes': changes,
+    },
+  );
+}
+
   // ═══════════════════════════════════════════════════════════
   // BULK IMPORT (max 500 products, background processing)
   // POST /api/products/bulk-import
