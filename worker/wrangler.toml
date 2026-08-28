@@ -1,12 +1,13 @@
 name = "kaapav-app"
 main = "src/index.js"
+account_id = "5cb4855f980c560ebbeba5ccc3be6901"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 preview_urls = true
 
 routes = [
-  { pattern = "wa.kaapav.com/*", zone_name = "kaapav.com" },
+  { pattern = "wa.kaapav.com", custom_domain = true },
   { pattern = "kaapav.com/webhook", zone_name = "kaapav.com" },
   { pattern = "kaapav.com/api/webhook", zone_name = "kaapav.com" },
   { pattern = "www.kaapav.com/webhook", zone_name = "kaapav.com" },
@@ -15,6 +16,7 @@ routes = [
 
 [vars]
 ENVIRONMENT = "production"
+WA_PHONE_ID = "1008161869039515"
 WEBHOOK_VERIFY_TOKEN = "kaapav_verify_2024"
 APP_URL = "https://app.kaapav.com"
 WEBSITE_URL = "https://www.kaapav.com"

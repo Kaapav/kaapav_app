@@ -3865,7 +3865,7 @@ async function sendFCMNotification(env, phone, name, text, messageId) {
         console.log('FCM: duplicate skipped', messageId);
         return;
       }
-      await env.KV.put(`fcm_notif:${messageId}`, '1', { expirationTtl: 300 });
+      await env.KV.put(`fcm_notif:${messageId}`, '1', { expirationTtl: 300 }).catch(() => {});
     }
 
     const deviceToken = await env.KV.get('fcm_token:flutter');
@@ -4637,7 +4637,7 @@ async function sendWhatsAppTextOnce(env, dedupeKey, phone, text, ttl = 86400 * 3
 
   const result = await sendWhatsAppText(env, phone, text);
   if (!result?.error) {
-    await env.KV.put(dedupeKey, '1', { expirationTtl: ttl });
+    await env.KV.put(dedupeKey, '1', { expirationTtl: ttl }).catch(() => {});
   }
   return result;
 }
@@ -4657,34 +4657,47 @@ async function sendWhatsAppButtons(env, phone, text, buttons, footer = null) {
   const interactive = {
     type: 'button',
     body: { text },
-    action: { buttons: buttons.map(b => ({ type: 'reply', reply: { id: b.id, title: b.title } })) }
+    action: {
+      buttons: buttons.map(b => ({
+        type: 'reply',
+        reply: {
+          id: String(b.id || '').substring(0, 256),
+          title: String(b.title || '').substring(0, 20)
+        }
+      }))
+    }
   };
-  if (footer) interactive.footer = { text: footer };
+  if (footer) interactive.footer = { text: String(footer).substring(0, 60) };
 
   const res = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${env.WA_TOKEN}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      messaging_product: 'whatsapp', to: phone, type: 'interactive', interactive
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'interactive',
+      interactive
     }),
   });
   return res.json();
 }
 
 async function sendWhatsAppCtaUrl(env, phone, text, buttonText, url, footer = null) {
+  const safeUrl = String(url || '').startsWith('http') ? url : 'https://catalogue.kaapav.com/';
   const interactive = {
     type: 'cta_url',
-    body: { text },
+    body: { text: String(text || '').substring(0, 1024) },
     action: {
       name: 'cta_url',
       parameters: {
-        display_text: buttonText,
-        url
+        display_text: String(buttonText || 'Open Link').substring(0, 20),
+        url: safeUrl
       }
     }
   };
 
-  if (footer) interactive.footer = { text: footer };
+  if (footer) interactive.footer = { text: String(footer).substring(0, 60) };
 
   const res = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`, {
     method: 'POST',
@@ -4694,13 +4707,18 @@ async function sendWhatsAppCtaUrl(env, phone, text, buttonText, url, footer = nu
     },
     body: JSON.stringify({
       messaging_product: 'whatsapp',
+      recipient_type: 'individual',
       to: phone,
       type: 'interactive',
       interactive
     }),
   });
 
-  return res.json();
+  const data = await res.json();
+  if (data?.error) {
+    console.error('sendWhatsAppCtaUrl error:', JSON.stringify(data.error));
+  }
+  return data;
 }
 
 // ─────────────────────────────────────────────
@@ -5282,18 +5300,41 @@ await sendRetargetingReminder(env, phone, winner, items, 2);
 }
 
 async function sendWhatsAppList(env, phone, text, buttonLabel, sections, footer = null) {
+  const sanitizedSections = (sections || []).map(s => ({
+    title: String(s.title || '').substring(0, 24),
+    rows: (s.rows || []).map(r => ({
+      id: String(r.id || '').substring(0, 200),
+      title: String(r.title || '').substring(0, 24),
+      description: String(r.description || '').substring(0, 72)
+    }))
+  }));
+
   const interactive = {
     type: 'list',
-    body: { text },
-    action: { button: buttonLabel, sections },
+    body: { text: String(text || '').substring(0, 1024) },
+    action: {
+      button: String(buttonLabel || 'Select').substring(0, 20),
+      sections: sanitizedSections
+    }
   };
-  if (footer) interactive.footer = { text: footer };
+  if (footer) interactive.footer = { text: String(footer).substring(0, 60) };
+
   const res = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${env.WA_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messaging_product: 'whatsapp', to: phone, type: 'interactive', interactive }),
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'interactive',
+      interactive
+    }),
   });
-  return res.json();
+  const data = await res.json();
+  if (data?.error) {
+    console.error('sendWhatsAppList error:', JSON.stringify(data.error));
+  }
+  return data;
 }
 
 async function sendWhatsAppImage(env, phone, mediaUrl, caption) {
@@ -6313,7 +6354,7 @@ async function generateAndSendInvoice(env, orderId) {
     console.log(`Invoice queued on WA for ${orderId}: ${wamid}`);
 
     // ── Store timestamp ──
-    await env.KV.put(`invoice_sent:${orderId}`, Date.now().toString(), { expirationTtl: 60 });
+    await env.KV.put(`invoice_sent:${orderId}`, Date.now().toString(), { expirationTtl: 60 }).catch(() => {});
 
     await logOrderEvent(
       env,
@@ -6932,47 +6973,42 @@ if (vendorLike && recentAlert) {
         updated_at      = datetime('now')
     `).bind(phone, name, text || messageType, messageType, timestamp).run();
 
-    // Upsert customer
-// Get or create permanent customer ID
-const customerId = await getOrCreateCustomerId(env, phone);
-
-console.log('CUSTOMER UPSERT', {
-  phone,
-  customerId,
-  name
-});
-
-// Upsert customer
-await env.DB.prepare(`
-  INSERT INTO customers (
-    phone,
-    customer_id,
-    name,
-    message_count,
-    first_seen,
-    last_seen,
-    updated_at
-  )
-  VALUES (
-    ?, ?, ?, 1,
-    datetime('now'),
-    datetime('now'),
-    datetime('now')
-  )
-  ON CONFLICT(phone) DO UPDATE SET
-    customer_id = COALESCE(
-      customers.customer_id,
-      excluded.customer_id
-    ),
-    name          = excluded.name,
-    message_count = message_count + 1,
-    last_seen     = datetime('now'),
-    updated_at    = datetime('now')
-`).bind(
-  phone,
-  customerId,
-  name
-).run();
+    // Upsert customer (safe/non-blocking)
+    try {
+      const customerId = await getOrCreateCustomerId(env, phone);
+      await env.DB.prepare(`
+        INSERT INTO customers (
+          phone,
+          customer_id,
+          name,
+          message_count,
+          first_seen,
+          last_seen,
+          updated_at
+        )
+        VALUES (
+          ?, ?, ?, 1,
+          datetime('now'),
+          datetime('now'),
+          datetime('now')
+        )
+        ON CONFLICT(phone) DO UPDATE SET
+          customer_id = COALESCE(
+            customers.customer_id,
+            excluded.customer_id
+          ),
+          name          = excluded.name,
+          message_count = message_count + 1,
+          last_seen     = datetime('now'),
+          updated_at    = datetime('now')
+      `).bind(
+        phone,
+        customerId,
+        name
+      ).run();
+    } catch (custErr) {
+      console.error('CUSTOMER_UPSERT_ERROR', custErr);
+    }
 
 // Owner Inbox alert for unsupported WhatsApp messages.
 // This does NOT decode hidden body. It alerts owner safely.
@@ -11271,38 +11307,53 @@ class AutoResponder {
   }
 
 async getWebUrl(phone, category = '') {
-  const customer = await this.env.DB.prepare(`
-    SELECT customer_id
-    FROM customers
-    WHERE phone = ? OR phone = ?
-    LIMIT 1
-  `).bind(phone, phone.replace(/^91/, '')).first();
+  let cid = '';
+  try {
+    const customer = await this.env.DB.prepare(`
+      SELECT customer_id
+      FROM customers
+      WHERE phone = ? OR phone = ?
+      LIMIT 1
+    `).bind(phone, phone.replace(/^91/, '')).first();
+    cid = customer?.customer_id;
+  } catch (e) {}
 
-  const cid = customer?.customer_id;
-
-  if (!category) {
-    return `https://www.kaapav.com/${cid}`;
+  if (!cid) {
+    cid = await getOrCreateCustomerId(this.env, phone).catch(() => '');
   }
 
-  return `https://www.kaapav.com/${cid}/${category}`;
+  const base = 'https://www.kaapav.com';
+  if (cid) {
+    return category ? `${base}/${cid}/${category}` : `${base}/${cid}`;
+  }
+  return category ? `${base}/shop/category/${category}` : base;
 }
 
 async getCatUrl(phone) {
-  const customer = await this.env.DB.prepare(`
-    SELECT customer_id
-    FROM customers
-    WHERE phone = ? OR phone = ?
-    LIMIT 1
-  `).bind(phone, phone.replace(/^91/, '')).first();
+  let cid = '';
+  try {
+    const customer = await this.env.DB.prepare(`
+      SELECT customer_id
+      FROM customers
+      WHERE phone = ? OR phone = ?
+      LIMIT 1
+    `).bind(phone, phone.replace(/^91/, '')).first();
+    cid = customer?.customer_id;
+  } catch (e) {}
 
-  return `https://catalogue.kaapav.com/${customer?.customer_id}`;
+  if (!cid) {
+    cid = await getOrCreateCustomerId(this.env, phone).catch(() => '');
+  }
+
+  const base = 'https://catalogue.kaapav.com';
+  return cid ? `${base}/${cid}` : `${base}/`;
 }
 
 async getCategoryUrl(phone, category) {
   const cid = await createTrackingSession(
     this.env, phone, category
-  );
-  return `https://catalogue.kaapav.com/${cid}`;
+  ).catch(() => '');
+  return cid ? `https://catalogue.kaapav.com/${cid}` : `https://catalogue.kaapav.com/`;
 }
 
   // ── ENTRY POINT ────────────────────────────────────────────────
@@ -11321,20 +11372,11 @@ async process({ phone, name, text, messageType, buttonId, messageId }) {
 
     // Global dedup — never process same message twice
     const dedupeKey = `dedup:${messageId}`;
-    const already = await this.env.KV.get(dedupeKey);
-    if (already) return;
-    await this.env.KV.put(dedupeKey, '1', { expirationTtl: 86400 });
-
-    // Check if bot is disabled for this chat (admin manually chatting)
     try {
-      const chat = await this.env.DB.prepare(
-        `SELECT is_bot_enabled FROM chats WHERE phone = ?`
-      ).bind(phone).first();
-      if (chat && chat.is_bot_enabled === 0) {
-        console.log(`Bot disabled for ${phone}, skipping autoresponder`);
-        return;
-      }
-    } catch {}
+      const already = await this.env.KV.get(dedupeKey).catch(() => null);
+      if (already) return;
+      await this.env.KV.put(dedupeKey, '1', { expirationTtl: 86400 }).catch(() => {});
+    } catch (_) {}
 
     // ── Skip non-interactive message types ────────────────────
     if (['image', 'video', 'audio', 'voice', 'sticker', 'document',
@@ -11342,60 +11384,44 @@ async process({ phone, name, text, messageType, buttonId, messageId }) {
       return;
     }
 
-    // ── 0. Order state machine — check first ─────────────────────
-    const convState = await getConvState(phone, this.env);
-    if (convState && convState.state.startsWith('order_')) {
-      await this.handleOrderState(phone, convState.state, convState.data, (text || '').trim());
+    // ── Normalize input ──────────────────────────────────────────
+    const input = (buttonId || text || '').trim();
+    const inputLower = input.toLowerCase();
+
+    // ── 0. Greeting / Start / Menu → ALWAYS reset state & show Main Menu ──
+    const greetRegex = new RegExp(
+      '^(hi|hello|hey|helo|hii|hiii|namaste|namaskar|jai|ram|shri|' +
+      'good (morning|evening|afternoon|night)|' +
+      'vanakkam|vannakkam|sugam|hai|enna|start|begin|menu|home|reset|bot|#bot|' +
+      '\u0bb5\u0ba3\u0b95\u0bcd\u0b95\u0bae\u0bcd|' +  // Tamil: வணக்கம்
+      '\u0c28\u0c2e\u0c38\u0c4d\u0c15\u0c3e\u0c30\u0c02\u0c32\u0c41|' + // Telugu: నమస్కారంలు
+      '\u0ca8\u0cae\u0cb8\u0ccd\u0c95\u0cbe\u0cb0)$'     // Kannada: ನಮಸ್ಕಾರ
+    );
+    if (greetRegex.test(inputLower)) {
+      await clearConvState(phone, this.env);
+      await this.executeAction(phone, 'MAIN_MENU', input);
       return;
     }
-
-const input = (buttonId || text || '').trim();
-const inputLower = input.toLowerCase();
-
-// If user is inside biz flow, only continue for biz list/buttons.
-// Normal typed keywords should escape back to normal autoresponder.
-if (convState && convState.state.startsWith('biz_')) {
-  if (
-    buttonId &&
-    (
-      buttonId.startsWith('biz_type_') ||
-      buttonId === 'biz_yes' ||
-      buttonId === 'biz_no'
-    )
-  ) {
-    await this.handleBizEnquiryState(phone, convState.state, convState.data, input);
-    return;
-  }
-
-  if (convState.state !== 'biz_type') {
-    await this.handleBizEnquiryState(phone, convState.state, convState.data, input);
-    return;
-  }
-
-  await clearConvState(phone, this.env);
-  // no return — let normal autoresponder handle order/exchange/hi/etc below
-}
-
 
     // ── 1. Hard button IDs (exact match, no ambiguity) ───────────
     const action = this.resolveButtonId(input);
     if (action) {
+      await clearConvState(phone, this.env);
       await this.executeAction(phone, action, input);
       return;
     }
 
     // ── 2. FAQ category list selection ───────────────────────────
-    //    buttonId looks like "faq_cat_appearance" etc.
     const faqCat = this.FAQ_CATEGORIES.find(c => c.id === input);
     if (faqCat) {
+      await clearConvState(phone, this.env);
       await this.sendFaqCategoryMenu(phone, faqCat);
       return;
     }
 
     // ── 3. Individual FAQ item selected from category sub-list ───
-    //    buttonId looks like "faq_item_0", "faq_item_1" etc.
-    //    We store pending category in KV so we know which group
     if (/^faq_item_\d+$/.test(input)) {
+      await clearConvState(phone, this.env);
       await this.handleFaqItemSelection(phone, input);
       return;
     }
@@ -11405,34 +11431,47 @@ if (convState && convState.state.startsWith('biz_')) {
     if (input === 'faq_order') { await this.executeAction(phone, 'ORDER_FLOW'); return; }
     if (input === 'faq_home')  { await this.executeAction(phone, 'MAIN_MENU'); return; }
 
-    // ── 5. Text triggers ─────────────────────────────────────────
+    // ── 5. Ongoing conversation state machines ───────────────────
+    const convState = await getConvState(phone, this.env);
+    if (convState && convState.state.startsWith('order_')) {
+      await this.handleOrderState(phone, convState.state, convState.data, input);
+      return;
+    }
+
+    if (convState && convState.state.startsWith('biz_')) {
+      if (
+        buttonId &&
+        (
+          buttonId.startsWith('biz_type_') ||
+          buttonId === 'biz_yes' ||
+          buttonId === 'biz_no'
+        )
+      ) {
+        await this.handleBizEnquiryState(phone, convState.state, convState.data, input);
+        return;
+      }
+
+      if (convState.state !== 'biz_type') {
+        await this.handleBizEnquiryState(phone, convState.state, convState.data, input);
+        return;
+      }
+
+      await clearConvState(phone, this.env);
+    }
+
+    // ── 6. Text triggers (bestsellers, jewellery, collab, etc.) ──
     const textAction = this.resolveTextTrigger(inputLower);
     if (textAction) {
       await this.executeAction(phone, textAction, input);
       return;
     }
 
-    // ── 6. Free-text FAQ keyword search (inside Help flow) ───────
-    //    Only fire if user is in help context OR no other match
+    // ── 7. Free-text FAQ keyword search (inside Help flow) ───────
     const faqMatch = await this.searchFaqByKeyword(inputLower);
     if (faqMatch) {
       await this.sendFaqAnswer(phone, faqMatch);
       return;
     }
-
-    // ── 7. Greeting → always show Main Menu ──────────────────────
-    const greetRegex = new RegExp(
-  '^(hi|hello|hey|helo|hii|hiii|namaste|namaskar|jai|ram|shri|' +
-  'good (morning|evening|afternoon|night)|' +
-  'vanakkam|vannakkam|sugam|hai|enna|start|begin|menu|' +
-  '\u0bb5\u0ba3\u0b95\u0bcd\u0b95\u0bae\u0bcd|' +  // Tamil: வணக்கம்
-  '\u0c28\u0c2e\u0c38\u0c4d\u0c15\u0c3e\u0c30\u0c02\u0c32\u0c41|' + // Telugu: నమస్కారంలు
-  '\u0ca8\u0cae\u0cb8\u0ccd\u0c95\u0cbe\u0cb0)'     // Kannada: ನಮಸ್ಕಾರ
-);
-if (greetRegex.test(inputLower)) {
-  await this.executeAction(phone, 'MAIN_MENU');
-  return;
-}
 
     // ── 8. No match → show Help prompt ───────────────────────────
     await this.sendHelpPrompt(phone);
@@ -12221,7 +12260,7 @@ async sendFaqCategoryMenu(phone, faqCat) {
 
   // Store FAQ index in KV for item selection
   const faqIndex = faqs.map(f => f.shortcut);
-  await env.KV.put(`faq_index:${phone}`, JSON.stringify(faqIndex), { expirationTtl: 600 });
+  await env.KV.put(`faq_index:${phone}`, JSON.stringify(faqIndex), { expirationTtl: 600 }).catch(() => {});
 
   const rows = faqs.slice(0, 10).map((f, i) => ({
     id: `faq_item_${i}`,
@@ -14671,16 +14710,139 @@ async function handleAdEngineLearningExport(request, env) {
 // ═══════════════════ ROUTER ═══════════════════
 export default {
   async fetch(request, env, ctx) {
+    if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
+
+    if (path === '/health') return new Response('OK', { status: 200 });
+
+    // ═══ WEBHOOK HANDLERS (TOP PRIORITY — CANNOT BE INTERCEPTED) ═══
+    const isWebhookPath = (
+      path === '/webhook' ||
+      path === '/api/webhook' ||
+      path === '/webhooks/whatsapp/cloudapi' ||
+      path === '/webhooks/whatsapp' ||
+      path === '/webhooks'
+    );
+
+    if (isWebhookPath) {
+      if (method === 'GET') return handleWebhookVerify(request, env);
+      if (method === 'POST') return handleWebhookPost(request, env, ctx);
+    }
+
+    if (path === '/api/debug/wa-test') {
+      const targetPhone = url.searchParams.get('phone') || env.OWNER_PHONE || '919148330016';
+      
+      const envCheck = {
+        has_WA_PHONE_ID: !!env.WA_PHONE_ID,
+        WA_PHONE_ID_val: env.WA_PHONE_ID || 'MISSING',
+        has_WA_TOKEN: !!env.WA_TOKEN,
+        WA_TOKEN_length: env.WA_TOKEN ? env.WA_TOKEN.length : 0,
+        WEBHOOK_VERIFY_TOKEN: env.WEBHOOK_VERIFY_TOKEN || 'MISSING'
+      };
+
+      let phoneInfo = null;
+      let phoneInfoError = null;
+      try {
+        const pRes = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}?fields=display_phone_number,verified_name,code_verification_status,quality_rating,name_status`, {
+          headers: { 'Authorization': `Bearer ${env.WA_TOKEN}` }
+        });
+        phoneInfo = await pRes.json();
+      } catch (e) {
+        phoneInfoError = e.message;
+      }
+
+      const businessDigits = (phoneInfo?.display_phone_number || '').replace(/\D/g, '').slice(-10);
+      const targetDigits = String(targetPhone).replace(/\D/g, '').slice(-10);
+      const isSameAsBusinessNumber = !!(businessDigits && targetDigits === businessDigits);
+
+      let chatRecord = null;
+      try {
+        if (url.searchParams.get('enable_bot') === '1') {
+          await env.DB.prepare('UPDATE chats SET is_bot_enabled = 1 WHERE phone = ?').bind(targetPhone).run();
+        }
+        chatRecord = await env.DB.prepare('SELECT phone, is_bot_enabled, unread_count, total_messages FROM chats WHERE phone = ?').bind(targetPhone).first();
+      } catch (e) {
+        chatRecord = { error: e.message };
+      }
+
+      let simulationResult = null;
+      let simulationError = null;
+      if (url.searchParams.get('simulate') || url.searchParams.get('simulate_btn')) {
+        try {
+          const autoResponder = new AutoResponder(env);
+          simulationResult = await autoResponder.process({
+            phone: targetPhone,
+            name: 'Test Customer',
+            text: url.searchParams.get('simulate') || (url.searchParams.get('simulate_btn') ? 'button_click' : 'hi'),
+            messageType: url.searchParams.get('simulate_btn') ? 'interactive' : 'text',
+            buttonId: url.searchParams.get('simulate_btn') || null,
+            messageId: `wamid.sim_${Date.now()}`
+          });
+        } catch (e) {
+          simulationError = { message: e.message, stack: e.stack };
+        }
+      }
+
+      let metaResponse = null;
+      let menuResponse = null;
+      let ctaResponse = null;
+      let metaError = null;
+      if (isSameAsBusinessNumber) {
+        metaResponse = {
+          warning: 'WhatsApp Cloud API does NOT allow a business number to send messages to itself.',
+          hint: 'Pass ?phone=91XXXXXXXXXX with another mobile number to test live WhatsApp message delivery.'
+        };
+      } else {
+        try {
+          metaResponse = await sendWhatsAppText(env, targetPhone, 'KAAPAV Autoresponder Diagnostic Test ✅');
+          menuResponse = await sendWhatsAppButtons(
+            env,
+            targetPhone,
+            '✨ *KAAPAV Fashion Jewellery* ✨\n\n💎 Simple Luxury — Crafted for You\n\nHow can we help you today? 👇',
+            [
+              { id: 'btn_website', title: '💎 Website' },
+              { id: 'btn_catalogue', title: '📱 Catalogue' },
+              { id: 'btn_help', title: '❓ Help & FAQs' },
+            ],
+            '💖 Where Luxury Meets You'
+          );
+          ctaResponse = await sendWhatsAppCtaUrl(
+            env,
+            targetPhone,
+            '🌐 *Visit Our Website*\n\n💎 Complete Collection Online\n\n✨ Latest arrivals\n🛍️ All categories\n\n💎 KAAPAV Fashion Jewellery',
+            '🌐 Open Website',
+            'https://catalogue.kaapav.com/'
+          );
+        } catch (e) {
+          metaError = e.message;
+        }
+      }
+
+      return jsonResponse({
+        timestamp: new Date().toISOString(),
+        envCheck,
+        phoneInfo,
+        phoneInfoError,
+        targetPhone,
+        chatRecord,
+        simulationResult,
+        simulationError,
+        metaResponse,
+        menuResponse,
+        ctaResponse,
+        metaError
+      });
+    }
+
     if (
-  path === '/internal/ad-engine/learning-export' &&
-  method === 'GET'
-) {
-  return handleAdEngineLearningExport(request, env);
-}
+      path === '/internal/ad-engine/learning-export' &&
+      method === 'GET'
+    ) {
+      return handleAdEngineLearningExport(request, env);
+    }
 
 // ═══ TRACKING ROUTES — kaapav.com/CID and catalogue.kaapav.com/CID ═══
 
@@ -14906,13 +15068,13 @@ if (categoryMatch) {
         });
       }
 
-      return fetch(request);
+      return Response.redirect('https://catalogue.kaapav.com/', 302);
     }
   }
 
-  // kaapav.com/* — pass through to Odoo
+  // kaapav.com/* — redirect to catalogue
   if (isMainSiteHost) {
-    return fetch(request);
+    return Response.redirect('https://catalogue.kaapav.com/', 302);
   }
 }
 
@@ -15034,65 +15196,7 @@ if (path === '/api/catalogue/events' && method === 'POST') {
     return errorResponse(e.message, 500);
   }
 }
-    if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
-    if (path === '/health') return new Response('OK', { status: 200 });
-
-    if (path === '/api/debug/wa-test') {
-      const url = new URL(request.url);
-      const targetPhone = url.searchParams.get('phone') || env.OWNER_PHONE || '919148330016';
-      
-      const envCheck = {
-        has_WA_PHONE_ID: !!env.WA_PHONE_ID,
-        WA_PHONE_ID_val: env.WA_PHONE_ID || 'MISSING',
-        has_WA_TOKEN: !!env.WA_TOKEN,
-        WA_TOKEN_length: env.WA_TOKEN ? env.WA_TOKEN.length : 0,
-        WEBHOOK_VERIFY_TOKEN: env.WEBHOOK_VERIFY_TOKEN || 'MISSING'
-      };
-
-      let phoneInfo = null;
-      let phoneInfoError = null;
-      try {
-        const pRes = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}?fields=display_phone_number,verified_name,code_verification_status,quality_rating,name_status`, {
-          headers: { 'Authorization': `Bearer ${env.WA_TOKEN}` }
-        });
-        phoneInfo = await pRes.json();
-      } catch (e) {
-        phoneInfoError = e.message;
-      }
-
-      let metaResponse = null;
-      let metaError = null;
-      try {
-        const res = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${env.WA_TOKEN}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            messaging_product: 'whatsapp',
-            recipient_type: 'individual',
-            to: targetPhone,
-            type: 'text',
-            text: { preview_url: false, body: 'KAAPAV Autoresponder Diagnostic Test ✅' }
-          })
-        });
-        metaResponse = await res.json();
-      } catch (e) {
-        metaError = e.message;
-      }
-
-      return jsonResponse({
-        timestamp: new Date().toISOString(),
-        envCheck,
-        phoneInfo,
-        phoneInfoError,
-        targetPhone,
-        metaResponse,
-        metaError
-      });
-    }
 
 // ── Link tracking redirects ──
 if (path === '/w' || path === '/c') {
@@ -15296,47 +15400,7 @@ if (path === '/api/debug/supabase-check' && method === 'GET') {
   });
 }
 
-if (path === '/api/debug/wa-test' && method === 'GET') {
-  const url = new URL(request.url);
-  const targetPhone = url.searchParams.get('phone') || env.OWNER_PHONE || '919148330016';
-  
-  const envCheck = {
-    has_WA_PHONE_ID: !!env.WA_PHONE_ID,
-    WA_PHONE_ID_preview: env.WA_PHONE_ID ? `${env.WA_PHONE_ID.slice(0, 4)}...${env.WA_PHONE_ID.slice(-4)}` : 'MISSING',
-    has_WA_TOKEN: !!env.WA_TOKEN,
-    WA_TOKEN_length: env.WA_TOKEN ? env.WA_TOKEN.length : 0,
-    WEBHOOK_VERIFY_TOKEN: env.WEBHOOK_VERIFY_TOKEN || 'MISSING'
-  };
 
-  let metaResponse = null;
-  let metaError = null;
-  try {
-    const res = await fetch(`https://graph.facebook.com/v18.0/${env.WA_PHONE_ID}/messages`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${env.WA_TOKEN}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to: targetPhone,
-        type: 'text',
-        text: { body: 'KAAPAV Autoresponder Diagnostic Test' }
-      })
-    });
-    metaResponse = await res.json();
-  } catch (e) {
-    metaError = e.message;
-  }
-
-  return jsonResponse({
-    timestamp: new Date().toISOString(),
-    envCheck,
-    targetPhone,
-    metaResponse,
-    metaError
-  });
-}
 
 if (path === '/api/debug/supabase-env' && method === 'GET') {
   return jsonResponse({
@@ -15776,18 +15840,7 @@ if (path === '/api/debug/supabase-write-test' && method === 'GET') {
   return jsonResponse(results);
 }
 
-    const isWebhookPath = (
-      path === '/webhook' ||
-      path === '/api/webhook' ||
-      path === '/webhooks/whatsapp/cloudapi' ||
-      path === '/webhooks/whatsapp' ||
-      path === '/webhooks'
-    );
 
-    if (isWebhookPath) {
-      if (method === 'GET') return handleWebhookVerify(request, env);
-      if (method === 'POST') return handleWebhookPost(request, env, ctx);
-    }
 
 if (path === '/api/catalogue' && method === 'GET') {
   const { results } = await env.DB.prepare(
@@ -15806,10 +15859,10 @@ if (path === '/api/catalogue' && method === 'GET') {
 }
  
 if (path === '/' || path === '/index.html') {
-  const response = await fetch(request);
-  return new Response(response.body, {
+  return new Response(JSON.stringify({ status: 'ok', service: 'KAAPAV API', time: new Date().toISOString() }), {
     headers: {
-      ...response.headers,
+      'Content-Type': 'application/json',
+      ...corsHeaders,
       'Cache-Control': 'no-store, no-cache, must-revalidate',
       'Pragma': 'no-cache',
     }
