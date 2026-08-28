@@ -7,7 +7,11 @@ preview_urls = false
 
 routes = [
   { pattern = "wa.kaapav.com/*", zone_name = "kaapav.com" },
- ]
+  { pattern = "kaapav.com/webhook", zone_name = "kaapav.com" },
+  { pattern = "kaapav.com/api/webhook", zone_name = "kaapav.com" },
+  { pattern = "www.kaapav.com/webhook", zone_name = "kaapav.com" },
+  { pattern = "www.kaapav.com/api/webhook", zone_name = "kaapav.com" },
+]
 
 [vars]
 ENVIRONMENT = "production"
