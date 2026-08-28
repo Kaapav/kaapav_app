@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#FAF7F2">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Express Checkout | KAAPAV</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Jost:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <script src="/assets/kaapav-store-engine.js"></script>
+
+  <style>
+    :root {
+      --bg-mesh: radial-gradient(at 0% 0%, rgba(247, 239, 227, 0.95) 0, transparent 55%),
+                 radial-gradient(at 100% 0%, rgba(238, 220, 190, 0.85) 0, transparent 50%),
+                 radial-gradient(at 50% 40%, rgba(253, 250, 245, 1) 0, transparent 100%),
+                 #FAF7F2;
+      --gold: #C49432;
+      --gold-l: #E2B755;
+      --gold-d: #9A7424;
+      --ink: #1C1917;
+      --muted: #78716C;
+      --serif: "Cormorant Garamond", Georgia, serif;
+      --sans: "Jost", -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg-mesh); color: var(--ink); font-family: var(--sans); min-height: 100vh; display: flex; flex-direction: column; }
+    a { color: inherit; text-decoration: none; }
+    .checkout-shell { width: min(840px, calc(100% - 32px)); margin: 40px auto 60px; }
+    .checkout-card { background: #FFF; border: 1px solid rgba(196,148,50,0.25); border-radius: 24px; padding: 36px; box-shadow: 0 16px 40px rgba(60,40,20,0.06); }
+    .checkout-header { text-align: center; margin-bottom: 30px; }
+    .checkout-header h1 { font-family: var(--serif); font-size: 32px; color: #1C1917; margin-bottom: 6px; }
+    .checkout-header p { font-size: 13.5px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header style="padding:16px 24px;background:#FAF7F2;border-bottom:1px solid rgba(196,148,50,0.2);text-align:center">
+    <a href="/index.html">
+      <img src="/assets/logo.png" alt="KAAPAV" style="height:44px;margin:auto" onerror="this.src='/assets/kaapav-logo.png'">
+    </a>
+  </header>
+
+  <main class="checkout-shell">
+    <div class="checkout-card">
+      <div class="checkout-header">
+        <h1>Secure Express Checkout</h1>
+        <p>Complete your delivery address and pay securely via UPI, Cards, or NetBanking.</p>
+      </div>
+
+      <div id="checkoutContainer">
+        <!-- Trigger Modal Automatically -->
+      </div>
+    </div>
+  </main>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(() => {
+        if (typeof window.KaapavStore !== 'undefined') {
+          window.KaapavStore.openCheckoutModal();
+        }
+      }, 300);
+    });
+  </script>
+</body>
+</html>

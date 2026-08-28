@@ -7,14 +7,19 @@
 /category/sets /category/sets/index.html 200
 /category/bestsellers /category/bestsellers/index.html 200
 
-# Legacy Odoo Category Routes
-/shop/category/all-jewellery-earrings-21 /category/earrings/index.html 200
-/shop/category/all-jewellery-necklace-19 /category/necklaces/index.html 200
-/shop/category/all-jewellery-bracelets-13 /category/bracelets/index.html 200
-/shop/category/all-jewellery-rings-20 /category/rings/index.html 200
-/shop/category/all-jewellery-pendants-18 /category/pendants/index.html 200
-/shop/category/all-jewellery-12 /category/bestsellers/index.html 200
-/shop/category/* /shop/index.html 200
+# Checkout & Cart
+/checkout /checkout/index.html 200
+/checkout/* /checkout/index.html 200
+/cart /shop/index.html 200
+
+# Legacy Odoo Category Routes (301 Permanent SEO Redirects)
+/shop/category/all-jewellery-earrings-21 /category/earrings/index.html 301
+/shop/category/all-jewellery-necklace-19 /category/necklaces/index.html 301
+/shop/category/all-jewellery-bracelets-13 /category/bracelets/index.html 301
+/shop/category/all-jewellery-rings-20 /category/rings/index.html 301
+/shop/category/all-jewellery-pendants-18 /category/pendants/index.html 301
+/shop/category/all-jewellery-12 /category/bestsellers/index.html 301
+/shop/category/* /shop/index.html 301
 
 # Legacy Odoo Product Routes
 /shop/product/* /product/index.html 200
