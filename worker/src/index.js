@@ -11420,7 +11420,7 @@ async process({ phone, name, text, messageType, buttonId, messageId }) {
     }
 
     // ── 3. Individual FAQ item selected from category sub-list ───
-    if (/^faq_item_\d+$/.test(input)) {
+    if (/^faq_item_\d+$/.test(input) || (input.startsWith('faq_') && !input.startsWith('faq_cat_') && !['faq_more', 'faq_order', 'faq_home'].includes(input))) {
       await clearConvState(phone, this.env);
       await this.handleFaqItemSelection(phone, input);
       return;
@@ -11637,21 +11637,24 @@ if (catalogRegex.test(inputLower)) return 'OPEN_CATALOG';
 };
 
 const sendButtons = async (text, btns, footer = null) => {
-  await sendWhatsAppButtons(env, phone, text, btns, footer);
-  await saveOutgoing('[Menu] ' + text, 'buttons', btns);
+  const metaRes = await sendWhatsAppButtons(env, phone, text, btns, footer);
+  saveOutgoing('[Menu] ' + text, 'buttons', btns).catch(() => {});
+  return metaRes;
 };
 
 const sendCtaUrl = async (text, buttonText, url, footer = null) => {
-  await sendWhatsAppCtaUrl(env, phone, text, buttonText, url, footer);
-  await saveOutgoing('[CTA] ' + text + '\n' + url, 'buttons', [
+  const metaRes = await sendWhatsAppCtaUrl(env, phone, text, buttonText, url, footer);
+  saveOutgoing('[CTA] ' + text + '\n' + url, 'buttons', [
     { id: 'cta_url', title: buttonText, url }
-  ]);
+  ]).catch(() => {});
+  return metaRes;
 };
 
 const sendText = async (text) => {
-      await sendWhatsAppText(env, phone, text);
-      await saveOutgoing(text, 'text');
-    };
+  const metaRes = await sendWhatsAppText(env, phone, text);
+  saveOutgoing(text, 'text').catch(() => {});
+  return metaRes;
+};
 
     switch (action) {
 
@@ -11705,6 +11708,13 @@ What would you like to do? 👇`,
           ],
           '💖 Assistance with elegance'
         );
+        break;
+
+      // ════════════════════════════════════════
+      // BROWSE TOPICS (FAQ CATEGORIES LIST)
+      // ════════════════════════════════════════
+      case 'BROWSE_TOPICS':
+        await this.sendBrowseTopics(phone);
         break;
 
       // ════════════════════════════════════════
@@ -12228,19 +12238,18 @@ Tap to select 👇`,
     );
 
     const msgId = `auto_${Date.now()}_${phone}`;
-   // In sendBrowseTopics, replace the DB save:
-const browseMsg = '📋 Browse FAQ Topics\n\n💎 Pick a topic below and I\'ll answer all your questions!\n\nTap to select 👇';
-await env.DB.prepare(`
-  INSERT OR IGNORE INTO messages
-    (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at)
-  VALUES (?, ?, ?, ?, 'outgoing', 'sent', 1, datetime('now'), datetime('now'))
-`).bind(msgId, phone, browseMsg, 'list').run();
+    const browseMsg = '📋 Browse FAQ Topics\n\n💎 Pick a topic below and I\'ll answer all your questions!\n\nTap to select 👇';
+    env.DB.prepare(`
+      INSERT OR IGNORE INTO messages
+        (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at)
+      VALUES (?, ?, ?, ?, 'outgoing', 'sent', 1, datetime('now'), datetime('now'))
+    `).bind(msgId, phone, browseMsg, 'list').run().catch(() => {});
 
-    await env.DB.prepare(`
+    env.DB.prepare(`
       UPDATE chats SET last_message = 'Browse Topics', last_message_type = 'list',
         last_direction = 'outgoing', last_timestamp = datetime('now'), updated_at = datetime('now')
       WHERE phone = ?
-    `).bind(phone).run();
+    `).bind(phone).run().catch(() => {});
   }
 
   // ── FAQ CATEGORY SELECTED from Browse Topics list ─────────────
@@ -12258,12 +12267,12 @@ async sendFaqCategoryMenu(phone, faqCat) {
     return;
   }
 
-  // Store FAQ index in KV for item selection
+  // Store FAQ index in KV for item selection (legacy fallback)
   const faqIndex = faqs.map(f => f.shortcut);
   await env.KV.put(`faq_index:${phone}`, JSON.stringify(faqIndex), { expirationTtl: 600 }).catch(() => {});
 
   const rows = faqs.slice(0, 10).map((f, i) => ({
-    id: `faq_item_${i}`,
+    id: f.shortcut || `faq_item_${i}`,
     title: f.title.substring(0, 24),
     description: '',
   }));
@@ -12283,15 +12292,15 @@ and get an instant answer! 👇`,
     '💬 Tap to get your answer'
   );
 
-  // Save to DB
+  // Save to DB in background
   const msgId = 'auto_' + Date.now() + '_' + phone;
-  await env.DB.prepare(
+  env.DB.prepare(
     'INSERT OR IGNORE INTO messages (message_id, phone, text, message_type, direction, status, is_auto_reply, timestamp, created_at) VALUES (?, ?, ?, ?, \'outgoing\', \'sent\', 1, datetime(\'now\'), datetime(\'now\'))'
-  ).bind(msgId, phone, '📋 ' + faqCat.title + '\n\n💎 Select your question below and get an instant answer! 👇', 'list').run();
+  ).bind(msgId, phone, '📋 ' + faqCat.title + '\n\n💎 Select your question below and get an instant answer! 👇', 'list').run().catch(() => {});
   
-  await env.DB.prepare(
+  env.DB.prepare(
     'UPDATE chats SET last_message = ?, last_message_type = \'list\', last_direction = \'outgoing\', last_timestamp = datetime(\'now\'), updated_at = datetime(\'now\') WHERE phone = ?'
-  ).bind(faqCat.title, phone).run();
+  ).bind(faqCat.title, phone).run().catch(() => {});
 }
 
  async handleOrderState(phone, state, data, input) {
@@ -12502,20 +12511,24 @@ Confirm order? 👇`,
   // ── FAQ ITEM SELECTED from category sub-list ──────────────────
   async handleFaqItemSelection(phone, buttonId) {
   const env = this.env;
-  const idx = parseInt(buttonId.split('_').pop(), 10);
+  let shortcut = buttonId;
 
-  const faqIndexRaw = await env.KV.get(`faq_index:${phone}`);
-  if (!faqIndexRaw) { await this.sendBrowseTopics(phone); return; }
+  if (/^faq_item_\d+$/.test(buttonId)) {
+    const idx = parseInt(buttonId.split('_').pop(), 10);
+    const faqIndexRaw = await env.KV.get(`faq_index:${phone}`).catch(() => null);
+    if (faqIndexRaw) {
+      try {
+        const faqIndex = JSON.parse(faqIndexRaw);
+        shortcut = faqIndex[idx] || buttonId;
+      } catch (_) {}
+    }
+  }
 
-  const faqIndex = JSON.parse(faqIndexRaw);
-  const shortcut = faqIndex[idx];
-  if (!shortcut) { await this.sendBrowseTopics(phone); return; }
-
-// ✅ Make "How to Order" FAQ open the same Order Now button menu
-if (shortcut === 'faq_how_order') {
-  await this.executeAction(phone, 'ORDER_FLOW', 'faq_how_order');
-  return;
-}
+  // ✅ Make "How to Order" FAQ open the same Order Now button menu
+  if (shortcut === 'faq_how_order') {
+    await this.executeAction(phone, 'ORDER_FLOW', 'faq_how_order');
+    return;
+  }
 
   // Find in hardcoded FAQ_DATA
   let faq = null;
