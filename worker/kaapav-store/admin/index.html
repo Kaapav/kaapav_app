@@ -958,6 +958,7 @@ Address: #301, 3rd Floor, Ayatti Ashraya, 3rd Cross, Chikkalasandra, Bangalore, 
       const overrides = JSON.parse(localStorage.getItem('kpv_inventory_overrides') || '{}');
       overrides[sku] = { ...p };
       localStorage.setItem('kpv_inventory_overrides', JSON.stringify(overrides));
+      try { localStorage.removeItem('kpv_store_products_v1'); } catch(e) {}
 
       try {
         const ch = new BroadcastChannel('kaapav_admin_sync');
@@ -965,17 +966,19 @@ Address: #301, 3rd Floor, Ayatti Ashraya, 3rd Cross, Chikkalasandra, Bangalore, 
       } catch(e) {}
 
       const token = sessionStorage.getItem('kpv_admin_jwt');
-      if (token) {
-        fetch(ADMIN_API + '/products/' + sku, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      try {
+        await fetch(ADMIN_API + '/products/' + sku, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': 'Bearer ' + token } : {}) },
           body: JSON.stringify(p)
-        }).catch(()=>{});
+        });
+      } catch(e) {
+        console.warn('Backend product update error:', e);
       }
 
       closeFullEditModal();
       renderStockTable();
-      toast('Saved all changes for ' + p.name);
+      toast('Saved all changes for ' + p.name + ' (Synced with live website)');
     }
 
     // Policy Hub

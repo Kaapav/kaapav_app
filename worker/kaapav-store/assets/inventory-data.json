@@ -7,20 +7,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334259010_0601013 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334259010_0601013 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/642/image_1920?unique=870465f"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0601013-aqua-glass-rectangle-pendant-artificial-yellow-gold-642",
-    "description": "Aqua Glass Rectangle Pendant – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nFinish: Fast Moving\nMaterial: Anti-Tarnish Artificial Jewellery",
-    "tags": [
-      "2026-08-02 09:21:26"
-    ],
     "material": "Anti-Tarnish Artificial Jewellery",
     "finish": "Fast Moving",
-    "status": "Enabled"
+    "tags": [
+      "2026-08-02 09:21:26"
+    ]
   },
   {
     "sku": "301013",
@@ -30,20 +28,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332484466_0301013 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332484466_0301013 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/518/image_1920?unique=5fec214"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0301013-bezel-set-crystal-oval-pendant-necklace-artificial-yellow-gold-518",
-    "description": "Bezel-Set Crystal Oval Pendant Necklace - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "0202001",
@@ -53,20 +49,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 4,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326113736_0202001 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326113736_0202001 (2).jpg",
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326114250_0202001.jpg"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202001-black-white-circle-bracelet-artificial-rose-gold-479",
-    "description": "Black & White Circle Bracelet – Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nFinish: Bestseller\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "18K Anti-Tarnish Gold Plated",
+    "finish": "Bestseller",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "Bestseller",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501010",
@@ -76,20 +70,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330794781_0501010 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330794781_0501010 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/571/image_1920?unique=6b01ca7"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501010-black-and-clear-cubic-zirconia-double-flower-stud-earrings-artificial-yellow-gold-571",
-    "description": "Black and Clear Cubic Zirconia Double Flower Stud Earrings - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501012",
@@ -99,20 +91,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330854376_0501012 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330854376_0501012 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/573/image_1920?unique=5804094"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501012-black-and-clear-cubic-zirconia-floral-stud-earrings-artificial-yellow-gold-573",
-    "description": "Black and Clear Cubic Zirconia Floral Stud Earrings - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "802008",
@@ -122,20 +112,18 @@
     "price": 799,
     "compare_price": 1499,
     "stock": 4,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336452520_0802008 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336452520_0802008 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/652/image_1920?unique=737656e"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earring-pendant-sets-23/0802008-blossom-circle-floral-pendant-set-artificial-rose-gold-652",
-    "description": "Blossom Circle Floral Pendant Set – Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nFinish: Trending\nMaterial: Anti-Tarnish Artificial Jewellery",
-    "tags": [
-      "2026-08-02 09:22:40"
-    ],
     "material": "Anti-Tarnish Artificial Jewellery",
     "finish": "Trending",
-    "status": "Enabled"
+    "tags": [
+      "2026-08-02 09:22:40"
+    ]
   },
   {
     "sku": "802009",
@@ -145,20 +133,18 @@
     "price": 799,
     "compare_price": 1499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336466725_0802009 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336466725_0802009 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/653/image_1920?unique=22b5e23"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earring-pendant-sets-23/0802009-blue-butterfly-bloom-pendant-set-artificial-rose-gold-653",
-    "description": "Blue Butterfly Bloom Pendant Set – Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:22:40"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "802007",
@@ -168,20 +154,18 @@
     "price": 799,
     "compare_price": 1499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336393102_0802007 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336393102_0802007 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/651/image_1920?unique=0f5b841"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earring-pendant-sets-23/0802007-blue-butterfly-crystal-pendant-set-artificial-rose-gold-651",
-    "description": "Blue Butterfly Crystal Pendant Set – Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:22:40"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "802010",
@@ -191,20 +175,18 @@
     "price": 799,
     "compare_price": 1499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336484917_0802010 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336484917_0802010 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/654/image_1920?unique=0e24f1e"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earring-pendant-sets-23/0802010-bluebird-orbit-pendant-set-artificial-rose-gold-654",
-    "description": "Bluebird Orbit Pendant Set – Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:22:40"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "802012",
@@ -214,20 +196,18 @@
     "price": 799,
     "compare_price": 1499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336525849_0802012 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336525849_0802012 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/656/image_1920?unique=4d16894"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earring-pendant-sets-23/0802012-blush-bird-orbit-pendant-set-artificial-rose-gold-656",
-    "description": "Blush Bird Orbit Pendant Set – Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nFinish: Trending\nMaterial: Anti-Tarnish Artificial Jewellery",
-    "tags": [
-      "2026-08-02 09:22:40"
-    ],
     "material": "Anti-Tarnish Artificial Jewellery",
     "finish": "Trending",
-    "status": "Enabled"
+    "tags": [
+      "2026-08-02 09:22:40"
+    ]
   },
   {
     "sku": "601018",
@@ -237,20 +217,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334356698_0601018 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334356698_0601018 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/647/image_1920?unique=f3150b8"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0601018-blush-glass-rectangle-pendant-artificial-yellow-gold-647",
-    "description": "Blush Glass Rectangle Pendant – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "302004",
@@ -260,20 +238,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331751421_0302004 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331751421_0302004 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/509/image_1920?unique=34cb165"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0302004-butterfly-mother-of-pearl-clover-necklace-artificial-rose-gold-509",
-    "description": "Butterfly & Mother of Pearl Clover Necklace - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "601017",
@@ -283,20 +259,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334339871_0601017 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334339871_0601017 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/646/image_1920?unique=9ea53e7"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0601017-butterfly-drop-charm-pendant-artificial-yellow-gold-646",
-    "description": "Butterfly Drop Charm Pendant – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501021",
@@ -306,20 +280,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 4,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331169976_0501021 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331169976_0501021 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/625/image_1920?unique=f1fd50a"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501021-butterfly-floral-pearl-earrings-artificial-yellow-gold-625",
-    "description": "Butterfly Floral Pearl Earrings – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "601008",
@@ -329,20 +301,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334141820_0601008 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334141820_0601008 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/561/image_1920?unique=94813e1"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0601008-butterfly-initial-pendant-necklace-with-crystals-artificial-yellow-gold-561",
-    "description": "Butterfly Initial Pendant Necklace with Crystals - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "302016",
@@ -352,20 +322,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332648700_0302016 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332648700_0302016 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/521/image_1920?unique=2d57df3"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0302016-butterfly-lariat-necklace-with-colorful-accents-artificial-rose-gold-521",
-    "description": "Butterfly Lariat Necklace with Colorful Accents - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "801014",
@@ -375,20 +343,18 @@
     "price": 799,
     "compare_price": 1499,
     "stock": 8,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336572519_0801014 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336572519_0801014 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/658/image_1920?unique=1245179"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earring-pendant-sets-23/0801014-butterfly-station-necklace-set-artificial-yellow-gold-658",
-    "description": "Butterfly Station Necklace Set – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nFinish: Bestseller\nMaterial: Anti-Tarnish Artificial Jewellery",
-    "tags": [
-      "2026-08-02 09:22:40"
-    ],
     "material": "Anti-Tarnish Artificial Jewellery",
     "finish": "Bestseller",
-    "status": "Enabled"
+    "tags": [
+      "2026-08-02 09:22:40"
+    ]
   },
   {
     "sku": "302017",
@@ -398,7 +364,7 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332676758_0302017 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332676758_0302017 (2).jpg",
@@ -406,13 +372,11 @@
       "https://www.kaapav.com/web/image/product.template/522/image_1920?unique=2a1fdff"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0302017-cascading-butterfly-pendant-necklace-artificial-rose-gold-522",
-    "description": "Cascading Butterfly Pendant Necklace - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "202018",
@@ -422,20 +386,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328041420_0202018 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328041420_0202018 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/495/image_1920?unique=1fee9b5"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202018-celestial-charm-bracelet-with-turquoise-accents-artificial-rose-gold-495",
-    "description": "Celestial Charm Bracelet with Turquoise Accents - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "201013",
@@ -445,20 +407,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326768491_0201013.jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326768491_0201013.jpg",
       "https://www.kaapav.com/web/image/product.template/491/image_1920?unique=a9cf705"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0201013-celestial-shapes-bracelet-artificial-yellow-gold-491",
-    "description": "Celestial Shapes Bracelet – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "601014",
@@ -468,20 +428,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334281143_0601014 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334281143_0601014 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/643/image_1920?unique=f9f3855"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0601014-celestial-star-outline-pendant-artificial-yellow-gold-643",
-    "description": "Celestial Star Outline Pendant – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501002",
@@ -491,20 +449,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330487639_0501002 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330487639_0501002 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/563/image_1920?unique=f162312"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501002-champagne-cubic-zirconia-sunburst-stud-earrings-artificial-yellow-gold-563",
-    "description": "Champagne Cubic Zirconia Sunburst Stud Earrings - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "302005",
@@ -514,20 +470,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331815080_0302005 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331815080_0302005 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/510/image_1920?unique=1276ceb"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0302005-clover-circle-pendant-necklace-with-crystal-accents-artificial-rose-gold-510",
-    "description": "Clover & Circle Pendant Necklace with Crystal Accents - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "202024",
@@ -537,20 +491,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328349706_0202024 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328349706_0202024 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/501/image_1920?unique=cf7b2df"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202024-concentric-circle-bolo-bracelet-with-crystal-accents-artificial-rose-gold-501",
-    "description": "Concentric Circle Bolo Bracelet with Crystal Accents - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "801005",
@@ -560,20 +512,18 @@
     "price": 799,
     "compare_price": 1499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336346690_0801005 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336346690_0801005 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/530/image_1920?unique=4575a83"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earring-pendant-sets-23/0801005-concentric-circle-crystal-pendant-and-earrings-set-artificial-yellow-gold-530",
-    "description": "Concentric Circle Crystal Pendant and Earrings Set - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:22:40"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "601003",
@@ -583,20 +533,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334021525_0601003 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334021525_0601003 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/556/image_1920?unique=71e9f34"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0601003-crowned-mother-of-pearl-heart-necklace-artificial-yellow-gold-556",
-    "description": "Crowned Mother of Pearl Heart Necklace - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "301020",
@@ -606,19 +554,17 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://www.kaapav.com/web/image/product.template/525/image_1920?unique=d3d8fa1",
     "images": [
       "https://www.kaapav.com/web/image/product.template/525/image_1920?unique=d3d8fa1"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0301020-crystal-embellished-flat-chain-necklace-artificial-yellow-gold-525",
-    "description": "Crystal Embellished Flat Chain Necklace - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "801015",
@@ -628,20 +574,18 @@
     "price": 799,
     "compare_price": 1499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336589706_0801015 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336589706_0801015 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/659/image_1920?unique=8b9307b"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earring-pendant-sets-23/0801015-crystal-orbit-station-necklace-set-artificial-yellow-gold-659",
-    "description": "Crystal Orbit Station Necklace Set – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:22:40"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "601012",
@@ -651,20 +595,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334237818_0601012 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334237818_0601012 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/640/image_1920?unique=e68ad35"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0601012-crystal-wing-butterfly-pendant-artificial-yellow-gold-640",
-    "description": "Crystal Wing Butterfly Pendant – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "301008",
@@ -674,20 +616,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331920264_0301008 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331920264_0301008 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/513/image_1920?unique=4ae6902"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0301008-curved-bar-necklace-with-geometric-medallion-artificial-yellow-gold-513",
-    "description": "Curved Bar Necklace with Geometric Medallion - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701011",
@@ -697,7 +637,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334972077_0701011 (3).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334972077_0701011 (3).jpg",
@@ -705,13 +645,11 @@
       "https://www.kaapav.com/web/image/product.template/542/image_1920?unique=5818353"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701011-cushion-cut-champagne-cubic-zirconia-halo-ring-with-marquise-crystal-accents-artificial-yellow-gold-542",
-    "description": "Cushion Cut Champagne Cubic Zirconia Halo Ring with Marquise Crystal Accents - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "702002",
@@ -721,7 +659,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334650119_0702002 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334650119_0702002 (2).jpg",
@@ -729,13 +667,11 @@
       "https://www.kaapav.com/web/image/product.template/533/image_1920?unique=b838098"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0702002-cushion-cut-champagne-cubic-zirconia-halo-ring-with-pave-band-artificial-rose-gold-533",
-    "description": "Cushion Cut Champagne Cubic Zirconia Halo Ring with Pave Band - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "202003",
@@ -745,20 +681,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326241682_0202003 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326241682_0202003 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/481/image_1920?unique=0d5265c"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202003-dual-butterfly-charm-bangle-artificial-rose-gold-481",
-    "description": "Dual Butterfly Charm Bangle – Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "203032",
@@ -768,20 +702,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328927117_0203032 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328927117_0203032 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/591/image_1920?unique=a78aaf7"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0203032-elegant-baguette-crystal-bracelet-artificial-white-gold-591",
-    "description": "Elegant Baguette Crystal Bracelet – Artificial White Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "201041",
@@ -791,7 +723,7 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778329507342_0201041 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778329507342_0201041 (2).jpg",
@@ -799,13 +731,11 @@
       "https://www.kaapav.com/web/image/product.template/600/image_1920?unique=26e5956"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0201041-elegant-black-clover-motif-bracelet-artificial-yellow-gold-600",
-    "description": "Elegant Black Clover Motif Bracelet – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "201033",
@@ -815,20 +745,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328987191_0201033 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328987191_0201033 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/592/image_1920?unique=0011667"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0201033-elegant-black-crystal-tennis-bracelet-artificial-yellow-gold-592",
-    "description": "Elegant Black Crystal Tennis Bracelet – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701032",
@@ -838,20 +766,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335860811_0701032.jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335860811_0701032.jpg",
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335878981_0701032 (2).jpg"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701032-elegant-blue-inlay-wave-ring-artificial-yellow-gold-611",
-    "description": "Elegant Blue Inlay Wave Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701036",
@@ -861,7 +787,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336023973_0701036 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336023973_0701036 (2).jpg",
@@ -869,13 +795,11 @@
       "https://www.kaapav.com/web/image/product.template/615/image_1920?unique=787ccb4"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701036-elegant-blue-medallion-motif-ring-artificial-yellow-gold-615",
-    "description": "Elegant Blue Medallion Motif Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "202006",
@@ -885,20 +809,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326427981_0202006 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326427981_0202006 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/484/image_1920?unique=da9f81a"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202006-elegant-butterfly-bracelet-artificial-yellow-gold-484",
-    "description": "Elegant Butterfly Bracelet – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "201040",
@@ -908,7 +830,7 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778329477944_0201040 (3).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778329477944_0201040 (3).jpg",
@@ -916,13 +838,11 @@
       "https://www.kaapav.com/web/image/product.template/599/image_1920?unique=18152cb"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0201040-elegant-butterfly-motif-bracelet-artificial-yellow-gold-599",
-    "description": "Elegant Butterfly Motif Bracelet – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "201030",
@@ -932,20 +852,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328712744_0201030 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328712744_0201030 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/589/image_1920?unique=2597b4e"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0201030-elegant-crystal-tennis-bracelet-artificial-yellow-gold-589",
-    "description": "Elegant Crystal Tennis Bracelet – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "201035",
@@ -955,20 +873,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778329318388_0201035 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778329318388_0201035 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/594/image_1920?unique=f465f22"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0201035-elegant-cube-crystal-bangle-artificial-yellow-gold-594",
-    "description": "Elegant Cube Crystal Bangle – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "201042",
@@ -978,20 +894,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778329536182_0201042 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778329536182_0201042 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/601/image_1920?unique=275a035"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0201042-elegant-daisy-crystal-bracelet-artificial-yellow-gold-601",
-    "description": "Elegant Daisy Crystal Bracelet – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "202034",
@@ -1001,20 +915,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778329274250_0202034 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778329274250_0202034 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/593/image_1920?unique=eb44002"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202034-elegant-designer-open-cuff-bangle-artificial-rose-gold-593",
-    "description": "Elegant Designer Open Cuff Bangle – Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "201038",
@@ -1024,7 +936,7 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778329420678_0201038 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778329420678_0201038 (2).jpg",
@@ -1032,13 +944,11 @@
       "https://www.kaapav.com/web/image/product.template/597/image_1920?unique=f865421"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0201038-elegant-dual-heart-bracelet-artificial-yellow-gold-597",
-    "description": "Elegant Dual Heart Bracelet – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701025",
@@ -1048,20 +958,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335679623_0701025 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335679623_0701025 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/604/image_1920?unique=760ff21"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701025-elegant-geometric-star-ring-artificial-yellow-gold-604",
-    "description": "Elegant Geometric Star Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701023",
@@ -1071,20 +979,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335605905_0701023 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335605905_0701023 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/602/image_1920?unique=3bd45ed"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701023-elegant-heart-crystal-ring-artificial-yellow-gold-602",
-    "description": "Elegant Heart Crystal Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701028",
@@ -1094,20 +1000,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335732319_0701028 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335732319_0701028 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/607/image_1920?unique=f3450c1"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701028-elegant-infinity-loop-ring-artificial-yellow-gold-607",
-    "description": "Elegant Infinity Loop Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701034",
@@ -1117,20 +1021,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335984859_0701034 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335984859_0701034 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/613/image_1920?unique=c5bda44"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701034-elegant-lavender-marble-motif-ring-artificial-yellow-gold-613",
-    "description": "Elegant Lavender Marble Motif Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701029",
@@ -1140,20 +1042,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335752491_0701029 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335752491_0701029 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/608/image_1920?unique=a04e565"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701029-elegant-leaf-vine-openwork-ring-artificial-yellow-gold-608",
-    "description": "Elegant Leaf Vine Openwork Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701030",
@@ -1163,20 +1063,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335776886_0701030 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335776886_0701030 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/609/image_1920?unique=6b16a7e"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701030-elegant-mint-green-inlay-wave-ring-artificial-yellow-gold-609",
-    "description": "Elegant Mint Green Inlay Wave Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701037",
@@ -1186,20 +1084,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336052611_0701037 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336052611_0701037 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/616/image_1920?unique=6c43090"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701037-elegant-peach-marble-motif-ring-artificial-yellow-gold-616",
-    "description": "Elegant Peach Marble Motif Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "202031",
@@ -1209,20 +1105,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328896669_0202031.jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328896669_0202031.jpg",
       "https://www.kaapav.com/web/image/product.template/590/image_1920?unique=1e906a8"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202031-elegant-pink-crystal-tennis-bracelet-artificial-rose-gold-590",
-    "description": "Elegant Pink Crystal Tennis Bracelet – Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701031",
@@ -1232,20 +1126,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335817295_0701031.jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335817295_0701031.jpg",
       "https://www.kaapav.com/web/image/product.template/610/image_1920?unique=eb8b27e"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701031-elegant-pink-inlay-wave-ring-artificial-yellow-gold-610",
-    "description": "Elegant Pink Inlay Wave Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701035",
@@ -1255,20 +1147,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336001474_0701035 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336001474_0701035 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/614/image_1920?unique=dbc975b"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701035-elegant-pink-marble-dual-stone-ring-artificial-yellow-gold-614",
-    "description": "Elegant Pink Marble Dual-Stone Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701039",
@@ -1278,20 +1168,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336149746_0701039.jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336149746_0701039.jpg",
       "https://www.kaapav.com/web/image/product.template/618/image_1920?unique=0d18a16"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701039-elegant-pink-triple-motif-ring-artificial-yellow-gold-618",
-    "description": "Elegant Pink Triple Motif Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "201039",
@@ -1301,7 +1189,7 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778329443932_0201039 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778329443932_0201039 (2).jpg",
@@ -1309,13 +1197,11 @@
       "https://www.kaapav.com/web/image/product.template/598/image_1920?unique=0c1db57"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0201039-elegant-round-floral-motif-bracelet-artificial-yellow-gold-598",
-    "description": "Elegant Round Floral Motif Bracelet – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701027",
@@ -1325,20 +1211,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335713220_0701027 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335713220_0701027 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/606/image_1920?unique=97b8881"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701027-elegant-shell-pattern-ring-artificial-yellow-gold-606",
-    "description": "Elegant Shell Pattern Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701038",
@@ -1348,20 +1232,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336120315_0701038 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336120315_0701038 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/617/image_1920?unique=7e7538c"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701038-elegant-sky-blue-triple-motif-ring-artificial-yellow-gold-617",
-    "description": "Elegant Sky Blue Triple Motif Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701026",
@@ -1371,20 +1253,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335695919_0701026 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335695919_0701026 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/605/image_1920?unique=f398d28"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701026-elegant-snake-wrap-ring-artificial-yellow-gold-605",
-    "description": "Elegant Snake Wrap Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "201037",
@@ -1394,20 +1274,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778329389322_0201038 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778329389322_0201038 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/596/image_1920?unique=70b08c1"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0201037-elegant-square-shape-motif-bracelet-artificial-yellow-gold-596",
-    "description": "Elegant Square Shape Motif Bracelet – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701024",
@@ -1417,20 +1295,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335644598_0701024 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335644598_0701024 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/603/image_1920?unique=f0f7998"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701024-elegant-swan-shape-crystal-ring-artificial-yellow-gold-603",
-    "description": "Elegant Swan Shape Crystal Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "202029",
@@ -1440,20 +1316,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328542354_0202029 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328542354_0202029 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/588/image_1920?unique=bc9e1f1"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202029-elegant-triple-evil-eye-crystal-bangle-artificial-yellow-gold-588",
-    "description": "Elegant Triple Evil Eye Crystal Bangle – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nFinish: Bestseller\nMaterial: Anti-Tarnish Artificial Jewellery",
-    "tags": [
-      "2026-08-02 09:20:19"
-    ],
     "material": "Anti-Tarnish Artificial Jewellery",
     "finish": "Bestseller",
-    "status": "Enabled"
+    "tags": [
+      "2026-08-02 09:20:19"
+    ]
   },
   {
     "sku": "201036",
@@ -1463,20 +1337,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778329334569_0201036 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778329334569_0201036 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/595/image_1920?unique=f7428e3"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0201036-elegant-twisted-crystal-bangle-artificial-yellow-gold-595",
-    "description": "Elegant Twisted Crystal Bangle – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701033",
@@ -1486,20 +1358,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335965730_0701033 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335965730_0701033 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/612/image_1920?unique=0830f7a"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701033-elegant-white-green-clover-motif-ring-artificial-yellow-gold-612",
-    "description": "Elegant White & Green Clover Motif Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701015",
@@ -1509,7 +1379,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335073721_0701015 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335073721_0701015 (2).jpg",
@@ -1517,13 +1387,11 @@
       "https://www.kaapav.com/web/image/product.template/546/image_1920?unique=ce8adc8"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701015-emerald-blossom-grace-ring-artificial-yellow-gold-546",
-    "description": "Emerald Blossom Grace Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701012",
@@ -1533,7 +1401,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335007898_0701012 (3).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335007898_0701012 (3).jpg",
@@ -1541,13 +1409,11 @@
       "https://www.kaapav.com/web/image/product.template/543/image_1920?unique=bb9dd23"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701012-emerald-cut-black-cubic-zirconia-halo-ring-with-marquise-crystal-accents-artificial-yellow-gold-543",
-    "description": "Emerald Cut Black Cubic Zirconia Halo Ring with Marquise Crystal Accents - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701013",
@@ -1557,7 +1423,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335034524_0701013 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335034524_0701013 (2).jpg",
@@ -1565,13 +1431,11 @@
       "https://www.kaapav.com/web/image/product.template/544/image_1920?unique=90d6f5f"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701013-emerald-cut-green-cubic-zirconia-ring-with-pave-crystal-band-artificial-yellow-gold-544",
-    "description": "Emerald Cut Green Cubic Zirconia Ring with Pave Crystal Band - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "602001",
@@ -1581,20 +1445,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778333972757_0602001 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778333972757_0602001 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/554/image_1920?unique=c38dab8"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0602001-emerald-cut-green-gem-pendant-necklace-with-crystal-halo-artificial-rose-gold-554",
-    "description": "Emerald Cut Green Gem Pendant Necklace with Crystal Halo - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "601015",
@@ -1604,20 +1466,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334298747_0601015 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334298747_0601015 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/644/image_1920?unique=6353b28"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0601015-emerald-glow-glass-pendant-artificial-yellow-gold-644",
-    "description": "Emerald Glow Glass Pendant – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701040",
@@ -1627,20 +1487,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336169222_0701040 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336169222_0701040 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/619/image_1920?unique=c7579fa"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701040-emerald-halo-bloom-ring-artificial-yellow-gold-619",
-    "description": "Emerald Halo Bloom Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701006",
@@ -1650,7 +1508,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334777081_0701006 (3).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334777081_0701006 (3).jpg",
@@ -1658,13 +1516,11 @@
       "https://www.kaapav.com/web/image/product.template/537/image_1920?unique=4f301b6"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701006-emerald-royale-radiance-ring-artificial-yellow-gold-537",
-    "description": "Emerald Royale Radiance Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "601005",
@@ -1674,20 +1530,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334063169_0601005 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334063169_0601005 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/558/image_1920?unique=a58d748"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0601005-enamel-floral-pendant-necklace-with-pearl-accent-artificial-yellow-gold-558",
-    "description": "Enamel Floral Pendant Necklace with Pearl Accent - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "802003",
@@ -1697,20 +1551,18 @@
     "price": 799,
     "compare_price": 1499,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336284899_0802003 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336284899_0802003 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/528/image_1920?unique=fab0edd"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earring-pendant-sets-23/0802003-enameled-butterfly-charms-with-crystal-accents-artificial-yellow-gold-528",
-    "description": "Enameled Butterfly Charms with Crystal Accents - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:22:40"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "802001",
@@ -1720,20 +1572,18 @@
     "price": 799,
     "compare_price": 1499,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336228143_0802001 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336228143_0802001 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/526/image_1920?unique=860093b"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earring-pendant-sets-23/0802001-enameled-butterfly-pendant-and-earrings-set-artificial-rose-gold-526",
-    "description": "Enameled Butterfly Pendant and Earrings Set - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:22:40"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501009",
@@ -1743,20 +1593,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330767420_0501009 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330767420_0501009 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/570/image_1920?unique=3b9111c"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501009-faux-pearl-halo-stud-earrings-with-ad-crystals-artificial-yellow-gold-570",
-    "description": "Faux Pearl Halo Stud Earrings with AD Crystals - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501007",
@@ -1766,20 +1614,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330682966_0501007 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330682966_0501007 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/568/image_1920?unique=7f471ae"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501007-faux-pearl-halo-stud-earrings-with-crystal-accents-artificial-yellow-gold-568",
-    "description": "Faux Pearl Halo Stud Earrings with Crystal Accents - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501015",
@@ -1789,20 +1635,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330987495_0501015 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330987495_0501015 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/576/image_1920?unique=d9aac22"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501015-faux-pearl-stud-earrings-with-cubic-zirconia-bows-artificial-yellow-gold-576",
-    "description": "Faux Pearl Stud Earrings with Cubic Zirconia Bows - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501025",
@@ -1812,20 +1656,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331282120_0501025 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331282120_0501025 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/629/image_1920?unique=23674ea"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501025-floral-engraved-hoop-earrings-artificial-yellow-gold-629",
-    "description": "Floral Engraved Hoop Earrings – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501018",
@@ -1835,20 +1677,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331055739_0501018 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331055739_0501018 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/622/image_1920?unique=f2dc702"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501018-floral-pearl-cluster-earrings-artificial-yellow-gold-622",
-    "description": "Floral Pearl Cluster Earrings – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "301002",
@@ -1858,20 +1698,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331612208_0301002 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331612208_0301002 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/507/image_1920?unique=7d93848"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0301002-four-leaf-clover-pendant-necklace-artificial-yellow-gold-507",
-    "description": "Four-Leaf Clover Pendant Necklace - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "802002",
@@ -1881,20 +1719,18 @@
     "price": 799,
     "compare_price": 1499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336253594_0802002 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336253594_0802002 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/527/image_1920?unique=6a38e38"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earring-pendant-sets-23/0802002-geometric-black-and-white-crystal-pendant-and-earrings-set-artificial-rose-gold-527",
-    "description": "Geometric Black and White Crystal Pendant and Earrings Set - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:22:40"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "202021",
@@ -1904,20 +1740,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328204134_0202021 (3).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328204134_0202021 (3).jpg",
       "https://www.kaapav.com/web/image/product.template/498/image_1920?unique=df9180d"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202021-geometric-charm-bracelet-with-mop-crystals-artificial-rose-gold-498",
-    "description": "Geometric Charm Bracelet with MOP & Crystals - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "802006",
@@ -1927,20 +1761,18 @@
     "price": 799,
     "compare_price": 1499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336378052_0802006 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336378052_0802006 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/531/image_1920?unique=5dffb2d"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earring-pendant-sets-23/0802006-geometric-crystal-pendant-and-earrings-set-artificial-rose-gold-531",
-    "description": "Geometric Crystal Pendant and Earrings Set - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:22:40"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501023",
@@ -1950,20 +1782,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331226945_0501023 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331226945_0501023 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/627/image_1920?unique=b00948e"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501023-geometric-hexagon-hoop-earrings-artificial-yellow-gold-627",
-    "description": "Geometric Hexagon Hoop Earrings – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501016",
@@ -1973,20 +1803,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331002881_0501016 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331002881_0501016 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/620/image_1920?unique=6946b40"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501016-green-white-triangle-stud-earrings-artificial-yellow-gold-620",
-    "description": "Green & White Triangle Stud Earrings – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701009",
@@ -1996,7 +1824,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334868732_0701009 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334868732_0701009 (2).jpg",
@@ -2004,13 +1832,11 @@
       "https://www.kaapav.com/web/image/product.template/540/image_1920?unique=efd4046"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701009-green-cubic-zirconia-ring-with-crystal-accents-artificial-yellow-gold-540",
-    "description": "Green Cubic Zirconia Ring with Crystal Accents - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "202026",
@@ -2020,7 +1846,7 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328475645_0202026 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328475645_0202026 (2).jpg",
@@ -2028,13 +1854,11 @@
       "https://www.kaapav.com/web/image/product.template/503/image_1920?unique=07506e9"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202026-half-crystal-circle-bolo-bracelet-artificial-rose-gold-503",
-    "description": "Half-Crystal Circle Bolo Bracelet - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "202023",
@@ -2044,20 +1868,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328323200_0202023 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328323200_0202023 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/500/image_1920?unique=585091f"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202023-heart-initial-bolo-bracelet-with-crystal-accents-artificial-rose-gold-500",
-    "description": "Heart & Initial Bolo Bracelet with Crystal Accents - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "201011",
@@ -2067,20 +1889,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326674949_0201011 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326674949_0201011 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/489/image_1920?unique=5b72e4a"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0201011-heart-initial-sparkle-bracelet-artificial-yellow-gold-489",
-    "description": "Heart & Initial Sparkle Bracelet – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "302006",
@@ -2090,20 +1910,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331872633_0302006 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331872633_0302006 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/511/image_1920?unique=5404c27"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0302006-heart-evil-eye-toggle-necklace-with-crystal-accent-artificial-rose-gold-511",
-    "description": "Heart Evil Eye Toggle Necklace with Crystal Accent - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "302012",
@@ -2113,20 +1931,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332447453_0302012 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332447453_0302012 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/517/image_1920?unique=f8ceeca"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0302012-heart-tag-toggle-necklace-with-crystal-accents-artificial-rose-gold-517",
-    "description": "Heart Tag Toggle Necklace with Crystal Accents - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501013",
@@ -2136,20 +1952,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330883810_0501013 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330883810_0501013 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/574/image_1920?unique=666584a"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501013-heart-shaped-cubic-zirconia-halo-stud-earrings-artificial-yellow-gold-574",
-    "description": "Heart-Shaped Cubic Zirconia Halo Stud Earrings - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "202016",
@@ -2159,43 +1973,39 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326970719_0202016 (3).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326970719_0202016 (3).jpg",
       "https://www.kaapav.com/web/image/product.template/493/image_1920?unique=d9d30fd"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202016-iconic-monogram-flower-bangle-artificial-rose-gold-493",
-    "description": "Iconic Monogram & Flower Bangle - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nFinish: Bestseller\nMaterial: Anti-Tarnish Artificial Jewellery",
-    "tags": [
-      "2026-08-02 09:20:19"
-    ],
     "material": "Anti-Tarnish Artificial Jewellery",
     "finish": "Bestseller",
-    "status": "Enabled"
+    "tags": [
+      "2026-08-02 09:20:19"
+    ]
   },
   {
     "sku": "601007",
-    "name": "Initial \"G\" Pendant Necklace with Crystal Halo - Artificial Yellow Gold",
+    "name": "Initial G Pendant Necklace with Crystal Halo - Artificial Yellow Gold",
     "category": "Pendants",
     "subcategory": "",
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334124913_0601007 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334124913_0601007 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/560/image_1920?unique=10a8ec9"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0601007-initial-g-pendant-necklace-with-crystal-halo-artificial-yellow-gold-560",
-    "description": "Initial \"G\" Pendant Necklace with Crystal Halo - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "302019",
@@ -2205,20 +2015,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332762769_0302019 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332762769_0302019 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/524/image_1920?unique=5872a1f"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0302019-interlocking-bar-necklace-with-white-inlay-artificial-rose-gold-524",
-    "description": "Interlocking Bar Necklace with White Inlay - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "202022",
@@ -2228,20 +2036,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328255651_0202022 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328255651_0202022 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/499/image_1920?unique=2249adb"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202022-intertwined-circles-bolo-bracelet-with-crystal-accents-artificial-rose-gold-499",
-    "description": "Intertwined Circles Bolo Bracelet with Crystal Accents - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "601016",
@@ -2251,20 +2057,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334317061_0601016 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334317061_0601016 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/645/image_1920?unique=6cbf64b"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0601016-ivory-frame-crystal-pendant-artificial-yellow-gold-645",
-    "description": "Ivory Frame Crystal Pendant – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "202020",
@@ -2274,20 +2078,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328144471_0202020 (3).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328144471_0202020 (3).jpg",
       "https://www.kaapav.com/web/image/product.template/497/image_1920?unique=e43e0cc"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202020-layered-butterfly-charm-bracelet-artificial-rose-gold-497",
-    "description": "Layered Butterfly Charm Bracelet - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "302011",
@@ -2297,20 +2099,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332423884_0302011 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332423884_0302011 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/516/image_1920?unique=37dc25f"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0302011-layered-clover-charm-necklace-with-mop-artificial-rose-gold-516",
-    "description": "Layered Clover Charm Necklace with MOP - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "301021",
@@ -2320,20 +2120,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778333136343_0301021 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778333136343_0301021 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/632/image_1920?unique=7972f6f"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0301021-layered-star-charm-necklace-artificial-yellow-gold-632",
-    "description": "Layered Star Charm Necklace – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "601019",
@@ -2343,20 +2141,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334372450_0601019 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334372450_0601019 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/648/image_1920?unique=2825f79"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0601019-love-pearl-circle-pendant-necklace-artificial-yellow-gold-648",
-    "description": "Love Pearl Circle Pendant Necklace – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "202025",
@@ -2366,20 +2162,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328388345_0202025 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328388345_0202025 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/502/image_1920?unique=9ce9a0c"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202025-mop-clover-bolo-bracelet-with-crystal-accents-artificial-rose-gold-502",
-    "description": "MOP Clover Bolo Bracelet with Crystal Accents - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "302015",
@@ -2389,20 +2183,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332620966_0302015 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332620966_0302015 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/520/image_1920?unique=3b0908d"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0302015-mop-clover-necklace-with-crystal-accents-artificial-rose-gold-520",
-    "description": "MOP Clover Necklace with Crystal Accents - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "201008",
@@ -2412,20 +2204,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326537441_0201008 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326537441_0201008 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/486/image_1920?unique=95c850f"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0201008-malachite-crystal-accent-bracelet-artificial-yellow-gold-486",
-    "description": "Malachite & Crystal Accent Bracelet- Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "202019",
@@ -2435,7 +2225,7 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 1,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328066482_0202019 (3).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328066482_0202019 (3).jpg",
@@ -2443,14 +2233,11 @@
       "https://www.kaapav.com/web/image/product.template/496/image_1920?unique=aaebfe3"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202019-malachite-clover-charm-bracelet-artificial-rose-gold-496",
-    "description": "Malachite Clover Charm Bracelet - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
-    "tags": [
-      "2026-08-02 09:20:19",
-      "Bestseller"
-    ],
     "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    "finish": "Polished",
+    "tags": [
+      "2026-08-02 09:20:19"
+    ]
   },
   {
     "sku": "701017",
@@ -2460,7 +2247,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335329247_0701017 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335329247_0701017 (2).jpg",
@@ -2468,13 +2255,11 @@
       "https://www.kaapav.com/web/image/product.template/548/image_1920?unique=96abc05"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701017-marquise-red-stone-and-cubic-zirconia-halo-ring-artificial-yellow-gold-548",
-    "description": "Marquise Red Stone and Cubic Zirconia Halo Ring - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "202009",
@@ -2484,20 +2269,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326582291_0202009 (3).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326582291_0202009 (3).jpg",
       "https://www.kaapav.com/web/image/product.template/487/image_1920?unique=ad6b2ff"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202009-midnight-clover-elegance-bracelet-artificial-rose-gold-487",
-    "description": "Midnight Clover Elegance Bracelet – Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "601011",
@@ -2507,20 +2290,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334217035_0601011 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334217035_0601011 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/639/image_1920?unique=06dc3e0"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0601011-midnight-onyx-bar-pendant-artificial-yellow-gold-639",
-    "description": "Midnight Onyx Bar Pendant – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "801013",
@@ -2530,20 +2311,18 @@
     "price": 799,
     "compare_price": 1499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336541427_0801013 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336541427_0801013 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/657/image_1920?unique=43f5b4d"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earring-pendant-sets-23/0801013-midnight-oval-station-necklace-set-artificial-yellow-gold-657",
-    "description": "Midnight Oval Station Necklace Set – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:22:40"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "601010",
@@ -2553,20 +2332,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334197428_0601010 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334197428_0601010 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/638/image_1920?unique=da60311"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0601010-mirror-frame-crystal-pendant-artificial-yellow-gold-638",
-    "description": "Mirror Frame Crystal Pendant – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "302014",
@@ -2576,20 +2353,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332574011_0302014 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332574011_0302014 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/519/image_1920?unique=b65afa4"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0302014-monogrammed-oval-pendant-necklace-with-charms-artificial-rose-gold-519",
-    "description": "Monogrammed Oval Pendant Necklace with Charms - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "301010",
@@ -2599,20 +2374,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332137495_0301010 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332137495_0301010 (2).jpg",
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332138112_0301010.jpg"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0301010-openwork-butterfly-necklace-with-crystal-accent-artificial-rose-gold-515",
-    "description": "Openwork Butterfly Necklace with Crystal Accent - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "802011",
@@ -2622,20 +2395,18 @@
     "price": 799,
     "compare_price": 1499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336501725_0802011 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336501725_0802011 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/655/image_1920?unique=0c8bccb"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earring-pendant-sets-23/0802011-pastel-butterfly-triangle-pendant-set-artificial-rose-gold-655",
-    "description": "Pastel Butterfly Triangle Pendant Set – Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:22:40"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501020",
@@ -2645,20 +2416,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331140519_0501020 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331140519_0501020 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/624/image_1920?unique=8fc0bb8"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501020-pastel-floral-cluster-earrings-artificial-yellow-gold-624",
-    "description": "Pastel Floral Cluster Earrings – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701003",
@@ -2668,7 +2437,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334692766_0701003 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334692766_0701003 (2).jpg",
@@ -2676,13 +2445,11 @@
       "https://www.kaapav.com/web/image/product.template/534/image_1920?unique=a25f3fb"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701003-pear-cut-red-stone-halo-ring-with-crystal-pave-band-artificial-yellow-gold-534",
-    "description": "Pear Cut Red Stone Halo Ring with Crystal Pave Band - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "801004",
@@ -2692,20 +2459,18 @@
     "price": 799,
     "compare_price": 1499,
     "stock": 4,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336320225_0802006 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336320225_0802006 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/529/image_1920?unique=f541fe4"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earring-pendant-sets-23/0801004-pear-shaped-crystal-pendant-and-earrings-set-artificial-yellow-gold-529",
-    "description": "Pear-Shaped Crystal Pendant and Earrings Set - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nFinish: Bestseller\nMaterial: Anti-Tarnish Artificial Jewellery",
-    "tags": [
-      "2026-08-02 09:22:40"
-    ],
     "material": "Anti-Tarnish Artificial Jewellery",
     "finish": "Bestseller",
-    "status": "Enabled"
+    "tags": [
+      "2026-08-02 09:22:40"
+    ]
   },
   {
     "sku": "601020",
@@ -2715,20 +2480,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334392361_0601020 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334392361_0601020 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/649/image_1920?unique=0ffa587"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0601020-pearl-crystal-shell-pendant-artificial-yellow-gold-649",
-    "description": "Pearl Crystal Shell Pendant – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501019",
@@ -2738,20 +2501,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331075015_0501019 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331075015_0501019 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/623/image_1920?unique=c4d7fe6"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501019-pearl-flower-drop-earrings-artificial-yellow-gold-623",
-    "description": "Pearl Flower Drop Earrings – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "601021",
@@ -2761,20 +2522,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334411482_0601021 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334411482_0601021 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/650/image_1920?unique=7d0a5b6"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0601021-pearl-sunray-shell-pendant-artificial-yellow-gold-650",
-    "description": "Pearl Sunray Shell Pendant – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "602002",
@@ -2784,20 +2543,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334000149_0602002 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334000149_0602002 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/555/image_1920?unique=6095cd6"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0602002-pearl-whisper-bow-pendant-artificial-rose-gold-555",
-    "description": "Pearl Whisper Bow Pendant – Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "601009",
@@ -2807,20 +2564,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334161671_0601009 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334161671_0601009 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/637/image_1920?unique=3314dee"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0601009-radiant-baguette-crystal-pendant-artificial-yellow-gold-637",
-    "description": "Radiant Baguette Crystal Pendant – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "602006",
@@ -2830,20 +2585,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334091116_0602006 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334091116_0602006 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/559/image_1920?unique=54aafbf"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0602006-radiant-crystal-halo-pendant-necklace-artificial-rose-gold-559",
-    "description": "Radiant Crystal Halo Pendant Necklace - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501008",
@@ -2853,7 +2606,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330707678_0501008 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330707678_0501008 (2).jpg",
@@ -2861,13 +2614,11 @@
       "https://www.kaapav.com/web/image/product.template/569/image_1920?unique=3021544"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501008-rectangular-baguette-and-round-crystal-stud-earrings-artificial-rose-gold-569",
-    "description": "Rectangular Baguette and Round Crystal Stud Earrings - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501011",
@@ -2877,20 +2628,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330820287_0501011 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330820287_0501011 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/572/image_1920?unique=f20f123"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501011-rectangular-ruby-cubic-zirconia-halo-stud-earrings-artificial-yellow-gold-572",
-    "description": "Rectangular Ruby Cubic Zirconia Halo Stud Earrings - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701041",
@@ -2900,20 +2649,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336190405_0701041 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336190405_0701041 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/663/image_1920?unique=94b2340"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701041-rose-prism-solitaire-ring-artificial-yellow-gold-663",
-    "description": "Rose Prism Solitaire Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "303023",
@@ -2923,20 +2670,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778333495310_0303023 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778333495310_0303023 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/635/image_1920?unique=d62d7a7"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0303022-rotating-floral-crystal-necklace-artificial-white-gold-635",
-    "description": "Rotating Floral Crystal Necklace – Artificial White Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "18K Anti-Tarnish Gold Plated",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "303024",
@@ -2946,20 +2691,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778333360034_0303024 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778333360034_0303024 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/636/image_1920?unique=2a2002e"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0303023-rotating-pearl-floral-necklace-artificial-white-gold-636",
-    "description": "Rotating Pearl Floral Necklace – Artificial White Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nFinish: On Offer\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "18K Anti-Tarnish Gold Plated",
+    "finish": "On Offer",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "On Offer",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "303022",
@@ -2969,20 +2712,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778333285906_0303022 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778333285906_0303022 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/634/image_1920?unique=9a87c6b"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0303021-rotating-sunflower-crystal-necklace-artificial-white-gold-634",
-    "description": "Rotating Sunflower Crystal Necklace – Artificial White Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "18K Anti-Tarnish Gold Plated",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701004",
@@ -2992,7 +2733,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334720769_0701004 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334720769_0701004 (2).jpg",
@@ -3000,13 +2741,11 @@
       "https://www.kaapav.com/web/image/product.template/535/image_1920?unique=02ee33d"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701004-round-white-stone-ring-with-twisted-crystal-accents-artificial-yellow-gold-535",
-    "description": "Round  White Stone Ring with Twisted Crystal Accents - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701008",
@@ -3016,7 +2755,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334836885_0701008 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334836885_0701008 (2).jpg",
@@ -3024,13 +2763,11 @@
       "https://www.kaapav.com/web/image/product.template/539/image_1920?unique=b9bce61"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701008-round-aquamarine-colour-stone-and-baguette-crystal-ring-artificial-yellow-gold-539",
-    "description": "Round Aquamarine Colour Stone and Baguette Crystal Ring - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701007",
@@ -3040,7 +2777,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334810655_0701007 (3).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334810655_0701007 (3).jpg",
@@ -3048,13 +2785,11 @@
       "https://www.kaapav.com/web/image/product.template/538/image_1920?unique=db3fa04"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701007-round-blue-stone-halo-ring-with-crystal-accents-artificial-yellow-gold-538",
-    "description": "Round Blue Stone Halo Ring with Crystal Accents - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701016",
@@ -3064,7 +2799,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335099167_0701016 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335099167_0701016 (2).jpg",
@@ -3072,13 +2807,11 @@
       "https://www.kaapav.com/web/image/product.template/547/image_1920?unique=2eff9ba"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701016-round-blue-stone-with-twisted-crystal-accents-artificial-yellow-gold-547",
-    "description": "Round Blue Stone with Twisted Crystal Accents - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701001",
@@ -3088,7 +2821,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334504945_0701001 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334504945_0701001 (2).jpg",
@@ -3096,13 +2829,11 @@
       "https://www.kaapav.com/web/image/product.template/532/image_1920?unique=16d1129"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701001-round-champagne-ring-with-crystal-pave-bands-artificial-yellow-gold-532",
-    "description": "Round Champagne Ring with Crystal Pave Bands - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701019",
@@ -3112,7 +2843,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335389530_0701019 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335389530_0701019 (2).jpg",
@@ -3120,13 +2851,11 @@
       "https://www.kaapav.com/web/image/product.template/550/image_1920?unique=a835710"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701019-round-champagne-topaz-ring-with-crystal-pave-bands-artificial-yellow-gold-550",
-    "description": "Round Champagne Topaz Ring with Crystal Pave Bands - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "502014",
@@ -3136,20 +2865,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330948377_0502014 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330948377_0502014 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/575/image_1920?unique=b1e9f9d"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0502014-round-crystal-cluster-stud-earrings-artificial-rose-gold-575",
-    "description": "Round Crystal Cluster Stud Earrings - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701022",
@@ -3159,7 +2886,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335509553_0701022 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335509553_0701022 (2).jpg",
@@ -3167,13 +2894,11 @@
       "https://www.kaapav.com/web/image/product.template/553/image_1920?unique=a16f5e8"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701022-round-emerald-green-cubic-zirconia-halo-ring-with-pave-band-artificial-yellow-gold-553",
-    "description": "Round Emerald Green Cubic Zirconia Halo Ring with Pave Band - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501004",
@@ -3183,20 +2908,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330537061_0501004 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330537061_0501004 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/565/image_1920?unique=721f939"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501004-round-halo-stud-earrings-with-rectangular-cubic-zirconia-artificial-yellow-gold-565",
-    "description": "Round Halo Stud Earrings with Rectangular Cubic Zirconia - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701020",
@@ -3206,7 +2929,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335460025_0701020 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335460025_0701020 (2).jpg",
@@ -3214,13 +2937,11 @@
       "https://www.kaapav.com/web/image/product.template/551/image_1920?unique=85f05c1"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701020-round-light-pink-cubic-zirconia-halo-ring-with-crystal-accents-artificial-yellow-gold-551",
-    "description": "Round Light Pink Cubic Zirconia Halo Ring with Crystal Accents - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501006",
@@ -3230,20 +2951,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330650245_0501006 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330650245_0501006 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/567/image_1920?unique=6534507"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501006-round-openwork-crystal-stud-earrings-artificial-yellow-gold-567",
-    "description": "Round Openwork Crystal Stud Earrings - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701021",
@@ -3253,7 +2972,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335484467_0701021 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335484467_0701021 (2).jpg",
@@ -3261,13 +2980,11 @@
       "https://www.kaapav.com/web/image/product.template/552/image_1920?unique=30d0cbf"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701021-round-red-cubic-zirconia-halo-ring-with-crystal-accents-artificial-yellow-gold-552",
-    "description": "Round Red Cubic Zirconia Halo Ring with Crystal Accents - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701005",
@@ -3277,7 +2994,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334749285_0701005 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334749285_0701005 (2).jpg",
@@ -3285,13 +3002,11 @@
       "https://www.kaapav.com/web/image/product.template/536/image_1920?unique=d7a6951"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701005-round-red-stone-and-baguette-crystal-ring-artificial-yellow-gold-536",
-    "description": "Round Red Stone and Baguette Crystal Ring - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501005",
@@ -3301,20 +3016,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330621231_0501005 (3).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330621231_0501005 (3).jpg",
       "https://www.kaapav.com/web/image/product.template/566/image_1920?unique=0138de5"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501005-round-ruby-and-cubic-zirconia-pave-stud-earrings-artificial-yellow-gold-566",
-    "description": "Round Ruby and Cubic Zirconia Pave Stud Earrings - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "801016",
@@ -3324,20 +3037,18 @@
     "price": 799,
     "compare_price": 1499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336606743_0801016 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778336606743_0801016 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/660/image_1920?unique=3004e37"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earring-pendant-sets-23/0801016-sage-oval-station-necklace-set-artificial-yellow-gold-660",
-    "description": "Sage Oval Station Necklace Set – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:22:40"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "301003",
@@ -3347,20 +3058,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331698578_0301003 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331698578_0301003 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/508/image_1920?unique=41f3eae"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0301003-sparkling-crystal-flower-pendant-necklace-artificial-yellow-gold-508",
-    "description": "Sparkling Crystal Flower Pendant Necklace - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "202004",
@@ -3370,20 +3079,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326366696_0202004 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326366696_0202004 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/482/image_1920?unique=dfd17a6"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202004-sparkling-evil-eye-bracelet-artificial-yellow-gold-482",
-    "description": "Sparkling Evil Eye Bracelet - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "201014",
@@ -3393,20 +3100,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326844241_0201014 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326844241_0201014 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/492/image_1920?unique=ff84726"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0201014-sparkling-evil-eye-charm-bracelet-artificial-rose-gold-492",
-    "description": "Sparkling Evil Eye Charm Bracelet - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "201012",
@@ -3416,20 +3121,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326710878_0201012 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326710878_0201012 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/490/image_1920?unique=5ff97c2"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0201012-sparkling-evil-eye-charm-bracelet-artificial-yellow-gold-490",
-    "description": "Sparkling Evil Eye Charm Bracelet - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "301009",
@@ -3439,7 +3142,7 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331948446_0301009 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331948446_0301009 (2).jpg",
@@ -3447,13 +3150,11 @@
       "https://www.kaapav.com/web/image/product.template/514/image_1920?unique=46655b1"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0301009-sparkling-floral-cluster-openable-pendant-necklace-artificial-rose-gold-514",
-    "description": "Sparkling Floral Cluster Openable Pendant Necklace - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "303001",
@@ -3463,20 +3164,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331590788_0303001 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331590788_0303001 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/506/image_1920?unique=67b67bd"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0303001-sparkling-flower-pendant-necklace-artificial-white-gold-506",
-    "description": "Sparkling Flower Pendant Necklace - Artificial White Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "301007",
@@ -3486,20 +3185,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331900224_0301007 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331900224_0301007 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/512/image_1920?unique=785bf47"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0301007-sparkling-snowflake-rotating-pendant-necklace-artificial-yellow-gold-512",
-    "description": "Sparkling Snowflake Rotating Pendant Necklace - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "202027",
@@ -3509,20 +3206,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328504572_0202027 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328504572_0202027 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/504/image_1920?unique=2f556b6"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202027-sparkling-star-crystal-bolo-bracelet-artificial-rose-gold-504",
-    "description": "Sparkling Star & Crystal Bolo Bracelet - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701010",
@@ -3532,7 +3227,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334944352_0701010 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334944352_0701010 (2).jpg",
@@ -3540,13 +3235,11 @@
       "https://www.kaapav.com/web/image/product.template/541/image_1920?unique=07f0d60"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701010-square-champagne-cubic-zirconia-halo-ring-with-crystal-accents-artificial-yellow-gold-541",
-    "description": "Square Champagne Cubic Zirconia Halo Ring with Crystal Accents - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501001",
@@ -3556,20 +3249,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330460929_0501001 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330460929_0501001 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/562/image_1920?unique=87e7c62"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501001-square-ruby-cubic-zirconia-double-halo-stud-earrings-artificial-yellow-gold-562",
-    "description": "Square Ruby Cubic Zirconia Double Halo Stud Earrings - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "201017",
@@ -3579,20 +3270,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328009777_0201017 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778328009777_0201017 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/494/image_1920?unique=bdd3d71"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0201017-stellar-dreams-star-bracelet-artificial-yellow-gold-494",
-    "description": "Stellar Dreams Star Bracelet – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501026",
@@ -3602,20 +3291,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331314901_0501026 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331314901_0501026 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/630/image_1920?unique=b48438d"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501026-textured-crescent-hoop-earrings-artificial-yellow-gold-630",
-    "description": "Textured Crescent Hoop Earrings – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501027",
@@ -3625,20 +3312,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331338044_0501027 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331338044_0501027 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/631/image_1920?unique=04bdf38"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501027-textured-leaf-hoop-earrings-artificial-yellow-gold-631",
-    "description": "Textured Leaf Hoop Earrings – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501024",
@@ -3648,20 +3333,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 4,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331258945_0501024 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331258945_0501024 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/628/image_1920?unique=abd3ce1"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501024-textured-trapeze-hoop-earrings-artificial-yellow-gold-628",
-    "description": "Textured Trapeze Hoop Earrings – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "601004",
@@ -3671,20 +3354,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334045024_0601004 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778334045024_0601004 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/557/image_1920?unique=19578f2"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-pendant-22/0601004-three-leaf-clover-necklace-with-mother-of-pearl-artificial-yellow-gold-557",
-    "description": "Three-Leaf Clover Necklace with Mother of Pearl - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:26"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501003",
@@ -3694,20 +3375,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330510316_0501003 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778330510316_0501003 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/564/image_1920?unique=a27b20f"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501003-triangular-cubic-zirconia-stud-earrings-artificial-yellow-gold-564",
-    "description": "Triangular Cubic Zirconia Stud Earrings - Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "302018",
@@ -3717,20 +3396,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332740753_0302018 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778332740753_0302018 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/523/image_1920?unique=d5000c5"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0302018-triple-layered-chain-necklace-with-turquoise-accents-artificial-rose-gold-523",
-    "description": "Triple Layered Chain Necklace with Turquoise Accents - Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:04"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "701018",
@@ -3740,7 +3417,7 @@
     "price": 299,
     "compare_price": 499,
     "stock": 2,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335354237_0701018 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778335354237_0701018 (2).jpg",
@@ -3748,13 +3425,11 @@
       "https://www.kaapav.com/web/image/product.template/549/image_1920?unique=b054c04"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-rings-20/0701018-verdant-radiance-duo-ring-artificial-yellow-gold-549",
-    "description": "Verdant Radiance Duo Ring – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:21:45"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "201007",
@@ -3764,20 +3439,18 @@
     "price": 549,
     "compare_price": 999,
     "stock": 1,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326500746_0201007.jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326500746_0201007.jpg",
       "https://www.kaapav.com/web/image/product.template/485/image_1920?unique=22bedfc"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0201007-wave-pattern-hinged-bracelet-artificial-yellow-gold-485",
-    "description": "Wave Pattern Hinged Bracelet – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:19"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501022",
@@ -3787,20 +3460,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331198939_0501022 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331198939_0501022 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/626/image_1920?unique=2758ef9"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501022-white-floral-cluster-stud-earrings-artificial-yellow-gold-626",
-    "description": "White Floral Cluster Stud Earrings – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "501017",
@@ -3810,20 +3481,18 @@
     "price": 299,
     "compare_price": 499,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331025693_0501017 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778331025693_0501017 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/621/image_1920?unique=318a489"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-earrings-21/0501017-white-geometric-drop-earrings-artificial-yellow-gold-621",
-    "description": "White Geometric Drop Earrings – Artificial Yellow Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "Anti-Tarnish Artificial Jewellery",
+    "finish": "Polished",
     "tags": [
       "2026-08-02 09:20:44"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "0202001",
@@ -3833,20 +3502,18 @@
     "price": 499,
     "compare_price": 999,
     "stock": 4,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326113736_0202001 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326113736_0202001 (2).jpg",
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778326114250_0202001.jpg"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-bracelets-13/0202001-black-white-circle-bracelet-artificial-rose-gold-479",
-    "description": "Black & White Circle Bracelet – Artificial Rose Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nFinish: Bestseller\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "18K Anti-Tarnish Gold Plated",
+    "finish": "Bestseller",
     "tags": [
       "2026-05-09 11:28:37"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "Bestseller",
-    "status": "Enabled"
+    ]
   },
   {
     "sku": "303024",
@@ -3856,19 +3523,17 @@
     "price": 499,
     "compare_price": 999,
     "stock": 3,
-    "is_featured": 0,
+    "status": "Enabled",
     "image_url": "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778333360034_0303024 (2).jpg",
     "images": [
       "https://pub-e8a17aa027ff420f83623e808512141f.r2.dev/1778333360034_0303024 (2).jpg",
       "https://www.kaapav.com/web/image/product.template/636/image_1920?unique=2a2002e"
     ],
     "website_link": "https://www.kaapav.com/shop/all-jewellery-necklace-19/0303023-rotating-pearl-floral-necklace-artificial-white-gold-636",
-    "description": "Rotating Pearl Floral Necklace – Artificial White Gold.\n\nHandcrafted with premium anti-tarnish finish and hypoallergenic materials designed for effortless daily elegance.\nFinish: On Offer\nMaterial: Anti-Tarnish Artificial Jewellery",
+    "material": "18K Anti-Tarnish Gold Plated",
+    "finish": "On Offer",
     "tags": [
       "2026-05-09 13:30:15"
-    ],
-    "material": "Anti-Tarnish Artificial Jewellery",
-    "finish": "On Offer",
-    "status": "Enabled"
+    ]
   }
 ]

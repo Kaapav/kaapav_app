@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#5C1324">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <title>Pendants Collection | KAAPAV Fine Jewellery</title>
+  <meta name="description" content="Delicate lucky charms, shimmering solitaires, and symbolic pendants in 18K anti-tarnish gold finish.">
+  <link rel="canonical" href="https://www.kaapav.com/category/pendants/index.html">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Jost:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- KAAPAV Store Commerce Engine -->
+  <script src="../../../assets/kaapav-store-engine.js"></script>
+
+  <style>
+    :root {
+      --bg-mesh: radial-gradient(at 0% 0%, rgba(247, 239, 227, 0.95) 0, transparent 55%),
+                 radial-gradient(at 100% 0%, rgba(238, 220, 190, 0.85) 0, transparent 50%),
+                 radial-gradient(at 50% 40%, rgba(253, 250, 245, 1) 0, transparent 100%),
+                 #FAF7F2;
+      --gold: #C49432;
+      --gold-l: #E2B755;
+      --gold-d: #9A7424;
+      --gold-grad: linear-gradient(135deg, #F5D77F 0%, #C49432 50%, #9A7424 100%);
+      --maroon: #5C1324;
+      --maroon-d: #380B16;
+      --ink: #1C1917;
+      --ink-soft: #44403C;
+      --muted: #78716C;
+      
+      /* Glassmorphism System */
+      --glass-bg: rgba(255, 255, 255, 0.76);
+      --glass-border: rgba(196, 148, 50, 0.24);
+      --glass-shadow: 0 16px 36px rgba(56, 11, 22, 0.06), 0 2px 10px rgba(196, 148, 50, 0.05);
+      --glass-blur: blur(16px);
+      
+      --serif: "Cormorant Garamond", Georgia, serif;
+      --sans: "Jost", -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg-mesh);
+      background-attachment: fixed;
+      color: var(--ink);
+      font-family: var(--sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      padding-bottom: 74px;
+    }
+
+    @media (min-width: 993px) {
+      body { padding-bottom: 0; }
+    }
+
+    a { color: inherit; text-decoration: none; cursor: pointer; }
+    button { font: inherit; cursor: pointer; transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+    img { display: block; max-width: 100%; }
+    .shell { width: min(1320px, calc(100% - 32px)); margin: auto; }
+
+    /* Announcement Bar */
+    .top-announcement-bar {
+      background: linear-gradient(90deg, #380B16, #5C1324, #380B16);
+      color: #FDF4DC;
+      padding: 9px 16px;
+      text-align: center;
+      font-size: 11.5px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      z-index: 1000;
+    }
+    .top-announcement-bar strong { color: #F5D77F; font-weight: 700; }
+
+    /* Sticky Navigation Header (Glassmorphic) */
+    .kaapav-main-header {
+      background: rgba(250, 247, 242, 0.85);
+      backdrop-filter: var(--glass-blur);
+      -webkit-backdrop-filter: var(--glass-blur);
+      border-bottom: 1px solid var(--glass-border);
+      position: sticky;
+      top: 0;
+      z-index: 999;
+      box-shadow: 0 4px 20px rgba(56, 11, 22, 0.04);
+    }
+    .header-shell {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 70px;
+    }
+    .header-brand-wrap { display: flex; align-items: center; text-decoration: none; }
+    .header-logo-img { height: 44px; width: auto; object-fit: contain; }
+    .header-nav-menu { display: flex; align-items: center; gap: clamp(14px, 2.2vw, 32px); list-style: none; margin: 0; padding: 0; }
+    .nav-link-item {
+      font-family: var(--sans);
+      font-size: 12.5px;
+      letter-spacing: 0.12em;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: #6C511B;
+      text-decoration: none;
+      padding: 8px 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: color 0.2s ease;
+    }
+    .nav-link-item:hover, .nav-link-item.active { color: var(--maroon); }
+    .nav-dropdown-wrap { position: relative; }
+    .nav-dropdown-menu {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: var(--glass-blur);
+      -webkit-backdrop-filter: var(--glass-blur);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 10px 0;
+      min-width: 210px;
+      box-shadow: 0 14px 40px rgba(56, 11, 22, 0.12);
+      display: none;
+      flex-direction: column;
+      z-index: 1000;
+    }
+    .nav-dropdown-wrap:hover .nav-dropdown-menu { display: flex; }
+    .nav-dropdown-menu a {
+      padding: 10px 20px;
+      font-size: 13px;
+      color: var(--ink-soft);
+      text-decoration: none;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    .nav-dropdown-menu a:hover {
+      background: rgba(245, 215, 127, 0.15);
+      color: var(--gold-d);
+      padding-left: 24px;
+    }
+    
+    .header-actions-wrap { display: flex; align-items: center; gap: 10px; }
+    .hdr-btn-circle {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: var(--glass-bg);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid var(--glass-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.25s ease;
+      color: var(--ink);
+    }
+    .hdr-btn-circle:hover { background: #FFF; border-color: var(--gold); transform: translateY(-2px); }
+    .hdr-cart-badge {
+      position: absolute;
+      top: -3px;
+      right: -3px;
+      background: var(--maroon);
+      color: #FFF;
+      font-size: 10px;
+      font-weight: 700;
+      border-radius: 12px;
+      min-width: 18px;
+      height: 18px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 0 4px;
+      border: 2px solid #FFF;
+    }
+    @media(max-width:992px){ .header-nav-menu { display:none!important; } }
+
+    /* Category Hero Banner (Glassmorphic) */
+    .cat-hero-banner {
+      background: var(--glass-bg);
+      backdrop-filter: var(--glass-blur);
+      -webkit-backdrop-filter: var(--glass-blur);
+      border: 1px solid var(--glass-border);
+      border-radius: 28px;
+      padding: clamp(32px, 5vw, 56px) clamp(20px, 4vw, 40px);
+      margin: 28px auto 36px;
+      box-shadow: var(--glass-shadow);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .cat-hero-banner::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -20%;
+      width: 140%;
+      height: 200%;
+      background: radial-gradient(circle at 50% 20%, rgba(245, 215, 127, 0.2) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .cat-hero-eyebrow {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      color: var(--gold-d);
+      margin-bottom: 8px;
+      display: inline-block;
+    }
+    .cat-hero-title {
+      font-family: var(--serif);
+      font-size: clamp(34px, 5.5vw, 56px);
+      color: var(--ink);
+      font-weight: 500;
+      margin-bottom: 12px;
+    }
+    .cat-hero-desc {
+      font-size: 14.5px;
+      color: var(--muted);
+      max-width: 620px;
+      margin: 0 auto 20px;
+      line-height: 1.6;
+    }
+
+    /* Category Quick Switcher Pills */
+    .cat-pills-scroll {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 36px;
+    }
+    .cat-pill-link {
+      padding: 9px 18px;
+      border-radius: 24px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      background: var(--glass-bg);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: var(--ink-soft);
+      border: 1px solid var(--glass-border);
+      transition: all 0.2s ease;
+    }
+    .cat-pill-link:hover {
+      background: #FFF;
+      border-color: var(--gold);
+      transform: translateY(-2px);
+    }
+    .cat-pill-link.active {
+      background: var(--gold-grad);
+      color: #1A1A1A;
+      border-color: var(--gold);
+      box-shadow: 0 6px 18px rgba(196, 148, 50, 0.35);
+      font-weight: 700;
+    }
+
+    /* Product Grid (Glass Cards) */
+    .product-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: clamp(14px, 2.2vw, 24px);
+      margin-bottom: 70px;
+    }
+    .product-card {
+      background: var(--glass-bg);
+      backdrop-filter: var(--glass-blur);
+      -webkit-backdrop-filter: var(--glass-blur);
+      border: 1px solid var(--glass-border);
+      border-radius: 22px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--glass-shadow);
+      transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+    }
+    .product-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 18px 40px rgba(56, 11, 22, 0.12);
+      border-color: var(--gold);
+      background: #FFF;
+    }
+    .card-media-wrap {
+      width: 100%;
+      aspect-ratio: 1;
+      background: #FAF7F2;
+      overflow: hidden;
+      position: relative;
+    }
+    .card-media-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .product-card:hover .card-media-wrap img { transform: scale(1.05); }
+
+    .card-discount-tag {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(6, 78, 59, 0.9);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      color: #A7F3D0;
+      font-size: 10.5px;
+      font-weight: 700;
+      padding: 4px 9px;
+      border-radius: 6px;
+    }
+
+    .card-content { padding: 18px; display: flex; flex-direction: column; flex: 1; }
+    .card-category { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--gold-d); font-weight: 700; margin-bottom: 4px; }
+    .card-title {
+      font-family: var(--serif);
+      font-size: 18.5px;
+      font-weight: 600;
+      color: var(--ink);
+      line-height: 1.3;
+      margin-bottom: 8px;
+      flex: 1;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .card-price-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 14px; }
+    .card-price { font-size: 20px; font-weight: 700; color: var(--ink); }
+    .card-mrp { font-size: 13.5px; text-decoration: line-through; color: var(--muted); }
+    .card-cta-group { display: flex; gap: 8px; margin-top: auto; }
+    .card-btn-add {
+      flex: 1;
+      padding: 11px;
+      background: var(--gold-grad);
+      color: #1A1A1A;
+      border: none;
+      border-radius: 10px;
+      font-size: 12.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .card-btn-add:hover { filter: brightness(1.06); }
+    .card-btn-view {
+      padding: 11px 16px;
+      background: rgba(250, 247, 242, 0.8);
+      border: 1px solid var(--glass-border);
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ink-soft);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card-btn-view:hover { background: #FFF; border-color: var(--gold); }
+
+    /* Mobile Bottom Floating Dock */
+    .mobile-bottom-dock {
+      position: fixed;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(420px, calc(100% - 24px));
+      background: rgba(45, 8, 17, 0.92);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(245, 215, 127, 0.35);
+      border-radius: 36px;
+      padding: 8px 12px;
+      display: none;
+      align-items: center;
+      justify-content: space-around;
+      z-index: 1001;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+    }
+    .dock-link {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      color: #E8D8C3;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 4px 8px;
+      border-radius: 12px;
+      transition: all 0.2s;
+    }
+    .dock-link svg { width: 20px; height: 20px; stroke: currentColor; }
+    .dock-link:hover, .dock-link.active { color: #F5D77F; }
+
+    @media (max-width: 992px) {
+      .mobile-bottom-dock { display: flex; }
+      .product-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    }
+    @media (max-width: 600px) {
+      .product-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+      .card-content { padding: 12px; }
+      .card-title { font-size: 14.5px; margin-bottom: 6px; }
+      .card-price { font-size: 16px; }
+      .card-mrp { font-size: 11px; }
+      .card-btn-view { display: none; }
+      .card-btn-add { padding: 9px; font-size: 11px; }
+    }
+
+    
+    /* Master Maroon Wine Footer Standard */
+    .kaapav-luxury-footer {
+      background: linear-gradient(180deg, #380B16 0%, #2A0710 100%);
+      color: #F5EBE1;
+      padding: 60px 0 30px;
+      margin-top: auto;
+      border-top: 2px solid #C49432;
+    }
+    .footer-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 36px;
+      max-width: 1280px;
+      margin: 0 auto 40px;
+      padding: 0 24px;
+      align-items: stretch;
+    }
+    .footer-col {
+      display: flex;
+      flex-direction: column;
+    }
+    .footer-col h4 {
+      font-family: "Cormorant Garamond", Georgia, serif;
+      font-size: 20px;
+      color: #F5D77F;
+      margin-bottom: 16px;
+      position: relative;
+      padding-bottom: 8px;
+    }
+    .footer-col h4::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 32px;
+      height: 2px;
+      background: #F2CF87;
+      border-radius: 2px;
+    }
+    .footer-col ul { list-style: none; display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; }
+    .footer-col a { color: #D6C7B2; font-size: 13.5px; transition: color 0.2s; text-decoration: none; }
+    .footer-col a:hover { color: #FFF; }
+    .footer-bottom {
+      border-top: 1px solid rgba(226, 183, 85, 0.2);
+      text-align: center;
+      padding-top: 24px;
+      font-size: 12.5px;
+      color: #A89F91;
+    }
+    @media (max-width: 992px) {
+      .footer-grid { grid-template-columns: repeat(2, 1fr); gap: 30px; }
+    }
+    @media (max-width: 600px) {
+      .footer-grid { grid-template-columns: 1fr; gap: 26px; }
+    }
+
+  </style>
+
+  <!-- SEO Script Injection Hook -->
+  <script src="../../../assets/kaapav-seo-inject.js" defer></script>
+
+<style id="kaapav-live-actual-footer-css">
+.kaapav-footer {
+  --gold: #c6a26a;
+  --ink: #1c1c1c;
+  --muted: #6f6f6f;
+
+  background: #fffdf9;
+  border-top: 1px solid rgba(198,162,106,0.35);
+  padding: 64px 20px 32px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.kaapav-footer-grid {
+  max-width: 1200px;
+  margin: 0 auto 32px;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr 1fr;
+  gap: 40px;
+  align-items: start;
+}
+
+.kaapav-footer-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.kaapav-footer-brand img {
+  max-width: 130px;
+  height: auto;
+  margin-bottom: 8px;
+}
+
+.kaapav-footer-contact {
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+.kaapav-footer-contact a.footer-contact-link {
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color .3s ease;
+}
+
+.kaapav-footer-contact a.footer-contact-link:hover {
+  color: var(--gold);
+  text-decoration: underline;
+}
+
+/* Underline correctly placed underneath heading text */
+.kaapav-footer-col h4 {
+  font-size: 13px;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin-bottom: 18px;
+  display: inline-block;
+  padding-bottom: 6px;
+  border-bottom: 2px solid #C49432;
+}
+
+.kaapav-footer-col ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.kaapav-footer-col li {
+  margin-bottom: 10px;
+}
+
+.kaapav-footer-col ul a {
+  font-size: 13.5px;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color .3s ease;
+}
+
+.kaapav-footer-col ul a:hover {
+  color: var(--gold);
+}
+
+.kaapav-social {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.kaapav-social a {
+  width: 38px;
+  height: 38px;
+  background: #ffffff;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  border: 1px solid rgba(198,162,106,0.25);
+  transition: transform .3s ease, box-shadow .3s ease;
+}
+
+.kaapav-social a:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(198,162,106,0.3);
+}
+
+.kaapav-social svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Center Aligned Popular Searches */
+.kaapav-seo-footer {
+  max-width: 1200px;
+  margin: 40px auto 0;
+  padding-top: 32px;
+  border-top: 1px solid rgba(198,162,106,0.25);
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.kaapav-seo-footer h5 {
+  font-size: 12px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.kaapav-seo-footer p {
+  line-height: 1.8;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.kaapav-seo-footer a {
+  color: var(--muted);
+  text-decoration: none;
+  transition: color .25s ease;
+}
+
+.kaapav-seo-footer a:hover {
+  color: var(--gold);
+}
+
+.kaapav-footer-bottom {
+  border-top: 1px solid rgba(198,162,106,0.25);
+  padding-top: 20px;
+  margin-top: 20px;
+  text-align: center;
+  font-size: 12.5px;
+  color: #888;
+}
+
+@media (max-width: 900px) {
+  .kaapav-footer-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+  }
+}
+
+@media (max-width: 560px) {
+  .kaapav-footer {
+    padding: 48px 16px 28px;
+  }
+  .kaapav-footer-grid {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+  .kaapav-footer-brand {
+    align-items: center;
+    text-align: center;
+  }
+  .kaapav-social {
+    justify-content: center;
+  }
+}
+</style>
+
+</head>
+<body>
+
+  <!-- Top Announcement Bar -->
+  <div class="top-announcement-bar">
+    <span>Free Express Delivery on all orders above <strong>Rs 498</strong> &bull; Anti-Tarnish 18K Gold Plated</span>
+  </div>
+
+  <!-- Top Sticky Navigation -->
+  <header class="kaapav-main-header">
+    <div class="header-shell">
+      <a href="../../../index.html" class="header-brand-wrap" title="KAAPAV Home">
+        <img src="../../../assets/logo.png" onerror="this.src='https://www.kaapav.com/web/image/website/3/logo/KAAPAV?unique=3432751'" alt="KAAPAV Logo" class="header-logo-img" onerror="this.src='/assets/kaapav-logo.png'">
+      </a>
+
+      <nav class="header-nav-menu">
+        <a href="../../../shop/index.html" class="nav-link-item ">All Jewellery</a>
+        <div class="nav-dropdown-wrap">
+          <a href="../../../shop/index.html" class="nav-link-item active">Categories ▾</a>
+          <div class="nav-dropdown-menu">
+            <a href="../../../category/earrings/index.html">Earrings</a>
+            <a href="../../../category/necklaces/index.html">Necklaces</a>
+            <a href="../../../category/bracelets/index.html">Bracelets</a>
+            <a href="../../../category/rings/index.html">Rings</a>
+            <a href="../../../category/pendants/index.html">Pendants</a>
+            <a href="../../../category/sets/index.html">Pendant Sets</a>
+          </div>
+        </div>
+        <a href="../../../category/bestsellers/index.html" class="nav-link-item ">Bestsellers</a>
+        <a href="../../../about-us/index.html" class="nav-link-item">Our Story</a>
+        </nav>
+
+      <div class="header-actions-wrap">
+        <a href="../../../shop/index.html" class="hdr-btn-circle" title="Search Jewellery">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        </a>
+        <button class="hdr-btn-circle" onclick="window.KaapavStore.openCartDrawer()" title="Shopping Bag">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+          <span class="hdr-cart-badge" id="hdrCartCount">0</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <!-- Category Hero Banner (Glassmorphic) -->
+    <div class="cat-hero-banner">
+      <span class="cat-hero-eyebrow">Four Leaf Clovers & Charms</span>
+      <h1 class="cat-hero-title">Pendants Collection</h1>
+      <p class="cat-hero-desc">Delicate lucky charms, shimmering solitaires, and symbolic pendants in 18K anti-tarnish gold finish.</p>
+    </div>
+
+    <!-- Category Switcher Pills -->
+    <div class="cat-pills-scroll">
+      <a href="../../../shop/index.html" class="cat-pill-link ">All</a>
+      <a href="../../../category/earrings/index.html" class="cat-pill-link ">Earrings</a>
+      <a href="../../../category/necklaces/index.html" class="cat-pill-link ">Necklaces</a>
+      <a href="../../../category/bracelets/index.html" class="cat-pill-link ">Bracelets</a>
+      <a href="../../../category/rings/index.html" class="cat-pill-link ">Rings</a>
+      <a href="../../../category/pendants/index.html" class="cat-pill-link active">Pendants</a>
+      <a href="../../../category/sets/index.html" class="cat-pill-link ">Sets</a>
+      <a href="../../../category/bestsellers/index.html" class="cat-pill-link ">Bestsellers</a>
+    </div>
+
+    <!-- Product Grid -->
+    <div class="product-grid" id="categoryProductGrid">
+      <div style="grid-column:1/-1;text-align:center;padding:50px;color:var(--muted)">
+        Loading pieces from live catalogue...
+      </div>
+    </div>
+  </main>
+
+  
+  <!-- Master Maroon Wine Footer (Single Element Standard) -->
+  <!-- Master Maroon Wine Footer (Single Element Standard) -->
+  
+
+
+  <!-- Mobile Bottom Floating Navigation Dock -->
+  <div class="mobile-bottom-dock">
+    <a href="../../../index.html" class="dock-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      Home
+    </a>
+    <a href="../../../shop/index.html" class="dock-link active">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Shop
+    </a>
+    <a href="https://wa.me/919148330016?text=Hi" target="_blank" class="dock-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+      WhatsApp
+    </a>
+    <a href="../../../shop/index.html" class="dock-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      Search
+    </a>
+    <a href="javascript:void(0)" onclick="window.KaapavStore.openCartDrawer()" class="dock-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+      Bag
+    </a>
+  </div>
+
+  <script>
+    const CURRENT_FILTER = 'pendant';
+
+    async function initCategoryPage() {
+      const grid = document.getElementById('categoryProductGrid');
+      if (!grid) return;
+
+      try {
+        const allProducts = await window.KaapavStore.fetchProducts();
+        
+        let filtered = allProducts;
+        if (CURRENT_FILTER === 'bestseller') {
+          filtered = allProducts.filter(p => (p.tags && p.tags.includes('bestseller')) || p.price >= 499);
+        } else if (CURRENT_FILTER !== 'all') {
+          filtered = allProducts.filter(p => {
+            const cat = (p.category || '').toLowerCase();
+            const name = (p.name || '').toLowerCase();
+            return cat.includes(CURRENT_FILTER) || name.includes(CURRENT_FILTER);
+          });
+        }
+
+        if (!filtered.length) {
+          filtered = allProducts;
+        }
+
+        grid.innerHTML = filtered.map(p => {
+          const img = (Array.isArray(p.images) && p.images[0]) ? p.images[0] : (p.image_url || '/assets/logo.png');
+          const discPct = p.compare_price > p.price ? Math.round(((p.compare_price - p.price) / p.compare_price) * 100) : 0;
+
+          return `
+            <div class="product-card">
+              <div class="card-media-wrap">
+                <a href="../../../product/index.html?sku=${p.sku}">
+                  <img src="${img}" alt="${p.name}" loading="lazy" onerror="this.src='/assets/logo.png'">
+                </a>
+                ${discPct > 0 ? `<span class="card-discount-tag">${discPct}% OFF</span>` : ''}
+              </div>
+              <div class="card-content">
+                <div class="card-category">${p.category || 'Fine Jewellery'}</div>
+                <a href="../../../product/index.html?sku=${p.sku}" class="card-title">${p.name}</a>
+                <div class="card-price-row">
+                  <span class="card-price">Rs ${p.price}</span>
+                  ${p.compare_price > p.price ? `<span class="card-mrp">Rs ${p.compare_price}</span>` : ''}
+                </div>
+                <div class="card-cta-group">
+                  <button class="card-btn-add" onclick="window.KaapavStore.addToCart('${p.sku}', 1, true)">
+                    Add to Bag
+                  </button>
+                  <a href="../../../product/index.html?sku=${p.sku}" class="card-btn-view" title="View Details">
+                    View
+                  </a>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+      } catch (e) {
+        console.error('Error rendering category page:', e);
+        grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:50px;color:var(--muted)">Unable to load products. Please check back shortly.</div>';
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', initCategoryPage);
+  </script>
+  <!-- Master Maroon Wine Footer (Single Element Standard) -->
+  
+
+
+
+
+
+
+
+<footer class="kaapav-footer">
+  <div class="kaapav-footer-grid">
+    
+    <div class="kaapav-footer-brand">
+      <a href="../../../index.html">
+        <img src="../../../assets/logo.png" alt="KAAPAV" onerror="this.src='https://www.kaapav.com/web/image/website/3/logo/KAAPAV?unique=3432751'" loading="lazy"/>
+      </a>
+      <div class="kaapav-footer-contact">
+        <strong>Contact us:</strong><br/>
+        Email: <a href="mailto:care.kaapav@gmail.com" class="footer-contact-link">care.kaapav@gmail.com</a><br/>
+        Mobile: <a href="https://wa.me/919148330016?text=Hi" target="_blank" class="footer-contact-link">+91 91483 30016 (WhatsApp Only)</a>
+      </div>
+    </div>
+
+    <div class="kaapav-footer-col">
+      <h4>Jewellery</h4>
+      <ul>
+        <li><a href="../../../category/bracelets/index.html">Bracelets</a></li>
+        <li><a href="../../../category/necklaces/index.html">Necklace</a></li>
+        <li><a href="../../../category/earrings/index.html">Earrings</a></li>
+        <li><a href="../../../category/rings/index.html">Rings</a></li>
+        <li><a href="../../../category/pendants/index.html">Pendants</a></li>
+        <li><a href="../../../category/sets/index.html">Pendants-Sets</a></li>
+        <li><a href="../../../category/bestsellers/index.html">Bestsellers</a></li>
+        <li><a href="../../../shop/index.html">All Jewellery</a></li>
+      </ul>
+    </div>
+
+    <div class="kaapav-footer-col">
+      <h4>Policies</h4>
+      <ul>
+        <li><a href="../../../shipping-policy/index.html">Shipping & Delivery</a></li>
+        <li><a href="../../../return-policy/index.html">Return & Refund</a></li>
+        <li><a href="../../../privacy-policy/index.html">Privacy Policy</a></li>
+        <li><a href="../../../terms-of-service/index.html">Terms of Service</a></li>
+        <li><a href="../../../about-us/index.html">About Us</a></li>
+        </ul>
+    </div>
+
+    <div class="kaapav-footer-col">
+      <h4>Follow Us</h4>
+      <div class="kaapav-social">
+        <a class="ig" href="https://www.instagram.com/kaapavfashionjewellery/" target="_blank" title="Instagram">
+          <svg viewBox="0 0 24 24">
+            <defs>
+              <linearGradient id="igGradLive2" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#f58529"></stop>
+                <stop offset="50%" stop-color="#dd2a7b"></stop>
+                <stop offset="100%" stop-color="#515bd4"></stop>
+              </linearGradient>
+            </defs>
+            <path fill="url(#igGradLive2)" d="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5zm5 5a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm6.5-.9a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2z"></path>
+          </svg>
+        </a>
+        <a class="fb" href="https://www.facebook.com/kaapavfashionjewellery" target="_blank" title="Facebook">
+          <svg viewBox="0 0 320 512">
+            <path fill="#1877F2" d="M279.14 288l14.22-92.66h-88.91V127.41c0-25.35 12.42-50.06 52.24-50.06h40.42V6.26S260.43 0 225.36 0c-73.22 0-121.08 44.38-121.08 124.72v70.62H22.89V288h81.39v224h100.2V288z"></path>
+          </svg>
+        </a>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="kaapav-seo-footer"> 
+    <h5>Popular Searches</h5>
+    <p>
+      <a href="../../../category/bracelets/index.html">Bracelets</a> |
+      <a href="../../../category/earrings/index.html">Earrings</a> |
+      <a href="../../../category/rings/index.html">Rings</a> |
+      <a href="../../../category/necklaces/index.html">Necklaces</a> |
+      <a href="../../../category/pendants/index.html">Pendants</a> |
+      <a href="../../../shop/index.html">All Jewellery</a>
+    </p>
+
+    <h5>Women's Artificial Jewellery</h5>
+    <p>
+      <a href="../../../category/earrings/index.html">Earrings for Women</a> |
+      <a href="../../../category/rings/index.html">Rings for Women</a> |
+      <a href="../../../category/bracelets/index.html">Bracelets for Women</a> |
+      <a href="../../../category/necklaces/index.html">Necklaces for Women</a> |
+      <a href="../../../category/pendants/index.html">Pendants for Women</a>
+    </p>
+
+    <h5>Jewellery by Occasion</h5>
+    <p>
+      <a href="../../../category/rings/index.html">Engagement Rings</a> |
+      <a href="../../../category/earrings/index.html">Party Wear Earrings</a> |
+      <a href="../../../category/bracelets/index.html">Gift Bracelets</a> |
+      <a href="../../../category/necklaces/index.html">Festive Necklaces</a>
+    </p>
+
+    <h5>Gifting Jewellery</h5>
+    <p>
+      <a href="../../../category/rings/index.html">Gifting Rings</a> |
+      <a href="../../../category/necklaces/index.html">Gifting Necklaces</a> |
+      <a href="../../../category/bracelets/index.html">Gifting Bracelets</a> |
+      <a href="../../../category/pendants/index.html">Gifting Pendants</a>
+    </p>
+
+    <h5>Trending Jewellery</h5>
+    <p>
+      <a href="../../../category/earrings/index.html">Minimal Earrings</a> |
+      <a href="../../../category/rings/index.html">Dailywear Rings</a> |
+      <a href="../../../category/bracelets/index.html">Lightweight Bracelets</a> |
+      <a href="../../../category/necklaces/index.html">Modern Necklaces</a>
+    </p>
+  </div>
+
+  <div class="kaapav-footer-bottom">
+    &copy; 2026 KAAPAV Fashion Jewellery. All rights reserved.
+  </div>
+</footer>
+
+</body>
+</html>

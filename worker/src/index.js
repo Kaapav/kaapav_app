@@ -13745,6 +13745,42 @@ async function handleCustomerMe(request, env) {
   });
 }
 
+async function handleCustomerSaveAddress(request, env) {
+  const auth = await getCustomerAuth(request, env);
+  if (!auth) return errorResponse('Unauthorized', 401);
+
+  const body = await request.json().catch(() => ({}));
+  const name = cleanReturnText(body.name, 100);
+  const phone = cleanReturnText(body.phone, 20);
+  const address = cleanReturnText(body.address, 300);
+  const city = cleanReturnText(body.city, 100);
+  const state = cleanReturnText(body.state, 100);
+  const pincode = cleanReturnText(body.pincode, 10).replace(/\D/g, '');
+
+  if (!address || !pincode) {
+    return errorResponse('Address and pincode are required', 400);
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT id FROM customer_addresses WHERE email = ? LIMIT 1
+  `).bind(auth.email).first();
+
+  if (existing) {
+    await env.DB.prepare(`
+      UPDATE customer_addresses
+      SET name = ?, phone = ?, address = ?, city = ?, state = ?, pincode = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(name, phone, address, city, state, pincode, existing.id).run();
+  } else {
+    await env.DB.prepare(`
+      INSERT INTO customer_addresses (email, name, phone, address, city, state, pincode, is_default, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
+    `).bind(auth.email, name, phone, address, city, state, pincode).run();
+  }
+
+  return jsonResponse({ success: true, message: 'Address saved successfully' });
+}
+
 async function getCustomerOrderContext(
   request,
   env,
@@ -17853,6 +17889,10 @@ if (path === '/api/customer/me' && method === 'GET') {
   return handleCustomerMe(request, env);
 }
 
+if ((path === '/api/customer/address' || path === '/api/customer/save-address') && (method === 'POST' || method === 'PUT')) {
+  return handleCustomerSaveAddress(request, env);
+}
+
 if (
   path === '/api/customer/orders' &&
   method === 'GET'
@@ -19277,7 +19317,7 @@ if (
     env
   );
 }
-    if (path.match(/^\/api\/products\/(.+)$/) && method === 'PUT') {
+    if (path.match(/^\/api\/products\/(.+)$/) && (method === 'PUT' || method === 'PATCH')) {
       const sku = path.match(/^\/api\/products\/(.+)$/)[1];
       return handleUpdateProduct(sku, request, env);
     }
@@ -19303,6 +19343,23 @@ if (
     if (path === '/api/analytics/pending' && method === 'GET') {
       const { results } = await env.DB.prepare(`SELECT * FROM orders WHERE status='pending' ORDER BY created_at DESC LIMIT 20`).all();
       return jsonResponse({ success: true, pending: results });
+    }
+
+    // Lightweight SEO scripts endpoint for storefront injection (no auth, cached)
+    if (path === '/api/seo-scripts' && method === 'GET') {
+      const headRow = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'custom_head_code'`).first();
+      const bodyRow = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'custom_body_code'`).first();
+      return new Response(JSON.stringify({
+        success: true,
+        custom_head_code: headRow?.value || '',
+        custom_body_code: bodyRow?.value || '',
+      }), {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=300',
+        },
+      });
     }
 
     if (path === '/api/settings' && method === 'GET') return handleGetSettings(env);

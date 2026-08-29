@@ -18,13 +18,30 @@
     STANDARD_SHIPPING: 50,
     CACHE_KEY: "kpv_store_products_v1",
     CART_KEY: "kpv_store_cart_v1",
-    CACHE_TTL: 10 * 60 * 1000 // 10 minutes
+    CACHE_TTL: 30 * 1000 // 30 seconds fresh cache TTL
   };
 
   let products = [];
   let cart = {};
   let appliedCoupon = null;
   let razorpayLoadedPromise = null;
+
+  // Listen for real-time admin sync across tabs
+  try {
+    const adminSyncChannel = new BroadcastChannel("kaapav_admin_sync");
+    adminSyncChannel.onmessage = (event) => {
+      if (event.data && (event.data.type === "inventory_update" || event.data.type === "cache_clear")) {
+        try { localStorage.removeItem(CONFIG.CACHE_KEY); } catch(e) {}
+        revalidateProducts();
+      }
+    };
+  } catch(e) {}
+
+  window.addEventListener("storage", (e) => {
+    if (e.key === "kpv_inventory_overrides" || e.key === CONFIG.CACHE_KEY) {
+      revalidateProducts();
+    }
+  });
 
   // ── 1. HELPERS & UTILITIES ──
   function safeJson(val, fallback) {
@@ -87,7 +104,7 @@
     try {
       const res = await fetch(CONFIG.CATALOGUE_API + "?t=" + Date.now(), { cache: "no-store" });
       const data = await res.json();
-      if (data.success && Array.isArray(data.products)) {
+      if (data.success && Array.isArray(data.products) && data.products.length > 0) {
         products = data.products.map(p => ({
           ...p,
           images: safeJson(p.images, [p.image_url || ""]),
@@ -103,8 +120,22 @@
         return products;
       }
     } catch(e) {
-      console.warn("Product feed fetch error:", e);
+      console.warn("Live catalogue API unavailable, falling back to local inventory dataset:", e);
     }
+
+    // Fallback to local high-resolution inventory dataset
+    try {
+      const localRes = await fetch("/assets/inventory-data.json");
+      const localData = await localRes.json();
+      if (Array.isArray(localData) && localData.length > 0) {
+        products = localData;
+        window.dispatchEvent(new CustomEvent("kpv:products-loaded", { detail: { products } }));
+        return products;
+      }
+    } catch (e) {
+      console.warn("Local inventory fallback failed:", e);
+    }
+
     return products;
   }
 
@@ -949,11 +980,33 @@
     getSkuFromPath
   };
 
+  function loadCustomerPortal() {
+    if (window.KaapavPortal) return;
+    const isCategory = window.location.pathname.includes('/category/');
+    const isProductOrShop = window.location.pathname.includes('/product/') || window.location.pathname.includes('/shop/') || window.location.pathname.includes('/faq/') || window.location.pathname.includes('/contact-us/');
+    const prefix = isCategory ? '../../assets/' : (isProductOrShop ? '../assets/' : './assets/');
+
+    if (!document.querySelector('link[href*="kaapav-customer-portal.css"]')) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.type = 'text/css';
+      link.href = prefix + 'kaapav-customer-portal.css';
+      document.head.appendChild(link);
+    }
+
+    if (!document.querySelector('script[src*="kaapav-customer-portal.js"]')) {
+      const script = document.createElement('script');
+      script.src = prefix + 'kaapav-customer-portal.js';
+      document.body.appendChild(script);
+    }
+  }
+
   // Auto initialize on DOM ready
   document.addEventListener("DOMContentLoaded", () => {
     injectStyles();
     loadCart();
     fetchProducts();
+    loadCustomerPortal();
   });
 
 })(window, document);

@@ -5,14 +5,15 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <meta name="theme-color" content="#FAF7F2">
   <meta name="robots" content="index, follow, max-image-preview:large">
-  <title>All Fine Jewellery | KAAPAV</title>
-  <meta name="description" content="Explore our handcrafted anti-tarnish artificial jewellery collection.">
+  <title>All Fine Jewellery | KAAPAV Fine Jewellery</title>
+  <meta name="description" content="Browse our complete catalog of 18K gold-plated, anti-tarnish, and waterproof fine artificial jewellery.">
+  <link rel="canonical" href="https://www.kaapav.com/shop/index.html">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Jost:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Jost:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   
-  <!-- KAAPAV Store Commerce Engine (Shared Backend) -->
-  <script src="/assets/kaapav-store-engine.js"></script>
+  <!-- KAAPAV Store Commerce Engine -->
+  <script src="./assets/kaapav-store-engine.js"></script>
 
   <style>
     :root {
@@ -23,12 +24,20 @@
       --gold: #C49432;
       --gold-l: #E2B755;
       --gold-d: #9A7424;
+      --gold-grad: linear-gradient(135deg, #F5D77F 0%, #C49432 50%, #9A7424 100%);
+      --maroon: #5C1324;
+      --maroon-d: #380B16;
       --ink: #1C1917;
+      --ink-soft: #44403C;
       --muted: #78716C;
-      --green: #10B981;
+      --border-gold: rgba(196, 148, 50, 0.22);
+      --shadow-sm: 0 4px 16px rgba(60, 40, 20, 0.04);
+      --shadow-md: 0 12px 32px rgba(60, 40, 20, 0.08);
+      --shadow-lg: 0 20px 50px rgba(60, 40, 20, 0.12);
       --serif: "Cormorant Garamond", Georgia, serif;
       --sans: "Jost", -apple-system, BlinkMacSystemFont, sans-serif;
     }
+
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     body {
       background: var(--bg-mesh);
@@ -45,14 +54,33 @@
     img { display: block; max-width: 100%; }
     .shell { width: min(1280px, calc(100% - 32px)); margin: auto; }
 
+    /* Top Announcement Bar */
+    .top-announcement-bar {
+      background: linear-gradient(90deg, #5C1324, #7A1C30, #5C1324);
+      color: #FDF4DC;
+      padding: 8px 16px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      z-index: 1000;
+    }
+    .top-announcement-bar strong { color: #F5D77F; font-weight: 700; }
+
     /* Top Navigation Header */
     .kaapav-main-header {
-      background: #FAF7F2;
-      border-bottom: 1px solid rgba(196, 148, 50, 0.2);
+      background: rgba(250, 247, 242, 0.94);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border-gold);
       position: sticky;
       top: 0;
       z-index: 999;
-      box-shadow: 0 2px 14px rgba(60, 40, 20, 0.04);
+      box-shadow: var(--shadow-sm);
     }
     .header-shell {
       max-width: 1320px;
@@ -61,129 +89,222 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      min-height: 74px;
+      min-height: 72px;
     }
     .header-brand-wrap { display: flex; align-items: center; text-decoration: none; }
-    .header-logo-img { height: 48px; width: auto; object-fit: contain; }
-    .header-nav-menu { display: flex; align-items: center; gap: clamp(16px, 2.2vw, 32px); list-style: none; margin: 0; padding: 0; }
-    .nav-link-item { font-family: var(--sans); font-size: 13px; letter-spacing: 0.1em; font-weight: 600; text-transform: uppercase; color: #C49432; text-decoration: none; padding: 8px 0; display: inline-flex; align-items: center; gap: 4px; }
+    .header-logo-img { height: 46px; width: auto; object-fit: contain; }
+    .header-nav-menu { display: flex; align-items: center; gap: clamp(14px, 2vw, 32px); list-style: none; margin: 0; padding: 0; }
+    .nav-link-item {
+      font-family: var(--sans);
+      font-size: 12.5px;
+      letter-spacing: 0.12em;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: #9A7424;
+      text-decoration: none;
+      padding: 8px 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: color 0.2s ease;
+    }
+    .nav-link-item:hover { color: var(--maroon); }
     .nav-dropdown-wrap { position: relative; }
-    .nav-dropdown-menu { position: absolute; top: 100%; left: 0; background: #fff; border: 1px solid rgba(196,148,50,0.25); border-radius: 14px; padding: 10px 0; min-width: 200px; box-shadow: 0 16px 36px rgba(60,40,20,0.12); display: none; flex-direction: column; z-index: 1000; }
+    .nav-dropdown-menu {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      background: #FFF;
+      border: 1px solid var(--border-gold);
+      border-radius: 14px;
+      padding: 10px 0;
+      min-width: 200px;
+      box-shadow: var(--shadow-lg);
+      display: none;
+      flex-direction: column;
+      z-index: 1000;
+    }
     .nav-dropdown-wrap:hover .nav-dropdown-menu { display: flex; }
-    .nav-dropdown-menu a { padding: 9px 18px; font-size: 12.5px; color: #37302A; text-decoration: none; font-weight: 500; }
-    .nav-dropdown-menu a:hover { background: #FAF5EB; color: #9A7424; }
+    .nav-dropdown-menu a { padding: 9px 18px; font-size: 12.5px; color: var(--ink-soft); text-decoration: none; font-weight: 500; }
+    .nav-dropdown-menu a:hover { background: #FAF5EB; color: var(--gold-d); }
+    
     .header-actions-wrap { display: flex; align-items: center; gap: 12px; }
-    .hdr-btn-circle { width: 40px; height: 40px; border-radius: 50%; background: #F1ECE4; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; }
-    .hdr-cart-badge { position: absolute; top: -2px; right: -2px; background: #7A1C30; color: #fff; font-size: 9px; font-weight: 700; border-radius: 10px; padding: 2px 6px; display: none; }
+    .hdr-btn-circle {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: #FFF;
+      border: 1px solid var(--border-gold);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.2s ease;
+    }
+    .hdr-btn-circle:hover { background: #FAF5EB; transform: translateY(-1px); }
+    .hdr-cart-badge {
+      position: absolute;
+      top: -3px;
+      right: -3px;
+      background: var(--maroon);
+      color: #fff;
+      font-size: 9.5px;
+      font-weight: 700;
+      border-radius: 10px;
+      padding: 2px 6px;
+      display: none;
+    }
     @media(max-width:992px){ .header-nav-menu { display:none!important; } }
 
     /* Category Hero & Filter Controls */
-    .shop-hero-section { padding: clamp(24px, 4vw, 40px) 0 20px; text-align: center; }
-    .shop-hero-title { font-family: var(--serif); font-size: clamp(32px, 4.5vw, 48px); font-weight: 600; color: #1C1917; margin-bottom: 8px; }
-    .shop-hero-subtitle { font-size: 14px; color: var(--muted); max-width: 600px; margin: 0 auto 24px; }
+    .shop-hero-section {
+      padding: clamp(30px, 4.5vw, 54px) 0 24px;
+      text-align: center;
+    }
+    .shop-hero-eyebrow {
+      font-size: 11.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--gold-d);
+      margin-bottom: 8px;
+    }
+    .shop-hero-title {
+      font-family: var(--serif);
+      font-size: clamp(34px, 5vw, 52px);
+      font-weight: 600;
+      color: var(--ink);
+      margin-bottom: 10px;
+    }
+    .shop-hero-subtitle {
+      font-size: 14.5px;
+      color: var(--muted);
+      max-width: 620px;
+      margin: 0 auto 24px;
+      line-height: 1.6;
+    }
 
+    /* Category Pills Nav */
+    .cat-nav-row {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 30px;
+    }
+    .cat-nav-btn {
+      padding: 8px 18px;
+      border-radius: 24px;
+      font-size: 12.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      background: #FFF;
+      color: var(--ink-soft);
+      border: 1px solid var(--border-gold);
+      box-shadow: var(--shadow-sm);
+      transition: all 0.2s ease;
+    }
+    .cat-nav-btn:hover { background: #FAF5EB; border-color: var(--gold); }
+    .cat-nav-btn.active {
+      background: var(--gold-grad);
+      color: #1A1A1A;
+      border-color: var(--gold);
+      box-shadow: 0 4px 14px rgba(196,148,50,0.3);
+      font-weight: 700;
+    }
+
+    /* Interactive Filter Bar */
     .shop-filter-bar {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 14px;
-      padding: 16px 20px;
+      padding: 14px 20px;
       background: #FFF;
-      border: 1px solid rgba(196,148,50,0.22);
-      border-radius: 16px;
-      box-shadow: 0 8px 24px rgba(60,40,20,0.04);
-      margin-bottom: 30px;
+      border: 1px solid var(--border-gold);
+      border-radius: 18px;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 32px;
       flex-wrap: wrap;
     }
-    .category-pills-wrap { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
-    .cat-pill {
-      padding: 8px 16px;
-      border-radius: 25px;
-      border: 1px solid rgba(196,148,50,0.25);
-      background: #FAF7F2;
-      color: #44403C;
-      font-size: 12.5px;
+    .filter-pills-wrap { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+    .price-pill {
+      padding: 7px 14px;
+      border-radius: 20px;
+      font-size: 12px;
       font-weight: 600;
+      background: #FAF7F2;
+      border: 1px solid var(--border-gold);
+      color: var(--ink-soft);
       cursor: pointer;
       white-space: nowrap;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
+      transition: all 0.2s ease;
     }
-    .cat-pill.active { background: #C49432; color: #FFF; border-color: #C49432; }
+    .price-pill:hover { background: #FAF5EB; border-color: var(--gold); }
+    .price-pill.active { background: #1C1917; color: #F5D77F; border-color: #1C1917; }
 
-    .sort-search-wrap { display: flex; gap: 10px; align-items: center; }
-    .sort-select { padding: 8px 14px; border: 1px solid #D6D3D1; border-radius: 10px; background: #FAF7F2; font-size: 12.5px; font-family: inherit; }
-    .search-input { padding: 8px 14px; border: 1px solid #D6D3D1; border-radius: 10px; background: #FAF7F2; font-size: 12.5px; width: 180px; }
+    .sort-search-wrap { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .search-box-input {
+      padding: 8px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border-gold);
+      font-size: 13px;
+      outline: none;
+      background: #FAF7F2;
+      width: 180px;
+    }
+    .search-box-input:focus { border-color: var(--gold); background: #FFF; }
+    .sort-select {
+      padding: 8px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border-gold);
+      font-size: 13px;
+      outline: none;
+      background: #FAF7F2;
+      color: var(--ink);
+      cursor: pointer;
+    }
 
     /* Product Grid */
     .products-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: clamp(16px, 2.5vw, 28px);
-      margin-bottom: 60px;
+      gap: clamp(16px, 2.5vw, 26px);
+      margin-bottom: 80px;
     }
     .product-card {
       background: #FFF;
-      border: 1px solid rgba(196,148,50,0.2);
+      border: 1px solid var(--border-gold);
       border-radius: 20px;
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      box-shadow: 0 10px 30px rgba(60,40,20,0.05);
+      box-shadow: var(--shadow-sm);
       transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
       position: relative;
     }
-    .product-card:hover { transform: translateY(-4px); box-shadow: 0 16px 40px rgba(196,148,50,0.14); border-color: var(--gold); }
-    
-    .card-media-wrap {
-      width: 100%;
-      aspect-ratio: 1;
-      background: #FAF7F2;
-      overflow: hidden;
-      position: relative;
-    }
+    .product-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); border-color: var(--gold); }
+    .card-media-wrap { width: 100%; aspect-ratio: 1; background: #FAF7F2; overflow: hidden; position: relative; }
     .card-media-wrap img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }
     .product-card:hover .card-media-wrap img { transform: scale(1.04); }
-
     .card-discount-tag { position: absolute; top: 12px; left: 12px; background: #064E3B; color: #A7F3D0; font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
-
     .card-content { padding: 18px; display: flex; flex-direction: column; flex: 1; }
     .card-category { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--gold-d); font-weight: 700; margin-bottom: 4px; }
-    .card-title { font-family: var(--serif); font-size: 19px; font-weight: 600; color: #1C1917; line-height: 1.3; margin-bottom: 8px; flex: 1; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-    
+    .card-title { font-family: var(--serif); font-size: 19px; font-weight: 600; color: var(--ink); line-height: 1.3; margin-bottom: 8px; flex: 1; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .card-price-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 14px; }
-    .card-price { font-size: 20px; font-weight: 700; color: #1C1917; }
+    .card-price { font-size: 20px; font-weight: 700; color: var(--ink); }
     .card-mrp { font-size: 13.5px; text-decoration: line-through; color: var(--muted); }
-
     .card-cta-group { display: flex; gap: 8px; margin-top: auto; }
-    .card-btn-add {
-      flex: 1;
-      padding: 10px;
-      background: linear-gradient(135deg, #ECCF8D, #C4983E);
-      color: #1A1A1A;
-      border: none;
-      border-radius: 10px;
-      font-size: 12.5px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
+    .card-btn-add { flex: 1; padding: 11px; background: var(--gold-grad); color: #1A1A1A; border: none; border-radius: 10px; font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
     .card-btn-add:hover { filter: brightness(1.06); }
-    .card-btn-view {
-      padding: 10px 14px;
-      background: #FAF7F2;
-      border: 1px solid #D6D3D1;
-      border-radius: 10px;
-      font-size: 12px;
-      font-weight: 600;
-      color: #44403C;
-    }
-    .card-btn-view:hover { background: #F1ECE4; border-color: var(--gold); }
+    .card-btn-view { padding: 11px 16px; background: #FAF7F2; border: 1px solid #D6D3D1; border-radius: 10px; font-size: 12px; font-weight: 600; color: var(--ink-soft); }
 
     /* Footer */
-    .kaapav-luxury-footer { background: #2A0812; color: #F5EBE1; padding: 60px 0 30px; margin-top: auto; }
+    .kaapav-luxury-footer { background: var(--maroon-d); color: #F5EBE1; padding: 60px 0 30px; margin-top: auto; }
     .footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1.5fr; gap: 40px; max-width: 1280px; margin: 0 auto 40px; padding: 0 24px; }
-    .footer-col h4 { font-family: var(--serif); font-size: 20px; color: #E2B755; margin-bottom: 18px; }
+    .footer-col h4 { font-family: var(--serif); font-size: 20px; color: #F5D77F; margin-bottom: 18px; }
     .footer-col ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
     .footer-col a { color: #D6C7B2; font-size: 13.5px; transition: color 0.2s; }
     .footer-col a:hover { color: #FFF; }
@@ -193,7 +314,7 @@
       .footer-grid { grid-template-columns: 1fr 1fr; gap: 30px; }
       .shop-filter-bar { flex-direction: column; align-items: stretch; }
       .sort-search-wrap { justify-content: space-between; }
-      .search-input { width: 100%; }
+      .search-box-input { width: 100%; }
     }
     @media(max-width:540px) {
       .footer-grid { grid-template-columns: 1fr; }
@@ -205,33 +326,223 @@
       .card-btn-view { display: none; }
     }
   </style>
+  <script src="./assets/kaapav-seo-inject.js" defer></script>
+
+<style id="kaapav-live-actual-footer-css">
+.kaapav-footer {
+  --gold: #c6a26a;
+  --ink: #1c1c1c;
+  --muted: #6f6f6f;
+
+  background: #fffdf9;
+  border-top: 1px solid rgba(198,162,106,0.35);
+  padding: 64px 20px 32px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.kaapav-footer-grid {
+  max-width: 1200px;
+  margin: 0 auto 32px;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr 1fr;
+  gap: 40px;
+  align-items: start;
+}
+
+.kaapav-footer-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.kaapav-footer-brand img {
+  max-width: 130px;
+  height: auto;
+  margin-bottom: 8px;
+}
+
+.kaapav-footer-contact {
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+.kaapav-footer-contact a.footer-contact-link {
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color .3s ease;
+}
+
+.kaapav-footer-contact a.footer-contact-link:hover {
+  color: var(--gold);
+  text-decoration: underline;
+}
+
+/* Underline correctly placed underneath heading text */
+.kaapav-footer-col h4 {
+  font-size: 13px;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin-bottom: 18px;
+  display: inline-block;
+  padding-bottom: 6px;
+  border-bottom: 2px solid #C49432;
+}
+
+.kaapav-footer-col ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.kaapav-footer-col li {
+  margin-bottom: 10px;
+}
+
+.kaapav-footer-col ul a {
+  font-size: 13.5px;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color .3s ease;
+}
+
+.kaapav-footer-col ul a:hover {
+  color: var(--gold);
+}
+
+.kaapav-social {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.kaapav-social a {
+  width: 38px;
+  height: 38px;
+  background: #ffffff;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  border: 1px solid rgba(198,162,106,0.25);
+  transition: transform .3s ease, box-shadow .3s ease;
+}
+
+.kaapav-social a:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(198,162,106,0.3);
+}
+
+.kaapav-social svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Center Aligned Popular Searches */
+.kaapav-seo-footer {
+  max-width: 1200px;
+  margin: 40px auto 0;
+  padding-top: 32px;
+  border-top: 1px solid rgba(198,162,106,0.25);
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.kaapav-seo-footer h5 {
+  font-size: 12px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.kaapav-seo-footer p {
+  line-height: 1.8;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.kaapav-seo-footer a {
+  color: var(--muted);
+  text-decoration: none;
+  transition: color .25s ease;
+}
+
+.kaapav-seo-footer a:hover {
+  color: var(--gold);
+}
+
+.kaapav-footer-bottom {
+  border-top: 1px solid rgba(198,162,106,0.25);
+  padding-top: 20px;
+  margin-top: 20px;
+  text-align: center;
+  font-size: 12.5px;
+  color: #888;
+}
+
+@media (max-width: 900px) {
+  .kaapav-footer-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+  }
+}
+
+@media (max-width: 560px) {
+  .kaapav-footer {
+    padding: 48px 16px 28px;
+  }
+  .kaapav-footer-grid {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+  .kaapav-footer-brand {
+    align-items: center;
+    text-align: center;
+  }
+  .kaapav-social {
+    justify-content: center;
+  }
+}
+</style>
+
 </head>
 <body>
+
+  <!-- Top Announcement Bar -->
+  <div class="top-announcement-bar">
+    <span>✨ Free Express Delivery on all orders above <strong>₹498</strong> &bull; Anti-Tarnish 18K Gold Plated</span>
+  </div>
 
   <!-- Top Sticky Navigation -->
   <header class="kaapav-main-header">
     <div class="header-shell">
-      <a href="/index.html" class="header-brand-wrap">
-        <img src="/assets/logo.png" alt="KAAPAV Logo" class="header-logo-img" onerror="this.src='/assets/kaapav-logo.png'">
+      <a href="./index.html" class="header-brand-wrap">
+        <img src="./assets/logo.png" onerror="this.src='https://www.kaapav.com/web/image/website/3/logo/KAAPAV?unique=3432751'" alt="KAAPAV Logo" class="header-logo-img" onerror="this.src='/assets/kaapav-logo.png'">
       </a>
 
       <nav class="header-nav-menu">
-        <a href="/shop/index.html" class="nav-link-item">All Jewellery</a>
+        <a href="./shop/index.html" class="nav-link-item active">All Jewellery</a>
         <div class="nav-dropdown-wrap">
-          <a href="/shop/index.html" class="nav-link-item">Categories ▾</a>
+          <a href="./shop/index.html" class="nav-link-item">Categories ▾</a>
           <div class="nav-dropdown-menu">
-            <a href="/category/earrings/index.html">Earrings</a>
-            <a href="/category/necklaces/index.html">Necklaces</a>
-            <a href="/category/bracelets/index.html">Bracelets</a>
-            <a href="/category/rings/index.html">Rings</a>
-            <a href="/category/pendants/index.html">Pendants</a>
-            <a href="/category/sets/index.html">Sets</a>
+            <a href="./category/earrings/index.html">Earrings</a>
+            <a href="./category/necklaces/index.html">Necklaces</a>
+            <a href="./category/bracelets/index.html">Bracelets</a>
+            <a href="./category/rings/index.html">Rings</a>
+            <a href="./category/pendants/index.html">Pendants</a>
+            <a href="./category/sets/index.html">Sets</a>
           </div>
         </div>
-        <a href="/category/bestsellers/index.html" class="nav-link-item">Bestsellers</a>
-        <a href="/about-us/index.html" class="nav-link-item">Our Story</a>
-        <a href="/contact-us/index.html" class="nav-link-item">Contact</a>
-      </nav>
+        <a href="./category/bestsellers/index.html" class="nav-link-item ">Bestsellers</a>
+        <a href="./about-us/index.html" class="nav-link-item">Our Story</a>
+        </nav>
 
       <div class="header-actions-wrap">
         <button class="hdr-btn-circle" onclick="document.getElementById('shopSearchInput')?.focus()" title="Search">
@@ -248,150 +559,117 @@
   <main class="shell">
     <section class="shop-hero-section">
       <h1 class="shop-hero-title">All Fine Jewellery</h1>
-      <p class="shop-hero-subtitle">Explore our handcrafted anti-tarnish artificial jewellery collection.</p>
+      <p class="shop-hero-subtitle">Browse our complete catalog of 18K gold-plated, anti-tarnish, and waterproof fine artificial jewellery.</p>
+
+      <!-- Category Switcher Pills -->
+      <div class="cat-nav-row">
+        <a href="./shop/index.html" class="cat-nav-btn active">All</a>
+        <a href="./category/earrings/index.html" class="cat-nav-btn ">Earrings</a>
+        <a href="./category/necklaces/index.html" class="cat-nav-btn ">Necklaces</a>
+        <a href="./category/bracelets/index.html" class="cat-nav-btn ">Bracelets</a>
+        <a href="./category/rings/index.html" class="cat-nav-btn ">Rings</a>
+        <a href="./category/pendants/index.html" class="cat-nav-btn ">Pendants</a>
+        <a href="./category/sets/index.html" class="cat-nav-btn ">Sets</a>
+        <a href="./category/bestsellers/index.html" class="cat-nav-btn ">🔥 Bestsellers</a>
+      </div>
     </section>
 
-    <!-- Controls & Category Tabs -->
+    <!-- Filter & Sort Bar -->
     <div class="shop-filter-bar">
-      <div class="category-pills-wrap" id="catPillsContainer">
-        <button class="cat-pill active" onclick="setCategoryFilter('all', this)">All</button>
-        <button class="cat-pill " onclick="setCategoryFilter('earrings', this)">Earrings</button>
-        <button class="cat-pill " onclick="setCategoryFilter('necklaces', this)">Necklaces</button>
-        <button class="cat-pill " onclick="setCategoryFilter('bracelets', this)">Bracelets</button>
-        <button class="cat-pill " onclick="setCategoryFilter('rings', this)">Rings</button>
-        <button class="cat-pill " onclick="setCategoryFilter('pendants', this)">Pendants</button>
-        <button class="cat-pill " onclick="setCategoryFilter('sets', this)">Sets</button>
+      <div class="filter-pills-wrap">
+        <button class="price-pill active" onclick="setPriceFilter('all', this)">All Prices</button>
+        <button class="price-pill" onclick="setPriceFilter('under499', this)">Under ₹499</button>
+        <button class="price-pill" onclick="setPriceFilter('499to799', this)">₹499 - ₹799</button>
+        <button class="price-pill" onclick="setPriceFilter('above799', this)">₹799+</button>
       </div>
 
       <div class="sort-search-wrap">
-        <input type="text" id="shopSearchInput" class="search-input" placeholder="Search jewellery..." oninput="handleSearch(this.value)">
-        <select class="sort-select" onchange="handleSort(this.value)">
+        <input type="text" id="shopSearchInput" class="search-box-input" placeholder="Search shop..." oninput="handleSearch(this.value)">
+        <select id="sortSelect" class="sort-select" onchange="handleSort(this.value)">
           <option value="featured">Featured</option>
-          <option value="price_asc">Price: Low to High</option>
-          <option value="price_desc">Price: High to Low</option>
-          <option value="name">Alphabetical</option>
+          <option value="price_low">Price: Low to High</option>
+          <option value="price_high">Price: High to Low</option>
+          <option value="discount">Highest Discount</option>
         </select>
       </div>
     </div>
 
     <!-- Product Grid -->
     <div class="products-grid" id="shopProductGrid">
-      <div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--muted)">
-        Loading handcrafted pieces from live catalogue...
+      <div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--muted)">
+        Loading All Fine Jewellery...
       </div>
     </div>
   </main>
 
   <!-- Luxury Maroon Footer -->
-  <footer class="kaapav-luxury-footer">
-    <div class="footer-grid">
-      <div class="footer-col">
-        <h4 style="font-size:24px;letter-spacing:0.05em">KAAPAV</h4>
-        <p style="font-size:13.5px;color:#D6C7B2;line-height:1.7;margin-bottom:16px">
-          Elevating everyday modern elegance with handcrafted artificial fashion jewellery made for contemporary style.
-        </p>
-        <p style="font-size:12px;color:#A89F91">GST Registered &bull; Made with Love in India</p>
-      </div>
-
-      <div class="footer-col">
-        <h4>Collections</h4>
-        <ul>
-          <li><a href="/category/earrings/index.html">Earrings</a></li>
-          <li><a href="/category/necklaces/index.html">Necklaces</a></li>
-          <li><a href="/category/bracelets/index.html">Bracelets</a></li>
-          <li><a href="/category/rings/index.html">Rings</a></li>
-          <li><a href="/category/pendants/index.html">Pendants</a></li>
-          <li><a href="/category/sets/index.html">Pendant Sets</a></li>
-        </ul>
-      </div>
-
-      <div class="footer-col">
-        <h4>Customer Care</h4>
-        <ul>
-          <li><a href="/shipping-policy/index.html">Shipping & Delivery</a></li>
-          <li><a href="/return-policy/index.html">Returns & Exchanges</a></li>
-          <li><a href="/privacy-policy/index.html">Privacy Policy</a></li>
-          <li><a href="/terms-of-service/index.html">Terms of Service</a></li>
-          <li><a href="/faq/index.html">FAQ & Help</a></li>
-        </ul>
-      </div>
-
-      <div class="footer-col">
-        <h4>Connect & Order</h4>
-        <p style="font-size:13px;color:#D6C7B2;margin-bottom:12px">Support available Mon - Sat (10am - 7pm)</p>
-        <a href="https://wa.me/919148330016" target="_blank" style="display:inline-flex;align-items:center;gap:8px;background:#25D366;color:#FFF;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;text-decoration:none">
-          WhatsApp: +91 91483 30016
-        </a>
-      </div>
-    </div>
-    <div class="footer-bottom">
-      &copy; 2026 KAAPAV Fashion Jewellery. All rights reserved.
-    </div>
-  </footer>
+  <!-- Master Maroon Wine Footer (Single Element Standard) -->
+  
 
   <script>
-    let allProducts = [];
-    let currentCategory = 'all';
-    let currentSearch = '';
-    let currentSort = 'featured';
+    const CATEGORY_FILTER = 'all';
+    let baseProducts = [];
+    let activePriceRange = 'all';
+    let activeSort = 'featured';
+    let activeSearchQuery = '';
 
     async function initShop() {
-      // Check URL query param ?cat=
-      const urlCat = window.KaapavStore.getUrlParam('cat');
-      if (urlCat) currentCategory = urlCat.toLowerCase();
+      const all = await window.KaapavStore.fetchProducts();
+      
+      if (CATEGORY_FILTER === 'all') {
+        baseProducts = all;
+      } else if (CATEGORY_FILTER === 'bestseller') {
+        baseProducts = all.slice(0, 24);
+      } else {
+        baseProducts = all.filter(p => {
+          const cat = (p.category || '').toLowerCase();
+          const name = (p.name || '').toLowerCase();
+          return cat.includes(CATEGORY_FILTER) || name.includes(CATEGORY_FILTER);
+        });
+      }
 
-      allProducts = await window.KaapavStore.fetchProducts();
       applyFiltersAndRender();
     }
 
-    function setCategoryFilter(cat, btn) {
-      currentCategory = cat.toLowerCase();
-      document.querySelectorAll('.cat-pill').forEach(b => b.classList.remove('active'));
-      if (btn) btn.classList.add('active');
-      applyFiltersAndRender();
-    }
-
-    function handleSearch(val) {
-      currentSearch = (val || '').toLowerCase().trim();
+    function setPriceFilter(range, btnEl) {
+      activePriceRange = range;
+      document.querySelectorAll('.price-pill').forEach(b => b.classList.remove('active'));
+      if (btnEl) btnEl.classList.add('active');
       applyFiltersAndRender();
     }
 
     function handleSort(val) {
-      currentSort = val;
+      activeSort = val;
+      applyFiltersAndRender();
+    }
+
+    function handleSearch(val) {
+      activeSearchQuery = val.trim().toLowerCase();
       applyFiltersAndRender();
     }
 
     function applyFiltersAndRender() {
-      let filtered = [...allProducts];
+      let filtered = [...baseProducts];
 
-      // Filter by category
-      if (currentCategory && currentCategory !== 'all') {
-        if (currentCategory === 'bestsellers') {
-          filtered = filtered.filter(p => p.is_featured || (p.tags && p.tags.includes('bestseller')));
-          if (!filtered.length) filtered = allProducts.slice(0, 16);
-        } else {
-          filtered = filtered.filter(p => (p.category || '').toLowerCase() === currentCategory);
-        }
+      // 1. Price Filter
+      if (activePriceRange === 'under499') filtered = filtered.filter(p => p.price < 499);
+      else if (activePriceRange === '499to799') filtered = filtered.filter(p => p.price >= 499 && p.price <= 799);
+      else if (activePriceRange === 'above799') filtered = filtered.filter(p => p.price > 799);
+
+      // 2. Search Query
+      if (activeSearchQuery) {
+        filtered = filtered.filter(p => (p.name || '').toLowerCase().includes(activeSearchQuery) || (p.sku || '').toLowerCase().includes(activeSearchQuery));
       }
 
-      // Filter by search query
-      if (currentSearch) {
-        filtered = filtered.filter(p => 
-          (p.name || '').toLowerCase().includes(currentSearch) ||
-          (p.sku || '').toLowerCase().includes(currentSearch) ||
-          (p.description || '').toLowerCase().includes(currentSearch)
-        );
-      }
-
-      // Sort
-      if (currentSort === 'price_asc') {
-        filtered.sort((a, b) => a.price - b.price);
-      } else if (currentSort === 'price_desc') {
-        filtered.sort((a, b) => b.price - a.price);
-      } else if (currentSort === 'name') {
-        filtered.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-      } else {
-        filtered.sort((a, b) => (b.is_featured || 0) - (a.is_featured || 0));
+      // 3. Sorting
+      if (activeSort === 'price_low') filtered.sort((a, b) => a.price - b.price);
+      else if (activeSort === 'price_high') filtered.sort((a, b) => b.price - a.price);
+      else if (activeSort === 'discount') {
+        filtered.sort((a, b) => {
+          const discA = a.compare_price > a.price ? (a.compare_price - a.price) : 0;
+          const discB = b.compare_price > b.price ? (b.compare_price - b.price) : 0;
+          return discB - discA;
+        });
       }
 
       renderGrid(filtered);
@@ -406,7 +684,7 @@
           <div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--muted)">
             <div style="font-size:40px;margin-bottom:12px">💎</div>
             <h3 style="font-family:var(--serif);font-size:22px;color:#1C1917;margin-bottom:8px">No matching jewellery pieces</h3>
-            <p style="font-size:13.5px">Try adjusting your category or search filter.</p>
+            <p style="font-size:13.5px">Try adjusting your price or search filter.</p>
           </div>
         `;
         return;
@@ -419,14 +697,14 @@
         return `
           <div class="product-card">
             <div class="card-media-wrap">
-              <a href="/product/index.html?sku=${p.sku}">
+              <a href="./product/index.html?sku=${p.sku}">
                 <img src="${img}" alt="${p.name}" loading="lazy" onerror="this.src='/assets/logo.png'">
               </a>
               ${discPct > 0 ? `<span class="card-discount-tag">${discPct}% OFF</span>` : ''}
             </div>
             <div class="card-content">
               <div class="card-category">${p.category || 'Fine Jewellery'}</div>
-              <a href="/product/index.html?sku=${p.sku}" class="card-title">${p.name}</a>
+              <a href="./product/index.html?sku=${p.sku}" class="card-title">${p.name}</a>
               <div class="card-price-row">
                 <span class="card-price">₹${p.price}</span>
                 ${p.compare_price > p.price ? `<span class="card-mrp">₹${p.compare_price}</span>` : ''}
@@ -435,7 +713,7 @@
                 <button class="card-btn-add" onclick="window.KaapavStore.addToCart('${p.sku}', 1, true)">
                   Add to Bag
                 </button>
-                <a href="/product/index.html?sku=${p.sku}" class="card-btn-view">
+                <a href="./product/index.html?sku=${p.sku}" class="card-btn-view">
                   View
                 </a>
               </div>
@@ -447,5 +725,128 @@
 
     document.addEventListener('DOMContentLoaded', initShop);
   </script>
+  <!-- Master Maroon Wine Footer (Single Element Standard) -->
+  
+
+
+
+
+
+
+
+<footer class="kaapav-footer">
+  <div class="kaapav-footer-grid">
+    
+    <div class="kaapav-footer-brand">
+      <a href="./index.html">
+        <img src="./assets/logo.png" alt="KAAPAV" onerror="this.src='https://www.kaapav.com/web/image/website/3/logo/KAAPAV?unique=3432751'" loading="lazy"/>
+      </a>
+      <div class="kaapav-footer-contact">
+        <strong>Contact us:</strong><br/>
+        Email: <a href="mailto:care.kaapav@gmail.com" class="footer-contact-link">care.kaapav@gmail.com</a><br/>
+        Mobile: <a href="https://wa.me/919148330016?text=Hi" target="_blank" class="footer-contact-link">+91 91483 30016 (WhatsApp Only)</a>
+      </div>
+    </div>
+
+    <div class="kaapav-footer-col">
+      <h4>Jewellery</h4>
+      <ul>
+        <li><a href="./category/bracelets/index.html">Bracelets</a></li>
+        <li><a href="./category/necklaces/index.html">Necklace</a></li>
+        <li><a href="./category/earrings/index.html">Earrings</a></li>
+        <li><a href="./category/rings/index.html">Rings</a></li>
+        <li><a href="./category/pendants/index.html">Pendants</a></li>
+        <li><a href="./category/sets/index.html">Pendants-Sets</a></li>
+        <li><a href="./category/bestsellers/index.html">Bestsellers</a></li>
+        <li><a href="./shop/index.html">All Jewellery</a></li>
+      </ul>
+    </div>
+
+    <div class="kaapav-footer-col">
+      <h4>Policies</h4>
+      <ul>
+        <li><a href="./shipping-policy/index.html">Shipping & Delivery</a></li>
+        <li><a href="./return-policy/index.html">Return & Refund</a></li>
+        <li><a href="./privacy-policy/index.html">Privacy Policy</a></li>
+        <li><a href="./terms-of-service/index.html">Terms of Service</a></li>
+        <li><a href="./about-us/index.html">About Us</a></li>
+        </ul>
+    </div>
+
+    <div class="kaapav-footer-col">
+      <h4>Follow Us</h4>
+      <div class="kaapav-social">
+        <a class="ig" href="https://www.instagram.com/kaapavfashionjewellery/" target="_blank" title="Instagram">
+          <svg viewBox="0 0 24 24">
+            <defs>
+              <linearGradient id="igGradLive2" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#f58529"></stop>
+                <stop offset="50%" stop-color="#dd2a7b"></stop>
+                <stop offset="100%" stop-color="#515bd4"></stop>
+              </linearGradient>
+            </defs>
+            <path fill="url(#igGradLive2)" d="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5zm5 5a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm6.5-.9a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2z"></path>
+          </svg>
+        </a>
+        <a class="fb" href="https://www.facebook.com/kaapavfashionjewellery" target="_blank" title="Facebook">
+          <svg viewBox="0 0 320 512">
+            <path fill="#1877F2" d="M279.14 288l14.22-92.66h-88.91V127.41c0-25.35 12.42-50.06 52.24-50.06h40.42V6.26S260.43 0 225.36 0c-73.22 0-121.08 44.38-121.08 124.72v70.62H22.89V288h81.39v224h100.2V288z"></path>
+          </svg>
+        </a>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="kaapav-seo-footer"> 
+    <h5>Popular Searches</h5>
+    <p>
+      <a href="./category/bracelets/index.html">Bracelets</a> |
+      <a href="./category/earrings/index.html">Earrings</a> |
+      <a href="./category/rings/index.html">Rings</a> |
+      <a href="./category/necklaces/index.html">Necklaces</a> |
+      <a href="./category/pendants/index.html">Pendants</a> |
+      <a href="./shop/index.html">All Jewellery</a>
+    </p>
+
+    <h5>Women's Artificial Jewellery</h5>
+    <p>
+      <a href="./category/earrings/index.html">Earrings for Women</a> |
+      <a href="./category/rings/index.html">Rings for Women</a> |
+      <a href="./category/bracelets/index.html">Bracelets for Women</a> |
+      <a href="./category/necklaces/index.html">Necklaces for Women</a> |
+      <a href="./category/pendants/index.html">Pendants for Women</a>
+    </p>
+
+    <h5>Jewellery by Occasion</h5>
+    <p>
+      <a href="./category/rings/index.html">Engagement Rings</a> |
+      <a href="./category/earrings/index.html">Party Wear Earrings</a> |
+      <a href="./category/bracelets/index.html">Gift Bracelets</a> |
+      <a href="./category/necklaces/index.html">Festive Necklaces</a>
+    </p>
+
+    <h5>Gifting Jewellery</h5>
+    <p>
+      <a href="./category/rings/index.html">Gifting Rings</a> |
+      <a href="./category/necklaces/index.html">Gifting Necklaces</a> |
+      <a href="./category/bracelets/index.html">Gifting Bracelets</a> |
+      <a href="./category/pendants/index.html">Gifting Pendants</a>
+    </p>
+
+    <h5>Trending Jewellery</h5>
+    <p>
+      <a href="./category/earrings/index.html">Minimal Earrings</a> |
+      <a href="./category/rings/index.html">Dailywear Rings</a> |
+      <a href="./category/bracelets/index.html">Lightweight Bracelets</a> |
+      <a href="./category/necklaces/index.html">Modern Necklaces</a>
+    </p>
+  </div>
+
+  <div class="kaapav-footer-bottom">
+    &copy; 2026 KAAPAV Fashion Jewellery. All rights reserved.
+  </div>
+</footer>
+
 </body>
 </html>
